@@ -24,23 +24,23 @@ const PREDICADOS = {
   usuarios: () => () => false, // apenas master/sócio (tratado como `full`); ninguém mais grava aqui
   clientes: (user) => (registro) => registro.vinculoId === user.id,
   processos: (user, ctx) => (registro) => {
-    if (registro.associadoId === user.id) return true;
+    if (registro.associadoId === user.id || registro.associadoId2 === user.id) return true;
     const idsClientes = (ctx.clientes || []).filter((c) => c.vinculoId === user.id).map((c) => c.id);
     return idsClientes.includes(registro.clienteId);
   },
   prazos: (user, ctx) => (registro) => {
     const idsProc = (ctx.processos || [])
-      .filter((p) => p.associadoId === user.id || (ctx.clientesIds || []).includes(p.clienteId))
+      .filter((p) => p.associadoId === user.id || p.associadoId2 === user.id || (ctx.clientesIds || []).includes(p.clienteId))
       .map((p) => p.id);
     return idsProc.includes(registro.processoId);
   },
   audiencias: (user, ctx) => (registro) => {
     const idsProc = (ctx.processos || [])
-      .filter((p) => p.associadoId === user.id || (ctx.clientesIds || []).includes(p.clienteId))
+      .filter((p) => p.associadoId === user.id || p.associadoId2 === user.id || (ctx.clientesIds || []).includes(p.clienteId))
       .map((p) => p.id);
     return idsProc.includes(registro.processoId);
   },
-  honorarios: (user, ctx) => (registro) => registro.associadoId === user.id || (ctx.clientesIds || []).includes(registro.clienteId),
+  honorarios: (user, ctx) => (registro) => registro.associadoId === user.id || registro.associadoId2 === user.id || (ctx.clientesIds || []).includes(registro.clienteId),
   despesas: () => () => false, // apenas master/sócio
   lembretes: (user) => () => !isCliente(user), // qualquer membro da equipe pode mexer (lista compartilhada)
   disponibilidades: (user) => (registro) => registro.usuarioId === user.id,

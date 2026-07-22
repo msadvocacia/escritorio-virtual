@@ -58,7 +58,7 @@ async function seedInicial() {
   const config = await getCollection('config', null);
   if (!config || Object.keys(config).length === 0) {
     await setCollection('config', {
-      instagram: 'https://instagram.com/msadvocacia',
+      instagram: 'https://instagram.com/msadvocacia.073',
       endereco: 'Rua Frederico Costa, 124, Centro, Jequié, Bahia, CEP 45200-225',
       telefone: '(73) 99194-3622',
       email: 'msadvocacia.073@gmail.com',

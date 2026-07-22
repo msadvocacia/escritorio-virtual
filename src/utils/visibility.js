@@ -31,7 +31,7 @@ function processosVisiveis(user, processos, clientes) {
   if (isMaster(user) || isSocio(user)) return processos;
   if (isAssociado(user)) {
     const idsClientes = idsClientesDoUsuario(user, clientes);
-    return processos.filter((p) => p.associadoId === user.id || idsClientes.includes(p.clienteId));
+    return processos.filter((p) => p.associadoId === user.id || p.associadoId2 === user.id || idsClientes.includes(p.clienteId));
   }
   if (isCliente(user)) {
     return processos.filter((p) => p.clienteId === user.clienteId);
@@ -43,7 +43,7 @@ function honorariosVisiveis(user, honorarios, clientes) {
   if (isMaster(user) || isSocio(user)) return honorarios;
   if (isAssociado(user)) {
     const idsClientes = idsClientesDoUsuario(user, clientes);
-    return honorarios.filter((h) => idsClientes.includes(h.clienteId) || h.associadoId === user.id);
+    return honorarios.filter((h) => idsClientes.includes(h.clienteId) || h.associadoId === user.id || h.associadoId2 === user.id);
   }
   if (isCliente(user)) {
     return honorarios.filter((h) => h.clienteId === user.clienteId);

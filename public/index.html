@@ -328,6 +328,7 @@
         <span id="today-label"></span>
         <span>|</span>
         <span>Olá, <b id="user-name-label">—</b></span>
+        <button class="btn btn-ghost btn-sm" id="btn-meu-perfil" onclick="abrirMeuPerfil()">Meu perfil</button>
         <button class="btn btn-ghost btn-sm" onclick="openTrocarSenha()">Trocar senha</button>
       </div>
     </div>
@@ -693,15 +694,37 @@ async function loadAll(){
 }
 async function persist(key){
   if(COLECOES_DEDICADAS[key]){
-    // usuarios / clientes / config têm suas próprias rotas com regras especiais
-    // (hash de senha no servidor, provisionamento automático, etc.) — ver as
-    // funções específicas de cada tela. Aqui não há nada genérico a fazer.
     return;
   }
+  // ATENÇÃO: manter por compatibilidade, mas prefira persistMutation() nas novas
+  // chamadas — persist() sozinho reenvia o array inteiro tal como está em memória,
+  // que pode estar desatualizado se outra pessoa alterou a coleção nesse meio tempo
+  // (isso já causou perda de clientes/processos). Ver persistMutation() abaixo.
   try{
     const atualizado = await apiFetch('/api/collections/'+key, { method:'PUT', body: JSON.stringify(DB[key]) });
     DB[key] = atualizado;
   }catch(e){ console.error('Erro ao salvar', key, e); showToast(e.message || 'Não foi possível salvar. Tente novamente.'); }
+}
+/**
+ * Forma seguro de salvar: busca a versão MAIS RECENTE da coleção no servidor,
+ * aplica a alteração (via mutateFn) em cima dela, e só então salva — evitando que
+ * uma cópia desatualizada na memória do navegador apague alterações feitas por
+ * outra pessoa enquanto esta tela estava aberta.
+ * mutateFn recebe o array atual e deve retornar o array já modificado.
+ */
+async function persistMutation(key, mutateFn){
+  if(COLECOES_DEDICADAS[key]) return DB[key];
+  try{
+    const atual = await apiFetch('/api/collections/'+key);
+    const mutado = mutateFn(atual) || atual;
+    const atualizado = await apiFetch('/api/collections/'+key, { method:'PUT', body: JSON.stringify(mutado) });
+    DB[key] = atualizado;
+    return atualizado;
+  }catch(e){
+    console.error('Erro ao salvar', key, e);
+    showToast(e.message || 'Não foi possível salvar. Tente novamente.');
+    throw e;
+  }
 }
 
 
@@ -767,6 +790,7 @@ async function enterApp(){
   const labels = {master:'Administrador Master', socio:'Sócio', associado:'Associado', cliente:'Cliente'};
   document.getElementById('role-tag').textContent = labels[CURRENT_USER.tipo];
   document.getElementById('user-name-label').textContent = CURRENT_USER.nome;
+  document.getElementById('btn-meu-perfil').style.display = isCliente()? 'none':'inline-flex';
   buildNav();
   await loadAll();
   goPage(PAGES_BY_ROLE[CURRENT_USER.tipo][0].id);
@@ -789,6 +813,25 @@ async function openTrocarSenha(forced){
       CURRENT_USER.mustChange = false;
       closeModal(); showToast('Senha atualizada.');
     }catch(e){ showToast(e.message || 'Não foi possível trocar a senha.'); }
+  });
+}
+async function abrirMeuPerfil(){
+  let meu;
+  try{ meu = await apiFetch('/api/me'); }catch(e){ showToast('Não foi possível carregar seu perfil.'); return; }
+  const body = `
+    <div class="hint">Nome, RG, CPF e situação (ativo/inativo) só podem ser alterados pelo administrador ou por um sócio. Aqui você pode atualizar seu telefone e endereço.</div>
+    <div class="field"><label>Nome</label><input value="${escapeHtml(meu.nome)}" disabled></div>
+    <div class="field-row">
+      <div class="field"><label>Telefone</label><input id="mp-telefone" value="${escapeHtml(meu.telefone||'')}" placeholder="(73) 9 9999-9999"></div>
+      <div class="field"><label>Endereço</label><input id="mp-endereco" value="${escapeHtml(meu.endereco||'')}" placeholder="Rua, número, bairro, cidade/UF"></div>
+    </div>
+  `;
+  openModal('Meu perfil', body, async ()=>{
+    try{
+      await apiFetch('/api/usuarios/me/contato', { method:'PATCH', body: JSON.stringify({ telefone: document.getElementById('mp-telefone').value.trim(), endereco: document.getElementById('mp-endereco').value.trim() }) });
+      if(podeGerenciarUsuarios()) DB.usuarios = await apiFetch('/api/usuarios');
+      closeModal(); showToast('Perfil atualizado.');
+    }catch(e){ showToast(e.message || 'Não foi possível atualizar seu perfil.'); }
   });
 }
 
@@ -878,6 +921,8 @@ function openModal(title, bodyHtml, onSave){
   const btn = document.getElementById('modal-save-btn');
   const newBtn = btn.cloneNode(true);
   btn.parentNode.replaceChild(newBtn, btn);
+  newBtn.style.display = ''; // sempre visível por padrão (uma tela anterior pode tê-lo escondido)
+  newBtn.textContent = 'Salvar'; // sempre reseta o texto (uma tela anterior pode tê-lo renomeado)
   newBtn.addEventListener('click', onSave);
 }
 function closeModal(){ document.getElementById('modal-overlay').classList.remove('open'); }
@@ -935,7 +980,7 @@ async function submitAgendamentoPublico(){
 function podeGerenciarUsuarios(){ return isMaster()||isSocio(); }
 function openUsuarioForm(id){
   if(!podeGerenciarUsuarios()){ showToast('Sem permissão.'); return; }
-  const u = id? DB.usuarios.find(x=>x.id===id) : {tipo: isMaster()? 'socio':'associado', nome:'', login:'', oab:'', ativo:true, nacionalidade:'brasileiro(a)', estadoCivil:'solteiro(a)', rg:'', cpf:''};
+  const u = id? DB.usuarios.find(x=>x.id===id) : {tipo: isMaster()? 'socio':'associado', nome:'', login:'', oab:'', ativo:true, nacionalidade:'brasileiro(a)', estadoCivil:'solteiro(a)', rg:'', cpf:'', telefone:'', endereco:''};
   const tiposPermitidos = isMaster()? ['socio','associado'] : ['associado'];
   const body = `
     <div class="field-row">
@@ -945,6 +990,10 @@ function openUsuarioForm(id){
     <div class="field-row">
       <div class="field"><label>Login</label><input id="uf-login" value="${escapeHtml(u.login)}" placeholder="ex: joao.silva" ${id?'disabled':''}></div>
       <div class="field"><label>OAB</label><input id="uf-oab" value="${escapeHtml(u.oab)}" placeholder="OAB/BA 00000"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Telefone</label><input id="uf-telefone" value="${escapeHtml(u.telefone)}" placeholder="(73) 9 9999-9999"></div>
+      <div class="field"><label>Endereço</label><input id="uf-endereco" value="${escapeHtml(u.endereco)}" placeholder="Rua, número, bairro, cidade/UF"></div>
     </div>
     <fieldset><legend>Dados para procuração (opcional, usados ao gerar o documento)</legend>
       <div class="field-row">
@@ -965,7 +1014,7 @@ function openUsuarioForm(id){
     const nome = document.getElementById('uf-nome').value.trim();
     const login = document.getElementById('uf-login').value.trim();
     if(!nome || !login){ showToast('Preencha nome e login.'); return; }
-    const data = { nome, tipo: document.getElementById('uf-tipo').value, oab: document.getElementById('uf-oab').value.trim(), ativo: document.getElementById('uf-ativo').value==='true', nacionalidade: document.getElementById('uf-nac').value.trim(), estadoCivil: document.getElementById('uf-ec').value.trim(), rg: document.getElementById('uf-rg').value.trim(), cpf: document.getElementById('uf-cpf').value.trim() };
+    const data = { nome, tipo: document.getElementById('uf-tipo').value, oab: document.getElementById('uf-oab').value.trim(), ativo: document.getElementById('uf-ativo').value==='true', nacionalidade: document.getElementById('uf-nac').value.trim(), estadoCivil: document.getElementById('uf-ec').value.trim(), rg: document.getElementById('uf-rg').value.trim(), cpf: document.getElementById('uf-cpf').value.trim(), telefone: document.getElementById('uf-telefone').value.trim(), endereco: document.getElementById('uf-endereco').value.trim() };
     try{
       if(id){
         await apiFetch('/api/usuarios/'+id, { method:'PATCH', body: JSON.stringify(data) });
@@ -998,7 +1047,7 @@ function renderUsuarios(){
   if(!podeGerenciarUsuarios()) return;
   const tbody = document.getElementById('tbl-usuarios');
   const empty = document.getElementById('empty-usuarios');
-  let list = DB.usuarios.filter(u=> isMaster()? true : (u.tipo==='associado'));
+  let list = DB.usuarios.filter(u=> u.tipo!=='cliente' && (isMaster()? true : u.tipo==='associado'));
   if(list.length===0){ tbody.innerHTML=''; empty.style.display='block'; return; }
   empty.style.display='none';
   const labels = {master:'Administrador Master', socio:'Sócio', associado:'Associado', cliente:'Cliente'};
@@ -1146,12 +1195,19 @@ function clienteOptionsProc(selected){
   return '<option value="">— selecione —</option>' + meusClientes().map(c=>`<option value="${c.id}" ${c.id===selected?'selected':''}>${escapeHtml(c.nome)}</option>`).join('');
 }
 function associadoOptionsProc(selected){
-  const list = DB.usuarios.filter(u=>u.tipo==='associado');
-  return '<option value="">Nenhum (honorário integral do escritório)</option>' + list.map(u=>`<option value="${u.id}" ${u.id===selected?'selected':''}>${escapeHtml(u.nome)}</option>`).join('');
+  const list = DB.usuarios.filter(u=>u.tipo==='associado'||u.tipo==='socio');
+  const grupos = {socio:'Sócios', associado:'Associados'};
+  const porTipo = {socio:[], associado:[]};
+  list.forEach(u=>porTipo[u.tipo].push(u));
+  let html = '<option value="">Nenhum (honorário integral do escritório)</option>';
+  ['socio','associado'].forEach(tipo=>{
+    if(porTipo[tipo].length) html += `<optgroup label="${grupos[tipo]}">` + porTipo[tipo].map(u=>`<option value="${u.id}" ${u.id===selected?'selected':''}>${escapeHtml(u.nome)}</option>`).join('') + `</optgroup>`;
+  });
+  return html;
 }
-function podeDefinirHonorario(){ return isMaster()||isSocio(); }
+function podeDefinirHonorario(){ return isMaster()||isSocio()||isAssociado(); }
 function splitLabel(tipo){
-  return {associado_70_30:'Associado 70% / Escritório 30%', associado_60_40:'Associado 60% / Escritório 40%', associado_50_50:'Associado 50% / Escritório 50%', associado_50_socio_30_escritorio_20:'Associado 50% / Sócio 30% / Escritório 20%', nenhum:'Integral ao escritório'}[tipo] || '—';
+  return {associado_70_30:'Profissional 70% / Escritório 30%', associado_60_40:'Profissional 60% / Escritório 40%', associado_50_50:'Profissional 50% / Escritório 50%', associado_50_socio_30_escritorio_20:'Profissional 50% / Sócio 30% / Escritório 20%', dois_associados_50_50:'Dois profissionais, 50% / 50% (sem passar pelo escritório)', nenhum:'Integral ao escritório'}[tipo] || '—';
 }
 function dispararImpressao(){
   const tituloOriginal = document.title;
@@ -1185,18 +1241,24 @@ function filtrarTiposAcao(){
   });
 }
 function openProcessoForm(id){
-  const p = id ? DB.processos.find(x=>x.id===id) : {numero:'',clienteId:'',tipo:'',vara:'',status:'andamento',obs:'', associadoId:'', splitTipo:'nenhum', honorarioValor:'', formaPagamento:'avista_dinheiro', parcelas:2, primeiraData:todayISO(), parcelasCartao:[]};
+  const p = id ? DB.processos.find(x=>x.id===id) : {numero:'',clienteId:'',tipo:'',vara:'',status:'andamento',obs:'', associadoId:'', associadoId2:'', splitTipo:'nenhum', honorarioValor:'', formaPagamento:'avista_dinheiro'};
+  const honorarioExistente = id ? DB.honorarios.find(h=>h.processoId===id && h.origemProcesso) : null;
   const honorarioSecao = podeDefinirHonorario() ? `
     <fieldset><legend>Honorários e vínculo</legend>
       <div class="field-row">
-        <div class="field"><label>Associado vinculado</label><select id="pf-associado" onchange="toggleSplitVisibility()">${associadoOptionsProc(p.associadoId)}</select></div>
-        <div class="field"><label>Tipo de vínculo (split)</label><select id="pf-split">
+        <div class="field"><label>Profissional vinculado (sócio ou associado)</label><select id="pf-associado" onchange="atualizarPreviewPagamentoProcesso()">${associadoOptionsProc(p.associadoId)}</select></div>
+        <div class="field"><label>Tipo de vínculo (split)</label><select id="pf-split" onchange="atualizarPreviewPagamentoProcesso()">
           <option value="nenhum" ${p.splitTipo==='nenhum'?'selected':''}>Integral ao escritório</option>
-          <option value="associado_70_30" ${p.splitTipo==='associado_70_30'?'selected':''}>Associado 70% / Escritório 30%</option>
-          <option value="associado_60_40" ${p.splitTipo==='associado_60_40'?'selected':''}>Associado 60% / Escritório 40%</option>
-          <option value="associado_50_50" ${p.splitTipo==='associado_50_50'?'selected':''}>Associado 50% / Escritório 50%</option>
-          <option value="associado_50_socio_30_escritorio_20" ${p.splitTipo==='associado_50_socio_30_escritorio_20'?'selected':''}>Associado 50% / Sócio 30% / Escritório 20%</option>
+          <option value="associado_70_30" ${p.splitTipo==='associado_70_30'?'selected':''}>Profissional 70% / Escritório 30%</option>
+          <option value="associado_60_40" ${p.splitTipo==='associado_60_40'?'selected':''}>Profissional 60% / Escritório 40%</option>
+          <option value="associado_50_50" ${p.splitTipo==='associado_50_50'?'selected':''}>Profissional 50% / Escritório 50%</option>
+          <option value="associado_50_socio_30_escritorio_20" ${p.splitTipo==='associado_50_socio_30_escritorio_20'?'selected':''}>Profissional 50% / Sócio 30% / Escritório 20%</option>
+          <option value="dois_associados_50_50" ${p.splitTipo==='dois_associados_50_50'?'selected':''}>Dois profissionais, 50% / 50% (sem passar pelo escritório)</option>
         </select></div>
+      </div>
+      <div class="field" id="pf-associado2-box" style="display:${p.splitTipo==='dois_associados_50_50'?'block':'none'};">
+        <label>Segundo profissional (divide 50/50 com o primeiro, direto)</label>
+        <select id="pf-associado2">${associadoOptionsProc(p.associadoId2)}</select>
       </div>
       <div class="field"><label>Valor do honorário</label><input type="number" step="0.01" id="pf-valor" value="${p.honorarioValor}" oninput="atualizarPreviewPagamentoProcesso()"></div>
       <div class="field"><label>Forma de pagamento</label><select id="pf-forma" onchange="atualizarPreviewPagamentoProcesso()">
@@ -1205,6 +1267,7 @@ function openProcessoForm(id){
         <option value="cartao" ${p.formaPagamento==='cartao'?'selected':''}>Cartão de crédito (parcelas informadas pela operadora)</option>
       </select></div>
       <div id="pf-pagamento-detalhe"></div>
+      ${honorarioExistente? `<div class="hint">Este processo já tem pagamentos registrados. Se você não mudar o valor/forma de pagamento, o controle de parcelas já pagas será mantido.</div>` : ''}
     </fieldset>
   ` : '';
   const body = `
@@ -1237,55 +1300,83 @@ function openProcessoForm(id){
       const valor = parseFloat(document.getElementById('pf-valor').value)||0;
       data.associadoId = document.getElementById('pf-associado').value;
       data.splitTipo = document.getElementById('pf-split').value;
+      data.associadoId2 = data.splitTipo==='dois_associados_50_50' ? document.getElementById('pf-associado2').value : '';
       data.honorarioValor = valor;
       data.formaPagamento = document.getElementById('pf-forma').value;
-      if(valor>0){ honorarioPayload = montarHonorarioDoProcesso(data, id); }
+      if(valor>0){ honorarioPayload = montarHonorarioDoProcesso(data, honorarioExistente); }
     }
-    let processoSalvo;
-    if(id){ Object.assign(p, data); processoSalvo = p; await persist('processos'); }
-    else{ processoSalvo = {id:uid(), ...data}; DB.processos.push(processoSalvo); await persist('processos'); }
-    if(honorarioPayload){
-      honorarioPayload.processoId = processoSalvo.id; honorarioPayload.clienteId = processoSalvo.clienteId;
-      const existente = DB.honorarios.find(h=>h.processoId===processoSalvo.id && h.origemProcesso);
-      if(existente){ delete honorarioPayload.repasseStatus; delete honorarioPayload.repasseConfirmadoEm; Object.assign(existente, honorarioPayload); } else { DB.honorarios.push({id:uid(), origemProcesso:true, ...honorarioPayload}); }
-      await persist('honorarios');
-    }
-    renderProcessos(); renderFinanceiro(); closeModal(); showToast('Processo salvo.');
+    let processoId = id;
+    try{
+      if(id){
+        await persistMutation('processos', arr=>{ const alvo = arr.find(x=>x.id===id); if(alvo) Object.assign(alvo, data); return arr; });
+      } else {
+        processoId = uid();
+        await persistMutation('processos', arr=>{ arr.push({id:processoId, ...data}); return arr; });
+      }
+      if(honorarioPayload){
+        honorarioPayload.processoId = processoId; honorarioPayload.clienteId = clienteId;
+        await persistMutation('honorarios', arr=>{
+          const existente = arr.find(h=>h.processoId===processoId && h.origemProcesso);
+          if(existente){ delete honorarioPayload.repasseStatus; delete honorarioPayload.repasseConfirmadoEm; Object.assign(existente, honorarioPayload); }
+          else{ arr.push({id:uid(), origemProcesso:true, ...honorarioPayload}); }
+          return arr;
+        });
+      }
+      renderProcessos(); renderFinanceiro(); closeModal(); showToast('Processo salvo.');
+    }catch(e){ /* erro já mostrado pelo persistMutation */ }
   });
   setTimeout(()=>renderTiposAcaoPills(p.tipo), 0);
-  if(podeDefinirHonorario()) setTimeout(atualizarPreviewPagamentoProcesso, 0);
+  if(podeDefinirHonorario()) setTimeout(()=>atualizarPreviewPagamentoProcesso(honorarioExistente), 0);
 }
-function montarHonorarioDoProcesso(data, id){
+function montarHonorarioDoProcesso(data, honorarioExistente){
   const descricao = 'Honorários — '+(data.tipo||'processo '+data.numero);
-  const base = { descricao, valorTotal:data.honorarioValor, associadoId:data.associadoId||null, splitTipo:data.splitTipo, repasseStatus:'pendente', repasseConfirmadoEm:null };
+  const base = { descricao, valorTotal:data.honorarioValor, associadoId:data.associadoId||null, associadoId2:data.associadoId2||null, splitTipo:data.splitTipo, repasseStatus:'pendente', repasseConfirmadoEm:null };
+  let novoHonorario;
   if(data.formaPagamento==='avista_dinheiro'){
-    return { ...base, forma:'avista', avistaStatus:'pendente', avistaPagoEm:null, parcelas:[] };
-  }
-  if(data.formaPagamento==='parcelado_dinheiro'){
+    novoHonorario = { ...base, forma:'avista', avistaStatus:'pendente', avistaPagoEm:null, parcelas:[] };
+  } else if(data.formaPagamento==='parcelado_dinheiro'){
     const n = parseInt(document.getElementById('pf-parcelas')?.value)||2;
     const primeira = document.getElementById('pf-primeira')?.value||todayISO();
-    return { ...base, forma:'parcelado_dinheiro', parcelas: buildParcelasPreview(data.honorarioValor, n, primeira) };
+    novoHonorario = { ...base, forma:'parcelado_dinheiro', parcelas: buildParcelasPreview(data.honorarioValor, n, primeira) };
+  } else {
+    // cartao
+    const n = parseInt(document.getElementById('pf-cartao-n')?.value)||1;
+    const parcelas = [];
+    for(let i=0;i<n;i++){
+      const val = parseFloat(document.getElementById('pf-cartao-valor-'+i)?.value)||0;
+      const dt = document.getElementById('pf-cartao-data-'+i)?.value || todayISO();
+      parcelas.push({id:uid(), numero:i+1, vencimento:dt, valor:val, status:'pendente', pagoEm:null});
+    }
+    novoHonorario = { ...base, forma:'cartao', parcelas };
   }
-  // cartao
-  const n = parseInt(document.getElementById('pf-cartao-n')?.value)||1;
-  const parcelas = [];
-  for(let i=0;i<n;i++){
-    const val = parseFloat(document.getElementById('pf-cartao-valor-'+i)?.value)||0;
-    const dt = document.getElementById('pf-cartao-data-'+i)?.value || todayISO();
-    parcelas.push({id:uid(), numero:i+1, vencimento:dt, valor:val, status:'pendente', pagoEm:null});
+  // Preserva o status de pagamento das parcelas já existentes, se a forma e a
+  // quantidade não mudaram (evita perder o controle financeiro ao editar).
+  if(honorarioExistente && honorarioExistente.forma===novoHonorario.forma && honorarioExistente.parcelas && honorarioExistente.parcelas.length===novoHonorario.parcelas.length){
+    novoHonorario.parcelas = novoHonorario.parcelas.map((np,i)=>({...np, status:honorarioExistente.parcelas[i].status, pagoEm:honorarioExistente.parcelas[i].pagoEm}));
   }
-  return { ...base, forma:'cartao', parcelas };
+  if(honorarioExistente && honorarioExistente.forma==='avista' && novoHonorario.forma==='avista'){
+    novoHonorario.avistaStatus = honorarioExistente.avistaStatus;
+    novoHonorario.avistaPagoEm = honorarioExistente.avistaPagoEm;
+  }
+  return novoHonorario;
 }
-function atualizarPreviewPagamentoProcesso(){
+function atualizarPreviewPagamentoProcesso(honorarioExistente){
+  document.getElementById('pf-associado2-box').style.display = document.getElementById('pf-split').value==='dois_associados_50_50' ? 'block':'none';
   const forma = document.getElementById('pf-forma').value;
   const box = document.getElementById('pf-pagamento-detalhe');
   const valor = parseFloat(document.getElementById('pf-valor').value)||0;
   if(forma==='avista_dinheiro'){ box.innerHTML = `<div class="hint">Pagamento único de ${fmtMoney(valor)}.</div>`; return; }
   if(forma==='parcelado_dinheiro'){
+    // Mantém a quantidade/data já digitada pelo usuário nesta tela; só usa o
+    // honorário existente como valor inicial na primeira renderização.
+    const nAtual = document.getElementById('pf-parcelas')?.value;
+    const primeiraAtual = document.getElementById('pf-primeira')?.value;
+    const nInicial = nAtual || (honorarioExistente && honorarioExistente.forma==='parcelado_dinheiro' ? honorarioExistente.parcelas.length : 2);
+    const primeiraInicial = primeiraAtual || (honorarioExistente && honorarioExistente.parcelas && honorarioExistente.parcelas[0] ? honorarioExistente.parcelas[0].vencimento : todayISO());
     box.innerHTML = `
       <div class="field-row">
-        <div class="field"><label>Nº de parcelas</label><input type="number" min="2" id="pf-parcelas" value="2" oninput="atualizarPreviewPagamentoProcesso()"></div>
-        <div class="field"><label>Vencimento da 1ª parcela</label><input type="date" id="pf-primeira" value="${todayISO()}" oninput="atualizarPreviewPagamentoProcesso()"></div>
+        <div class="field"><label>Nº de parcelas</label><input type="number" min="2" id="pf-parcelas" value="${nInicial}" oninput="atualizarPreviewPagamentoProcesso()"></div>
+        <div class="field"><label>Vencimento da 1ª parcela</label><input type="date" id="pf-primeira" value="${primeiraInicial}" oninput="atualizarPreviewPagamentoProcesso()"></div>
       </div>
       <div class="installments-preview" id="pf-parc-preview"></div>`;
     const n = parseInt(document.getElementById('pf-parcelas').value)||2;
@@ -1295,25 +1386,29 @@ function atualizarPreviewPagamentoProcesso(){
     return;
   }
   // cartão: valores livres por parcela
+  const nCartaoAtual = document.getElementById('pf-cartao-n')?.value;
+  const nCartaoInicial = nCartaoAtual || (honorarioExistente && honorarioExistente.forma==='cartao' ? honorarioExistente.parcelas.length : 1);
   box.innerHTML = `
-    <div class="field"><label>Nº de parcelas no cartão</label><input type="number" min="1" id="pf-cartao-n" value="1" oninput="atualizarCamposCartao()"></div>
+    <div class="field"><label>Nº de parcelas no cartão</label><input type="number" min="1" id="pf-cartao-n" value="${nCartaoInicial}" oninput="atualizarCamposCartao(null)"></div>
     <div id="pf-cartao-campos"></div>
     <div class="hint">Digite o valor exato de cada parcela conforme informado pela operadora de cartão (pode haver taxa/deságio).</div>`;
-  atualizarCamposCartao();
+  atualizarCamposCartao(forma==='cartao'? honorarioExistente : null);
 }
-function atualizarCamposCartao(){
+function atualizarCamposCartao(honorarioExistente){
   const n = parseInt(document.getElementById('pf-cartao-n').value)||1;
   const box = document.getElementById('pf-cartao-campos');
+  const existentes = (honorarioExistente && honorarioExistente.forma==='cartao') ? honorarioExistente.parcelas : [];
   let html = '';
   for(let i=0;i<n;i++){
-    html += `<div class="field-row"><div class="field"><label>Parcela ${i+1} — vencimento</label><input type="date" id="pf-cartao-data-${i}" value="${todayISO()}"></div><div class="field"><label>Valor recebido</label><input type="number" step="0.01" id="pf-cartao-valor-${i}" placeholder="0,00"></div></div>`;
+    const ex = existentes[i];
+    html += `<div class="field-row"><div class="field"><label>Parcela ${i+1} — vencimento</label><input type="date" id="pf-cartao-data-${i}" value="${ex?ex.vencimento:todayISO()}"></div><div class="field"><label>Valor recebido</label><input type="number" step="0.01" id="pf-cartao-valor-${i}" value="${ex?ex.valor:''}" placeholder="0,00"></div></div>`;
   }
   box.innerHTML = html;
 }
 async function deleteProcesso(id){
   if(!confirm('Remover este processo?')) return;
-  DB.processos = DB.processos.filter(p=>p.id!==id);
-  await persist('processos'); renderProcessos(); showToast('Processo removido.');
+  await persistMutation('processos', arr=>arr.filter(p=>p.id!==id));
+  renderProcessos(); showToast('Processo removido.');
 }
 function openAtualizacaoProcesso(id){
   const p = DB.processos.find(x=>x.id===id); if(!p) return;
@@ -1321,9 +1416,13 @@ function openAtualizacaoProcesso(id){
   openModal('Adicionar andamento — '+p.numero, body, async ()=>{
     const texto = document.getElementById('atu-texto').value.trim();
     if(!texto){ showToast('Escreva o andamento.'); return; }
-    if(!p.atualizacoes) p.atualizacoes = [];
-    p.atualizacoes.unshift({id:uid(), texto, data:todayISO(), autor:CURRENT_USER.nome});
-    await persist('processos'); renderProcessos(); closeModal(); showToast('Andamento adicionado.');
+    const nova = {id:uid(), texto, data:todayISO(), autor:CURRENT_USER.nome};
+    await persistMutation('processos', arr=>{
+      const alvo = arr.find(x=>x.id===id);
+      if(alvo){ if(!alvo.atualizacoes) alvo.atualizacoes=[]; alvo.atualizacoes.unshift(nova); }
+      return arr;
+    });
+    renderProcessos(); closeModal(); showToast('Andamento adicionado.');
   });
 }
 let PROC_TAB = 'ativos';
@@ -1333,9 +1432,13 @@ function setProcTab(tab){
   renderProcessos();
 }
 async function toggleAtivoProcesso(id){
-  const p = DB.processos.find(x=>x.id===id); if(!p) return;
-  p.ativo = p.ativo===false ? true : false;
-  await persist('processos'); renderProcessos(); showToast(p.ativo===false? 'Processo movido para o arquivo morto.' : 'Processo reativado.');
+  let novoStatus;
+  await persistMutation('processos', arr=>{
+    const alvo = arr.find(x=>x.id===id);
+    if(alvo){ alvo.ativo = alvo.ativo===false ? true : false; novoStatus = alvo.ativo; }
+    return arr;
+  });
+  renderProcessos(); showToast(novoStatus===false? 'Processo movido para o arquivo morto.' : 'Processo reativado.');
 }
 function renderProcessos(){
   const tbody = document.getElementById('tbl-processos'); if(!tbody) return;
@@ -1374,11 +1477,43 @@ function renderProcessos(){
 function processoOptionsPrazo(selected){
   return '<option value="">— nenhum —</option>' + meusProcessosVisiveis().map(p=>`<option value="${p.id}" ${p.id===selected?'selected':''}>${escapeHtml(p.numero)} — ${escapeHtml(clienteNome(p.clienteId))}</option>`).join('');
 }
+function somarDiasCorridos(iso, dias){ const d = new Date(iso+'T00:00:00'); d.setDate(d.getDate()+dias); return d.toISOString().slice(0,10); }
+function somarDiasUteis(iso, dias){
+  const d = new Date(iso+'T00:00:00');
+  let restantes = dias;
+  while(restantes>0){
+    d.setDate(d.getDate()+1);
+    const diaSemana = d.getDay(); // 0=domingo, 6=sábado
+    if(diaSemana!==0 && diaSemana!==6) restantes--;
+  }
+  return d.toISOString().slice(0,10);
+}
+function calcularVencimentoPrazo(){
+  const publicacao = document.getElementById('prf-calc-publicacao').value;
+  const dias = parseInt(document.getElementById('prf-calc-dias').value);
+  const tipo = document.getElementById('prf-calc-tipo').value;
+  if(!publicacao || !dias){ showToast('Informe a data de publicação e a quantidade de dias.'); return; }
+  const vencimento = tipo==='uteis' ? somarDiasUteis(publicacao, dias) : somarDiasCorridos(publicacao, dias);
+  document.getElementById('prf-venc').value = vencimento;
+  showToast('Vencimento calculado: '+fmtDate(vencimento));
+}
 function openPrazoForm(id){
   const pr = id ? DB.prazos.find(x=>x.id===id) : {descricao:'',processoId:'',vencimento:todayISO(),prioridade:'media',status:'pendente',obs:'',alertaDias:3};
   const body = `
     <div class="field"><label>Descrição do prazo</label><input id="prf-desc" value="${escapeHtml(pr.descricao)}" placeholder="Ex: Contestação, Recurso, Audiência"></div>
     <div class="field"><label>Processo vinculado</label><select id="prf-processo">${processoOptionsPrazo(pr.processoId)}</select></div>
+    <fieldset><legend>Calcular vencimento a partir da publicação (opcional)</legend>
+      <div class="field-row">
+        <div class="field"><label>Data da publicação</label><input type="date" id="prf-calc-publicacao"></div>
+        <div class="field"><label>Quantidade de dias</label><input type="number" min="1" id="prf-calc-dias" placeholder="Ex: 15"></div>
+      </div>
+      <div class="field"><label>Contagem</label><div class="radio-group">
+        <label class="radio-opt"><input type="radio" name="prf-calc-tipo-radio" value="uteis" checked onclick="document.getElementById('prf-calc-tipo').value='uteis'"> Dias úteis</label>
+        <label class="radio-opt"><input type="radio" name="prf-calc-tipo-radio" value="corridos" onclick="document.getElementById('prf-calc-tipo').value='corridos'"> Dias corridos</label>
+      </div><input type="hidden" id="prf-calc-tipo" value="uteis"></div>
+      <button type="button" class="btn btn-ghost" onclick="calcularVencimentoPrazo()">Calcular e preencher vencimento</button>
+      <div class="hint">Considera sábados e domingos como não úteis. Feriados nacionais, estaduais e municipais não entram automaticamente nessa contagem — confira antes de confiar cegamente no cálculo.</div>
+    </fieldset>
     <div class="field-row">
       <div class="field"><label>Vencimento</label><input type="date" id="prf-venc" value="${pr.vencimento}"></div>
       <div class="field"><label>Prioridade</label><select id="prf-prior"><option value="alta" ${pr.prioridade==='alta'?'selected':''}>Alta</option><option value="media" ${pr.prioridade==='media'?'selected':''}>Média</option><option value="baixa" ${pr.prioridade==='baixa'?'selected':''}>Baixa</option></select></div>
@@ -1393,33 +1528,41 @@ function openPrazoForm(id){
     if(!descricao){ showToast('Descreva o prazo.'); return; }
     const data = { descricao, processoId: document.getElementById('prf-processo').value, vencimento: document.getElementById('prf-venc').value, prioridade: document.getElementById('prf-prior').value, status: document.getElementById('prf-status').value, obs: document.getElementById('prf-obs').value.trim(), alertaDias: parseInt(document.getElementById('prf-alerta').value)||0 };
     let prazoSalvo;
-    if(id){ Object.assign(pr, data); prazoSalvo = pr; } else { prazoSalvo = {id:uid(), ...data}; DB.prazos.push(prazoSalvo); }
-    await persist('prazos');
-    await sincronizarLembretePrazo(prazoSalvo);
-    renderPrazos(); renderDashboard(); renderLembretes(); updateNavBadges(); closeModal(); showToast('Prazo salvo e lembrete atualizado.');
+    try{
+      if(id){
+        const atualizado = await persistMutation('prazos', arr=>{ const alvo = arr.find(x=>x.id===id); if(alvo){ Object.assign(alvo, data); prazoSalvo = alvo; } return arr; });
+      } else {
+        const novoId = uid();
+        await persistMutation('prazos', arr=>{ prazoSalvo = {id:novoId, ...data}; arr.push(prazoSalvo); return arr; });
+      }
+      await sincronizarLembretePrazo(prazoSalvo);
+      renderPrazos(); renderDashboard(); renderLembretes(); updateNavBadges(); closeModal(); showToast('Prazo salvo e lembrete atualizado.');
+    }catch(e){ /* erro já mostrado */ }
   });
 }
 async function sincronizarLembretePrazo(pr){
-  let lembrete = DB.lembretes.find(l=>l.prazoId===pr.id);
-  if(pr.status!=='pendente'){
-    if(lembrete) lembrete.feito = true;
-  } else {
-    const dataAlerta = addDaysISO(pr.vencimento, -(pr.alertaDias||0));
-    if(lembrete){ lembrete.titulo = 'Prazo: '+pr.descricao; lembrete.data = dataAlerta; lembrete.feito = false; }
-    else { DB.lembretes.push({id:uid(), titulo:'Prazo: '+pr.descricao, descricao:'Vencimento em '+fmtDate(pr.vencimento)+'.', data:dataAlerta, feito:false, prazoId:pr.id}); }
-  }
-  await persist('lembretes');
+  await persistMutation('lembretes', arr=>{
+    let lembrete = arr.find(l=>l.prazoId===pr.id);
+    if(pr.status!=='pendente'){
+      if(lembrete) lembrete.feito = true;
+    } else {
+      const dataAlerta = addDaysISO(pr.vencimento, -(pr.alertaDias||0));
+      if(lembrete){ lembrete.titulo = 'Prazo: '+pr.descricao; lembrete.data = dataAlerta; lembrete.feito = false; }
+      else { arr.push({id:uid(), titulo:'Prazo: '+pr.descricao, descricao:'Vencimento em '+fmtDate(pr.vencimento)+'.', data:dataAlerta, feito:false, prazoId:pr.id}); }
+    }
+    return arr;
+  });
 }
 async function deletePrazo(id){
   if(!confirm('Remover este prazo? O lembrete vinculado também será removido.')) return;
-  DB.prazos = DB.prazos.filter(p=>p.id!==id);
-  DB.lembretes = DB.lembretes.filter(l=>l.prazoId!==id);
-  await persist('prazos'); await persist('lembretes'); renderPrazos(); renderDashboard(); renderLembretes(); updateNavBadges(); showToast('Prazo removido.');
+  await persistMutation('prazos', arr=>arr.filter(p=>p.id!==id));
+  await persistMutation('lembretes', arr=>arr.filter(l=>l.prazoId!==id));
+  renderPrazos(); renderDashboard(); renderLembretes(); updateNavBadges(); showToast('Prazo removido.');
 }
 async function markPrazo(id, status){
-  const pr = DB.prazos.find(x=>x.id===id); if(!pr) return;
-  pr.status = status;
-  await persist('prazos'); await sincronizarLembretePrazo(pr);
+  let prazoSalvo;
+  await persistMutation('prazos', arr=>{ const alvo = arr.find(x=>x.id===id); if(alvo){ alvo.status = status; prazoSalvo = alvo; } return arr; });
+  if(prazoSalvo) await sincronizarLembretePrazo(prazoSalvo);
   renderPrazos(); renderDashboard(); renderLembretes(); updateNavBadges(); showToast('Status atualizado.');
 }
 function prazoStatusEfetivo(pr){ if(pr.status==='pendente' && daysDiff(pr.vencimento) < 0) return 'atrasado'; return pr.status; }
@@ -1490,30 +1633,38 @@ function openAudienciaForm(id){
     if(!processoId){ showToast('Selecione o processo.'); return; }
     const data = { processoId, data: document.getElementById('af-data').value, hora: document.getElementById('af-hora').value, local: document.getElementById('af-local').value.trim(), status: document.getElementById('af-status').value, alertaDias: parseInt(document.getElementById('af-alerta').value)||0, obs: document.getElementById('af-obs').value.trim() };
     let salvo;
-    if(id){ Object.assign(a, data); salvo = a; } else { salvo = {id:uid(), ...data}; DB.audiencias.push(salvo); }
-    await persist('audiencias');
-    await sincronizarLembreteAudiencia(salvo);
-    renderAudiencias(); renderDashboard(); renderLembretes(); closeModal(); showToast('Audiência salva e lembrete atualizado.');
+    try{
+      if(id){
+        await persistMutation('audiencias', arr=>{ const alvo = arr.find(x=>x.id===id); if(alvo){ Object.assign(alvo, data); salvo = alvo; } return arr; });
+      } else {
+        const novoId = uid();
+        await persistMutation('audiencias', arr=>{ salvo = {id:novoId, ...data}; arr.push(salvo); return arr; });
+      }
+      await sincronizarLembreteAudiencia(salvo);
+      renderAudiencias(); renderDashboard(); renderLembretes(); closeModal(); showToast('Audiência salva e lembrete atualizado.');
+    }catch(e){ /* erro já mostrado */ }
   });
 }
 async function sincronizarLembreteAudiencia(a){
-  let lembrete = DB.lembretes.find(l=>l.audienciaId===a.id);
-  if(a.status!=='agendada'){
-    if(lembrete) lembrete.feito = true;
-  } else {
-    const proc = DB.processos.find(x=>x.id===a.processoId);
-    const dataAlerta = addDaysISO(a.data, -(a.alertaDias||0));
-    const titulo = 'Audiência: '+(proc? proc.numero : '')+' — '+(a.local||'');
-    if(lembrete){ lembrete.titulo = titulo; lembrete.data = dataAlerta; lembrete.feito = false; }
-    else { DB.lembretes.push({id:uid(), titulo, descricao:'Audiência em '+fmtDate(a.data)+' às '+a.hora+'.', data:dataAlerta, feito:false, audienciaId:a.id}); }
-  }
-  await persist('lembretes');
+  const proc = DB.processos.find(x=>x.id===a.processoId);
+  await persistMutation('lembretes', arr=>{
+    let lembrete = arr.find(l=>l.audienciaId===a.id);
+    if(a.status!=='agendada'){
+      if(lembrete) lembrete.feito = true;
+    } else {
+      const dataAlerta = addDaysISO(a.data, -(a.alertaDias||0));
+      const titulo = 'Audiência: '+(proc? proc.numero : '')+' — '+(a.local||'');
+      if(lembrete){ lembrete.titulo = titulo; lembrete.data = dataAlerta; lembrete.feito = false; }
+      else { arr.push({id:uid(), titulo, descricao:'Audiência em '+fmtDate(a.data)+' às '+a.hora+'.', data:dataAlerta, feito:false, audienciaId:a.id}); }
+    }
+    return arr;
+  });
 }
 async function deleteAudiencia(id){
   if(!confirm('Remover esta audiência? O lembrete vinculado também será removido.')) return;
-  DB.audiencias = DB.audiencias.filter(a=>a.id!==id);
-  DB.lembretes = DB.lembretes.filter(l=>l.audienciaId!==id);
-  await persist('audiencias'); await persist('lembretes'); renderAudiencias(); renderDashboard(); renderLembretes(); showToast('Audiência removida.');
+  await persistMutation('audiencias', arr=>arr.filter(a=>a.id!==id));
+  await persistMutation('lembretes', arr=>arr.filter(l=>l.audienciaId!==id));
+  renderAudiencias(); renderDashboard(); renderLembretes(); showToast('Audiência removida.');
 }
 function audienciasVisiveis(){
   const idsProc = meusProcessosVisiveis().map(p=>p.id);
@@ -1556,6 +1707,7 @@ function partesSplit(splitTipo){
     case 'associado_60_40': return {associado:.6, escritorio:.4};
     case 'associado_50_50': return {associado:.5, escritorio:.5};
     case 'associado_50_socio_30_escritorio_20': return {associado:.5, socio:.3, escritorio:.2};
+    case 'dois_associados_50_50': return {associado:.5, associado2:.5};
     default: return {escritorio:1};
   }
 }
@@ -1565,7 +1717,7 @@ function valorRecebidoHonorario(h){
 function fracaoEscritorio(h){
   if(!h.associadoId) return 1;
   const partes = partesSplit(h.splitTipo);
-  return 1 - (partes.associado||0);
+  return 1 - (partes.associado||0) - (partes.associado2||0);
 }
 function buildParcelasPreview(total, n, primeiraData){
   if(!total || !n || n<1 || !primeiraData) return [];
@@ -1620,14 +1772,39 @@ function openHonorarioForm(id){
       const primeira = document.getElementById('hf-primeira').value;
       data.parcelas = buildParcelasPreview(valorTotal, n, primeira);
     } else { data.avistaStatus = document.getElementById('hf-avista-status').value; data.avistaPagoEm = data.avistaStatus==='pago'? todayISO():null; data.parcelas=[]; }
-    if(id){ Object.assign(h, data); } else { DB.honorarios.push({id:uid(), ...data}); }
-    await persist('honorarios'); renderFinanceiro(); renderDashboard(); closeModal(); showToast('Honorário salvo.');
+    if(id){
+      await persistMutation('honorarios', arr=>{ const alvo = arr.find(x=>x.id===id); if(alvo) Object.assign(alvo, data); return arr; });
+    } else {
+      await persistMutation('honorarios', arr=>{ arr.push({id:uid(), ...data}); return arr; });
+    }
+    renderFinanceiro(); renderDashboard(); closeModal(); showToast('Honorário salvo.');
   });
   if(isParcelado) setTimeout(updateParcelasPreview, 0);
 }
-async function deleteHonorario(id){ if(!confirm('Remover este honorário?')) return; DB.honorarios = DB.honorarios.filter(h=>h.id!==id); await persist('honorarios'); renderFinanceiro(); renderDashboard(); showToast('Honorário removido.'); }
-async function markParcelaPaga(honId, parcId){ const h = DB.honorarios.find(x=>x.id===honId); if(!h) return; const p = h.parcelas.find(x=>x.id===parcId); if(!p) return; p.status = p.status==='pago'?'pendente':'pago'; p.pagoEm = p.status==='pago'?todayISO():null; await persist('honorarios'); renderFinanceiro(); renderDashboard(); showToast('Parcela atualizada.'); }
-async function markAvistaPago(honId){ const h = DB.honorarios.find(x=>x.id===honId); if(!h) return; h.avistaStatus = h.avistaStatus==='pago'?'pendente':'pago'; h.avistaPagoEm = h.avistaStatus==='pago'?todayISO():null; await persist('honorarios'); renderFinanceiro(); renderDashboard(); showToast('Pagamento atualizado.'); }
+async function deleteHonorario(id){
+  if(!confirm('Remover este honorário?')) return;
+  await persistMutation('honorarios', arr=>arr.filter(h=>h.id!==id));
+  renderFinanceiro(); renderDashboard(); showToast('Honorário removido.');
+}
+async function markParcelaPaga(honId, parcId){
+  await persistMutation('honorarios', arr=>{
+    const h = arr.find(x=>x.id===honId); if(!h) return arr;
+    const p = h.parcelas.find(x=>x.id===parcId); if(!p) return arr;
+    p.status = p.status==='pago'?'pendente':'pago';
+    p.pagoEm = p.status==='pago'?todayISO():null;
+    return arr;
+  });
+  renderFinanceiro(); renderDashboard(); showToast('Parcela atualizada.');
+}
+async function markAvistaPago(honId){
+  await persistMutation('honorarios', arr=>{
+    const h = arr.find(x=>x.id===honId); if(!h) return arr;
+    h.avistaStatus = h.avistaStatus==='pago'?'pendente':'pago';
+    h.avistaPagoEm = h.avistaStatus==='pago'?todayISO():null;
+    return arr;
+  });
+  renderFinanceiro(); renderDashboard(); showToast('Pagamento atualizado.');
+}
 function honorarioSituacao(h){
   if(h.forma==='avista') return h.avistaStatus;
   if(!h.parcelas || h.parcelas.length===0) return 'pendente';
@@ -1637,7 +1814,7 @@ function honorarioSituacao(h){
 function meusHonorarios(){
   if(isMaster()||isSocio()) return DB.honorarios;
   const idsClientes = meusClientes().map(c=>c.id);
-  return DB.honorarios.filter(h=> idsClientes.includes(h.clienteId) || h.associadoId===CURRENT_USER.id);
+  return DB.honorarios.filter(h=> idsClientes.includes(h.clienteId) || h.associadoId===CURRENT_USER.id || h.associadoId2===CURRENT_USER.id);
 }
 function renderHonorariosTable(){
   const tbody = document.getElementById('tbl-honorarios'); if(!tbody) return;
@@ -1704,11 +1881,19 @@ function openDespesaForm(id){
     const valor = parseFloat(document.getElementById('df-valor').value)||0;
     if(!descricao||!valor){ showToast('Preencha descrição e valor.'); return; }
     const data = { descricao, categoria: document.getElementById('df-cat').value.trim(), data: document.getElementById('df-data').value, valor };
-    if(id){ Object.assign(d,data); } else { DB.despesas.push({id:uid(), ...data}); }
-    await persist('despesas'); renderFinanceiro(); renderDashboard(); closeModal(); showToast('Despesa salva.');
+    if(id){
+      await persistMutation('despesas', arr=>{ const alvo = arr.find(x=>x.id===id); if(alvo) Object.assign(alvo, data); return arr; });
+    } else {
+      await persistMutation('despesas', arr=>{ arr.push({id:uid(), ...data}); return arr; });
+    }
+    renderFinanceiro(); renderDashboard(); closeModal(); showToast('Despesa salva.');
   });
 }
-async function deleteDespesa(id){ if(!confirm('Remover esta despesa?')) return; DB.despesas = DB.despesas.filter(d=>d.id!==id); await persist('despesas'); renderFinanceiro(); renderDashboard(); showToast('Despesa removida.'); }
+async function deleteDespesa(id){
+  if(!confirm('Remover esta despesa?')) return;
+  await persistMutation('despesas', arr=>arr.filter(d=>d.id!==id));
+  renderFinanceiro(); renderDashboard(); showToast('Despesa removida.');
+}
 function renderDespesasTable(){
   const tbody = document.getElementById('tbl-despesas'); if(!tbody) return;
   const empty = document.getElementById('empty-despesas');
@@ -1746,25 +1931,29 @@ function computeFinanceSummary(periodo){
   return { aReceber, recebidoMes, despesasMes, totalDespesas, saldoMes: recebidoMes-despesasMes, atrasadoReceber, caixaAcumulado, recebidoPeriodo, despesasPeriodo, saldoPeriodo: recebidoPeriodo-despesasPeriodo };
 }
 async function confirmarRepasse(honId){
-  const h = DB.honorarios.find(x=>x.id===honId); if(!h) return;
-  h.repasseStatus = h.repasseStatus==='confirmado' ? 'pendente' : 'confirmado';
-  h.repasseConfirmadoEm = h.repasseStatus==='confirmado'? todayISO() : null;
-  await persist('honorarios'); renderFinanceiro(); showToast('Repasse atualizado.');
+  await persistMutation('honorarios', arr=>{
+    const h = arr.find(x=>x.id===honId); if(!h) return arr;
+    h.repasseStatus = h.repasseStatus==='confirmado' ? 'pendente' : 'confirmado';
+    h.repasseConfirmadoEm = h.repasseStatus==='confirmado'? todayISO() : null;
+    return arr;
+  });
+  renderFinanceiro(); showToast('Repasse atualizado.');
 }
 function renderRepasses(){
   const box = document.getElementById('fin-repasses');
   const relevantes = meusHonorarios().filter(h=>h.associadoId);
-  if(relevantes.length===0){ box.innerHTML = `<div class="empty">Nenhum processo com associado vinculado ainda.</div>`; return; }
+  if(relevantes.length===0){ box.innerHTML = `<div class="empty">Nenhum processo com profissional vinculado ainda.</div>`; return; }
   box.innerHTML = relevantes.map(h=>{
     const partes = partesSplit(h.splitTipo);
     const recebido = valorRecebidoHonorario(h);
     const parteAssociado = recebido*(partes.associado||0);
     const parteEscritorio = recebido*((partes.escritorio||0)+(partes.socio||0));
+    const parteAssociado2 = h.associadoId2 ? recebido*(partes.associado2||0) : 0;
     const podeConfirmar = isMaster()||isSocio();
     return `<div class="list-row">
       <div><div class="rtitle">${escapeHtml(clienteNome(h.clienteId))} ${h.processoId? '· '+escapeHtml(processoLabel(h.processoId)||''):''}</div>
       <div class="rsub">${escapeHtml(usuarioNome(h.associadoId))} · ${splitLabel(h.splitTipo)} · recebido do cliente: ${fmtMoney(recebido)}</div>
-      <div class="rsub">Parte do associado: <strong>${fmtMoney(parteAssociado)}</strong> · Parte do escritório: ${fmtMoney(parteEscritorio)}</div></div>
+      <div class="rsub">Parte do 1º profissional: <strong>${fmtMoney(parteAssociado)}</strong>${h.associadoId2? ' · Parte de '+escapeHtml(usuarioNome(h.associadoId2))+': <strong>'+fmtMoney(parteAssociado2)+'</strong>' : ' · Parte do escritório: '+fmtMoney(parteEscritorio)}</div></div>
       <div class="rmeta">
         <span class="tag tag-${h.repasseStatus==='confirmado'?'confirmado':'solicitado'}">${h.repasseStatus==='confirmado'?'Repassado':'Aguardando repasse'}</span>
         ${podeConfirmar? `<br><button class="btn btn-ghost btn-sm" style="margin-top:4px;" onclick="confirmarRepasse('${h.id}')">${h.repasseStatus==='confirmado'?'Desfazer':'Confirmar repasse'}</button>`:''}
@@ -1772,12 +1961,13 @@ function renderRepasses(){
   }).join('');
 }
 function computeAssociadoTotals(){
-  const list = meusHonorarios().filter(h=>h.associadoId===CURRENT_USER.id);
+  const list = meusHonorarios().filter(h=>h.associadoId===CURRENT_USER.id || h.associadoId2===CURRENT_USER.id);
   let totalContrato=0, totalRecebidoCliente=0, minhaParteTotal=0, minhaParteRepassada=0, minhaParteAguardando=0, parteEscritorio=0;
   list.forEach(h=>{
     const partes = partesSplit(h.splitTipo);
     const recebido = valorRecebidoHonorario(h);
-    const minhaParte = recebido*(partes.associado||0);
+    const minhaFracao = h.associadoId2===CURRENT_USER.id ? (partes.associado2||0) : (partes.associado||0);
+    const minhaParte = recebido*minhaFracao;
     totalContrato += h.valorTotal;
     totalRecebidoCliente += recebido;
     minhaParteTotal += minhaParte;
@@ -1840,11 +2030,13 @@ function imprimirRelatorioFinanceiro(periodo){
   let resumoHtml, listaHtml;
   if(isAssociado()){
     const a = computeAssociadoTotals();
-    const meusRelevantes = meusHonorarios().filter(h=>h.associadoId===CURRENT_USER.id);
+    const meusRelevantes = meusHonorarios().filter(h=>h.associadoId===CURRENT_USER.id || h.associadoId2===CURRENT_USER.id);
     resumoHtml = `<p><strong>Total dos contratos fechados:</strong> ${fmtMoney(a.totalContrato)} &nbsp;|&nbsp; <strong>Recebido dos clientes:</strong> ${fmtMoney(a.totalRecebidoCliente)}</p>
       <p><strong>Sua parte já repassada a você:</strong> ${fmtMoney(a.minhaParteRepassada)} &nbsp;|&nbsp; <strong>Sua parte aguardando repasse:</strong> ${fmtMoney(a.minhaParteAguardando)}</p>`;
     listaHtml = `<p><strong>Detalhamento por processo:</strong></p><ul>${meusRelevantes.map(h=>{
-      const partes=partesSplit(h.splitTipo); const recebido=valorRecebidoHonorario(h); const minhaParte=recebido*(partes.associado||0);
+      const partes=partesSplit(h.splitTipo); const recebido=valorRecebidoHonorario(h);
+      const minhaFracao = h.associadoId2===CURRENT_USER.id ? (partes.associado2||0) : (partes.associado||0);
+      const minhaParte=recebido*minhaFracao;
       return `<li>${escapeHtml(clienteNome(h.clienteId))}${h.processoId? ' — '+escapeHtml(processoLabel(h.processoId)||''):''}: contrato ${fmtMoney(h.valorTotal)}, recebido do cliente ${fmtMoney(recebido)}, sua parte ${fmtMoney(minhaParte)} (${h.repasseStatus==='confirmado'?'repassado a você':'aguardando repasse'})</li>`;
     }).join('') || '<li>Nenhum processo vinculado a você ainda.</li>'}</ul>`;
   } else {
@@ -1874,13 +2066,16 @@ async function aplicarDisponibilidade(){
   const ci = document.getElementById('preset-custom-inicio').value, cf = document.getElementById('preset-custom-fim').value;
   if(ci && cf) blocosAplicar.push({inicio:ci, fim:cf});
   if(blocosAplicar.length===0){ showToast('Selecione ao menos um horário (manhã, tarde ou personalizado).'); return; }
-  CAL.selected.forEach(dia=>{
-    blocosAplicar.forEach(b=>{
-      const existe = DB.disponibilidades.some(d=>d.usuarioId===CURRENT_USER.id && d.data===dia && d.inicio===b.inicio && d.fim===b.fim);
-      if(!existe) DB.disponibilidades.push({id:uid(), usuarioId:CURRENT_USER.id, data:dia, inicio:b.inicio, fim:b.fim});
+  const diasSelecionados = [...CAL.selected];
+  await persistMutation('disponibilidades', arr=>{
+    diasSelecionados.forEach(dia=>{
+      blocosAplicar.forEach(b=>{
+        const existe = arr.some(d=>d.usuarioId===CURRENT_USER.id && d.data===dia && d.inicio===b.inicio && d.fim===b.fim);
+        if(!existe) arr.push({id:uid(), usuarioId:CURRENT_USER.id, data:dia, inicio:b.inicio, fim:b.fim});
+      });
     });
+    return arr;
   });
-  await persist('disponibilidades');
   CAL.selected = []; calRender();
   renderAgendaDispLista(); showToast('Disponibilidade aplicada aos dias selecionados.');
 }
@@ -1897,13 +2092,12 @@ function renderAgendaDispLista(){
 }
 async function removerDisponibilidadeDiaFor(dia, usuarioId){
   if(!confirm('Remover toda a disponibilidade deste dia?')) return;
-  DB.disponibilidades = DB.disponibilidades.filter(d=>!(d.usuarioId===usuarioId && d.data===dia));
-  await persist('disponibilidades'); renderAgendaDispLista(); showToast('Disponibilidade removida.');
+  await persistMutation('disponibilidades', arr=>arr.filter(d=>!(d.usuarioId===usuarioId && d.data===dia)));
+  renderAgendaDispLista(); showToast('Disponibilidade removida.');
 }
 async function confirmarAgendamento(id, status){
-  const a = DB.agendamentos.find(x=>x.id===id); if(!a) return;
-  a.status = status;
-  await persist('agendamentos'); renderAgendaPage(); showToast('Agendamento atualizado.');
+  await persistMutation('agendamentos', arr=>{ const a = arr.find(x=>x.id===id); if(a) a.status = status; return arr; });
+  renderAgendaPage(); showToast('Agendamento atualizado.');
 }
 function renderAgendaPage(){
   if(isCliente()) return;
@@ -1954,8 +2148,10 @@ function selecionarSlotCliente(hora){ window._acSlotSelected = hora; document.qu
 async function confirmarAgendamentoCliente(){
   const dia = CAL.selected[0];
   if(!dia || !window._acSlotSelected){ showToast('Selecione um dia e um horário.'); return; }
-  DB.agendamentos.push({id:uid(), usuarioId:CAL.usuarioId, data:dia, hora:window._acSlotSelected, clienteId:CURRENT_USER.clienteId, nomePublico:null, telefonePublico:null, status:'confirmado', origem:'cliente'});
-  await persist('agendamentos');
+  await persistMutation('agendamentos', arr=>{
+    arr.push({id:uid(), usuarioId:CAL.usuarioId, data:dia, hora:window._acSlotSelected, clienteId:CURRENT_USER.clienteId, nomePublico:null, telefonePublico:null, status:'confirmado', origem:'cliente'});
+    return arr;
+  });
   showToast('Visita agendada com sucesso!'); renderAgendarCliente();
 }
 
@@ -1980,20 +2176,28 @@ function renderMensagens(){
   }
 }
 function abrirThread(clienteId, usuarioId){ THREAD_ATIVA = {clienteId, usuarioId}; renderThread(); }
-function renderThread(){
+async function renderThread(){
   if(!THREAD_ATIVA){ document.getElementById('msg-thread').innerHTML=''; return; }
   document.getElementById('msg-thread-title').textContent = 'Conversa com ' + clienteNome(THREAD_ATIVA.clienteId);
   const msgs = DB.mensagens.filter(m=>m.clienteId===THREAD_ATIVA.clienteId).sort((a,b)=>a.data.localeCompare(b.data));
-  msgs.forEach(m=>{ if(m.autor==='cliente' && !isCliente()) m.lida = true; });
-  persist('mensagens');
   document.getElementById('msg-thread').innerHTML = msgs.length? msgs.map(m=>`<div class="msg-bubble msg-${m.autor}">${escapeHtml(m.texto)}<div class="msg-meta">${new Date(m.data).toLocaleString('pt-BR')}</div></div>`).join('') : `<div class="empty">Nenhuma mensagem ainda.</div>`;
+  const temNaoLidas = msgs.some(m=>m.autor==='cliente' && !m.lida);
+  if(temNaoLidas && !isCliente()){
+    await persistMutation('mensagens', arr=>{
+      arr.forEach(m=>{ if(m.clienteId===THREAD_ATIVA.clienteId && m.autor==='cliente') m.lida = true; });
+      return arr;
+    });
+  }
 }
 async function enviarMensagem(){
   if(!THREAD_ATIVA){ showToast('Selecione uma conversa.'); return; }
   const input = document.getElementById('msg-input'); const texto = input.value.trim();
   if(!texto) return;
-  DB.mensagens.push({id:uid(), clienteId:THREAD_ATIVA.clienteId, usuarioId:THREAD_ATIVA.usuarioId, autor: isCliente()?'cliente':'advogado', texto, data:new Date().toISOString(), lida:false});
-  await persist('mensagens'); input.value=''; renderThread(); if(!isCliente()) renderMensagens();
+  await persistMutation('mensagens', arr=>{
+    arr.push({id:uid(), clienteId:THREAD_ATIVA.clienteId, usuarioId:THREAD_ATIVA.usuarioId, autor: isCliente()?'cliente':'advogado', texto, data:new Date().toISOString(), lida:false});
+    return arr;
+  });
+  input.value=''; renderThread(); if(!isCliente()) renderMensagens();
 }
 
 /* ============================================================
@@ -2039,12 +2243,23 @@ function openLembreteForm(id){
     const titulo = document.getElementById('lf-titulo').value.trim();
     if(!titulo){ showToast('Informe um título.'); return; }
     const data = { titulo, descricao: document.getElementById('lf-desc').value.trim(), data: document.getElementById('lf-data').value };
-    if(id){ Object.assign(l,data); } else { DB.lembretes.push({id:uid(), feito:false, ...data}); }
-    await persist('lembretes'); renderLembretes(); renderDashboard(); updateNavBadges(); closeModal(); showToast('Lembrete salvo.');
+    if(id){
+      await persistMutation('lembretes', arr=>{ const alvo = arr.find(x=>x.id===id); if(alvo) Object.assign(alvo, data); return arr; });
+    } else {
+      await persistMutation('lembretes', arr=>{ arr.push({id:uid(), feito:false, ...data}); return arr; });
+    }
+    renderLembretes(); renderDashboard(); updateNavBadges(); closeModal(); showToast('Lembrete salvo.');
   });
 }
-async function deleteLembrete(id){ if(!confirm('Remover este lembrete?')) return; DB.lembretes = DB.lembretes.filter(l=>l.id!==id); await persist('lembretes'); renderLembretes(); renderDashboard(); updateNavBadges(); showToast('Lembrete removido.'); }
-async function toggleLembrete(id){ const l = DB.lembretes.find(x=>x.id===id); if(!l) return; l.feito=!l.feito; await persist('lembretes'); renderLembretes(); renderDashboard(); updateNavBadges(); }
+async function deleteLembrete(id){
+  if(!confirm('Remover este lembrete?')) return;
+  await persistMutation('lembretes', arr=>arr.filter(l=>l.id!==id));
+  renderLembretes(); renderDashboard(); updateNavBadges(); showToast('Lembrete removido.');
+}
+async function toggleLembrete(id){
+  await persistMutation('lembretes', arr=>{ const l = arr.find(x=>x.id===id); if(l) l.feito = !l.feito; return arr; });
+  renderLembretes(); renderDashboard(); updateNavBadges();
+}
 function renderLembretes(){
   const tbody = document.getElementById('tbl-lembretes'); if(!tbody) return;
   const empty = document.getElementById('empty-lembretes');
@@ -2065,8 +2280,11 @@ function carregarConfigForm(){
   document.getElementById('cfg-email').value = c.email||'';
 }
 async function salvarConfig(){
-  DB.config = { instagram: document.getElementById('cfg-insta').value.trim(), endereco: document.getElementById('cfg-endereco').value.trim(), telefone: document.getElementById('cfg-tel').value.trim(), email: document.getElementById('cfg-email').value.trim() };
-  await persist('config'); renderLandingContact(); showToast('Configurações salvas.');
+  const novo = { instagram: document.getElementById('cfg-insta').value.trim(), endereco: document.getElementById('cfg-endereco').value.trim(), telefone: document.getElementById('cfg-tel').value.trim(), email: document.getElementById('cfg-email').value.trim() };
+  try{
+    DB.config = await apiFetch('/api/config', { method:'PUT', body: JSON.stringify(novo) });
+    renderLandingContact(); showToast('Configurações salvas.');
+  }catch(e){ showToast(e.message || 'Não foi possível salvar as configurações.'); }
 }
 
 /* ============================================================

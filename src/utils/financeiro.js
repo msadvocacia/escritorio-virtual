@@ -4,6 +4,7 @@ function partesSplit(splitTipo) {
     case 'associado_60_40': return { associado: 0.6, escritorio: 0.4 };
     case 'associado_50_50': return { associado: 0.5, escritorio: 0.5 };
     case 'associado_50_socio_30_escritorio_20': return { associado: 0.5, socio: 0.3, escritorio: 0.2 };
+    case 'dois_associados_50_50': return { associado: 0.5, associado2: 0.5 }; // nada para o escritório
     default: return { escritorio: 1 };
   }
 }
@@ -21,7 +22,7 @@ function dentroPeriodo(dataStr, periodo) {
 function fracaoEscritorio(h) {
   if (!h.associadoId) return 1;
   const partes = partesSplit(h.splitTipo);
-  return 1 - (partes.associado || 0);
+  return 1 - (partes.associado || 0) - (partes.associado2 || 0);
 }
 
 /** Resumo do relatório para master/sócio (visão do escritório). */
@@ -46,13 +47,14 @@ function resumoEscritorio(honorarios, despesas, periodo) {
   };
 }
 
-/** Totais do relatório para o associado (só os processos dele). */
-function totaisAssociado(honorariosDoAssociado) {
+/** Totais do relatório para o associado (só os processos dele). userId identifica se ele é o "associado" ou o "associado2" de cada honorário. */
+function totaisAssociado(honorariosDoAssociado, userId) {
   let totalContrato = 0, totalRecebidoCliente = 0, minhaParteRepassada = 0, minhaParteAguardando = 0;
   honorariosDoAssociado.forEach((h) => {
     const partes = partesSplit(h.splitTipo);
     const recebido = valorRecebidoHonorario(h);
-    const minhaParte = recebido * (partes.associado || 0);
+    const minhaFracao = h.associadoId2 === userId ? (partes.associado2 || 0) : (partes.associado || 0);
+    const minhaParte = recebido * minhaFracao;
     totalContrato += h.valorTotal;
     totalRecebidoCliente += recebido;
     if (h.repasseStatus === 'confirmado') minhaParteRepassada += minhaParte;

@@ -17,7 +17,7 @@ async function buscarUltimaMovimentacao(numeroCNJ) {
   const { digitos, alias } = identificarTribunal(numeroCNJ);
   const apiKey = process.env.DATAJUD_PUBLIC_KEY;
   if (!apiKey) {
-    throw new Error('DATAJUD_PUBLIC_KEY não configurada no servidor.');
+    throw new Error('A consulta automática de andamentos ainda não foi ativada pelo escritório (falta configurar a chave do Datajud no servidor). Fale com o administrador do sistema.');
   }
 
   const url = `https://api-publica.datajud.cnj.jus.br/api_publica_${alias}/_search`;

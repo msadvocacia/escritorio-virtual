@@ -175,7 +175,7 @@ router.post('/relatorio', requireAuth, async (req, res) => {
     honorarios = todosHonorarios;
   } else if (isAssociado(req.user)) {
     const idsClientes = clientes.filter((c) => c.vinculoId === req.user.id).map((c) => c.id);
-    honorarios = todosHonorarios.filter((h) => h.associadoId === req.user.id || idsClientes.includes(h.clienteId));
+    honorarios = todosHonorarios.filter((h) => h.associadoId === req.user.id || h.associadoId2 === req.user.id || idsClientes.includes(h.clienteId));
   } else {
     return res.status(403).json({ erro: 'Perfil sem acesso a relatórios financeiros.' });
   }
@@ -197,11 +197,15 @@ router.post('/relatorio', requireAuth, async (req, res) => {
     itensRepasse = honorarios.filter((h) => h.associadoId).map((h) => {
       const partes = F.partesSplit(h.splitTipo);
       const recebido = F.valorRecebidoHonorario(h);
-      return { texto: `${nomeCli(h.clienteId)} — ${nomeAdv(h.associadoId)}: ${T.fmtMoney(recebido * (partes.associado || 0))} (${h.repasseStatus === 'confirmado' ? 'repassado' : 'aguardando repasse'})` };
+      let texto = `${nomeCli(h.clienteId)} — ${nomeAdv(h.associadoId)}: ${T.fmtMoney(recebido * (partes.associado || 0))} (${h.repasseStatus === 'confirmado' ? 'repassado' : 'aguardando repasse'})`;
+      if (h.associadoId2) {
+        texto += ` · ${nomeAdv(h.associadoId2)}: ${T.fmtMoney(recebido * (partes.associado2 || 0))} (${h.repasseStatus === 'confirmado' ? 'repassado' : 'aguardando repasse'})`;
+      }
+      return { texto };
     });
   } else {
-    const meusHonorarios = honorarios.filter((h) => h.associadoId === req.user.id);
-    const t = F.totaisAssociado(meusHonorarios);
+    const meusHonorarios = honorarios.filter((h) => h.associadoId === req.user.id || h.associadoId2 === req.user.id);
+    const t = F.totaisAssociado(meusHonorarios, req.user.id);
     resumoLinhas = [
       { texto: `Total dos contratos fechados: ${T.fmtMoney(t.totalContrato)}` },
       { texto: `Recebido dos clientes: ${T.fmtMoney(t.totalRecebidoCliente)}` },
@@ -214,7 +218,8 @@ router.post('/relatorio', requireAuth, async (req, res) => {
     itensRepasse = meusHonorarios.map((h) => {
       const partes = F.partesSplit(h.splitTipo);
       const recebido = F.valorRecebidoHonorario(h);
-      const minhaParte = recebido * (partes.associado || 0);
+      const minhaFracao = h.associadoId2 === req.user.id ? (partes.associado2 || 0) : (partes.associado || 0);
+      const minhaParte = recebido * minhaFracao;
       return { texto: `${nomeCli(h.clienteId)}${h.processoId ? ' — ' + numProc(h.processoId) : ''}: contrato ${T.fmtMoney(h.valorTotal)}, recebido ${T.fmtMoney(recebido)}, sua parte ${T.fmtMoney(minhaParte)} (${h.repasseStatus === 'confirmado' ? 'repassado' : 'aguardando repasse'})` };
     });
   }
