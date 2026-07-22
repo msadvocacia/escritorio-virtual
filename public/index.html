@@ -675,10 +675,10 @@ async function loadAll(){
   if(isMaster() || isSocio()){
     try{ DB.usuarios = await apiFetch('/api/usuarios'); }catch(e){ DB.usuarios = []; }
   } else if(isAssociado()){
-    // O associado não tem permissão para listar todos os usuários; mantemos aqui
-    // só o próprio registro mínimo, suficiente para os formulários que se
-    // auto-referenciam (ex: "vinculado a" no cadastro de cliente).
-    DB.usuarios = [{ id: CURRENT_USER.id, nome: CURRENT_USER.nome, tipo: 'associado', ativo: true }];
+    // O associado não pode ver os dados completos (RG/CPF/telefone) de outros
+    // usuários, mas precisa saber QUEM são os sócios/associados para poder
+    // vinculá-los aos processos. Usa uma lista "básica" (só id/nome/tipo).
+    try{ DB.usuarios = await apiFetch('/api/usuarios/basico'); }catch(e){ DB.usuarios = [{ id: CURRENT_USER.id, nome: CURRENT_USER.nome, tipo: 'associado', ativo: true }]; }
   } else {
     DB.usuarios = [];
   }
@@ -905,7 +905,7 @@ function meusClientes(){ // clientes que o usuário atual pode ver
 }
 function meusProcessosVisiveis(){
   if(isMaster()||isSocio()) return DB.processos;
-  if(isAssociado()){ const idsClientes = meusClientes().map(c=>c.id); return DB.processos.filter(p=>p.associadoId===CURRENT_USER.id || idsClientes.includes(p.clienteId)); }
+  if(isAssociado()){ const idsClientes = meusClientes().map(c=>c.id); return DB.processos.filter(p=>idsProfissionaisRegistro(p).includes(CURRENT_USER.id) || idsClientes.includes(p.clienteId)); }
   return [];
 }
 function clienteDoUsuarioLogado(){ return DB.clientes.find(c=>c.id===CURRENT_USER.clienteId); }
@@ -1062,8 +1062,17 @@ function renderUsuarios(){
         ${u.tipo!=='master'? `<button class="icon-btn" onclick="openUsuarioForm('${u.id}')" title="Editar">✎</button>`:''}
         ${u.tipo!=='master'? `<button class="icon-btn" onclick="redefinirSenha('${u.id}')" title="Redefinir senha">🔑</button>`:''}
         ${u.tipo!=='master'? `<button class="icon-btn" onclick="toggleAtivoUsuario('${u.id}')" title="Ativar/Inativar">⏻</button>`:''}
+        ${u.tipo!=='master' && isMaster()? `<button class="icon-btn danger" onclick="excluirUsuario('${u.id}','${escapeHtml(u.nome)}')" title="Excluir">🗑</button>`:''}
       </div></td>
     </tr>`).join('');
+}
+async function excluirUsuario(id, nome){
+  if(!confirm('Excluir definitivamente "'+nome+'"? Essa ação não pode ser desfeita.')) return;
+  try{
+    await apiFetch('/api/usuarios/'+id, { method:'DELETE' });
+    DB.usuarios = await apiFetch('/api/usuarios');
+    renderUsuarios(); showToast('Usuário excluído.');
+  }catch(e){ showToast(e.message || 'Não foi possível excluir o usuário.'); }
 }
 
 /* ============================================================
@@ -1207,7 +1216,7 @@ function associadoOptionsProc(selected){
 }
 function podeDefinirHonorario(){ return isMaster()||isSocio()||isAssociado(); }
 function splitLabel(tipo){
-  return {associado_70_30:'Profissional 70% / Escritório 30%', associado_60_40:'Profissional 60% / Escritório 40%', associado_50_50:'Profissional 50% / Escritório 50%', associado_50_socio_30_escritorio_20:'Profissional 50% / Sócio 30% / Escritório 20%', dois_associados_50_50:'Dois profissionais, 50% / 50% (sem passar pelo escritório)', nenhum:'Integral ao escritório'}[tipo] || '—';
+  return {associado_70_30:'Profissional(is) 70% / Escritório 30%', associado_60_40:'Profissional(is) 60% / Escritório 40%', associado_50_50:'Profissional(is) 50% / Escritório 50%', associado_50_socio_30_escritorio_20:'Profissional(is) 50% / Sócio 30% / Escritório 20%', dois_associados_50_50:'Profissionais dividem 100% igualmente', nenhum:'Integral ao escritório'}[tipo] || '—';
 }
 function dispararImpressao(){
   const tituloOriginal = document.title;
@@ -1240,26 +1249,55 @@ function filtrarTiposAcao(){
     btn.style.display = btn.textContent.toLowerCase().includes(q) ? 'inline-block' : 'none';
   });
 }
+function idsProfissionaisRegistro(r){
+  if(Array.isArray(r.profissionaisIds) && r.profissionaisIds.length) return r.profissionaisIds;
+  const arr=[]; if(r.associadoId) arr.push(r.associadoId); if(r.associadoId2) arr.push(r.associadoId2);
+  return arr;
+}
+function nomesProfissionais(r){
+  const ids = idsProfissionaisRegistro(r);
+  return ids.length? ids.map(id=>usuarioNome(id)).join(', ') : 'Escritório';
+}
+function profissionaisSelecaoHtml(idsSelecionados){
+  idsSelecionados = idsSelecionados || [];
+  if(isAssociado()){
+    const socios = DB.usuarios.filter(u=>u.tipo==='socio');
+    const socioSelecionado = socios.find(u=>idsSelecionados.includes(u.id));
+    return `<div class="hint" style="margin-bottom:6px;">Você já entra automaticamente como profissional deste processo. Se quiser, escolha também 1 sócio para dividir com você.</div>
+      <div class="radio-group">
+        <label class="radio-opt"><input type="radio" name="pf-prof-socio" value="" ${!socioSelecionado?'checked':''}> Nenhum sócio adicional</label>
+        ${socios.map(u=>`<label class="radio-opt"><input type="radio" name="pf-prof-socio" value="${u.id}" ${socioSelecionado&&socioSelecionado.id===u.id?'checked':''}> ${escapeHtml(u.nome)}</label>`).join('')}
+      </div>`;
+  }
+  const socios = DB.usuarios.filter(u=>u.tipo==='socio');
+  const associados = DB.usuarios.filter(u=>u.tipo==='associado');
+  const grupo = (titulo, lista) => lista.length? `<div style="margin-top:8px;"><strong style="font-size:11.5px; color:var(--ink-soft);">${titulo}</strong><div class="pill-select" style="margin-top:4px;">${lista.map(u=>`<label class="radio-opt" style="border:1px solid var(--line); border-radius:20px; padding:4px 10px;"><input type="checkbox" class="pf-prof-chk" value="${u.id}" ${idsSelecionados.includes(u.id)?'checked':''}> ${escapeHtml(u.nome)}</label>`).join('')}</div></div>` : '';
+  return `<div class="hint" style="margin-bottom:4px;">Selecione quantos profissionais quiser — o percentual desta seção será dividido igualmente entre eles.</div>` + grupo('Sócios', socios) + grupo('Associados', associados);
+}
+function lerProfissionaisSelecionados(){
+  if(isAssociado()){
+    const radio = document.querySelector('input[name="pf-prof-socio"]:checked');
+    const ids = [CURRENT_USER.id];
+    if(radio && radio.value) ids.push(radio.value);
+    return ids;
+  }
+  return Array.from(document.querySelectorAll('.pf-prof-chk:checked')).map(el=>el.value);
+}
 function openProcessoForm(id){
-  const p = id ? DB.processos.find(x=>x.id===id) : {numero:'',clienteId:'',tipo:'',vara:'',status:'andamento',obs:'', associadoId:'', associadoId2:'', splitTipo:'nenhum', honorarioValor:'', formaPagamento:'avista_dinheiro'};
+  const p = id ? DB.processos.find(x=>x.id===id) : {numero:'',clienteId:'',tipo:'',vara:'',status:'andamento',obs:'', profissionaisIds:[], splitTipo:'nenhum', honorarioValor:'', formaPagamento:'avista_dinheiro'};
   const honorarioExistente = id ? DB.honorarios.find(h=>h.processoId===id && h.origemProcesso) : null;
+  const idsAtuais = idsProfissionaisRegistro(p);
   const honorarioSecao = podeDefinirHonorario() ? `
     <fieldset><legend>Honorários e vínculo</legend>
-      <div class="field-row">
-        <div class="field"><label>Profissional vinculado (sócio ou associado)</label><select id="pf-associado" onchange="atualizarPreviewPagamentoProcesso()">${associadoOptionsProc(p.associadoId)}</select></div>
-        <div class="field"><label>Tipo de vínculo (split)</label><select id="pf-split" onchange="atualizarPreviewPagamentoProcesso()">
+      <div class="field"><label>Tipo de vínculo (split)</label><select id="pf-split" onchange="atualizarPreviewPagamentoProcesso()">
           <option value="nenhum" ${p.splitTipo==='nenhum'?'selected':''}>Integral ao escritório</option>
-          <option value="associado_70_30" ${p.splitTipo==='associado_70_30'?'selected':''}>Profissional 70% / Escritório 30%</option>
-          <option value="associado_60_40" ${p.splitTipo==='associado_60_40'?'selected':''}>Profissional 60% / Escritório 40%</option>
-          <option value="associado_50_50" ${p.splitTipo==='associado_50_50'?'selected':''}>Profissional 50% / Escritório 50%</option>
-          <option value="associado_50_socio_30_escritorio_20" ${p.splitTipo==='associado_50_socio_30_escritorio_20'?'selected':''}>Profissional 50% / Sócio 30% / Escritório 20%</option>
-          <option value="dois_associados_50_50" ${p.splitTipo==='dois_associados_50_50'?'selected':''}>Dois profissionais, 50% / 50% (sem passar pelo escritório)</option>
-        </select></div>
-      </div>
-      <div class="field" id="pf-associado2-box" style="display:${p.splitTipo==='dois_associados_50_50'?'block':'none'};">
-        <label>Segundo profissional (divide 50/50 com o primeiro, direto)</label>
-        <select id="pf-associado2">${associadoOptionsProc(p.associadoId2)}</select>
-      </div>
+          <option value="associado_70_30" ${p.splitTipo==='associado_70_30'?'selected':''}>Profissional(is) 70% / Escritório 30%</option>
+          <option value="associado_60_40" ${p.splitTipo==='associado_60_40'?'selected':''}>Profissional(is) 60% / Escritório 40%</option>
+          <option value="associado_50_50" ${p.splitTipo==='associado_50_50'?'selected':''}>Profissional(is) 50% / Escritório 50%</option>
+          <option value="associado_50_socio_30_escritorio_20" ${p.splitTipo==='associado_50_socio_30_escritorio_20'?'selected':''}>Profissional(is) 50% / Sócio 30% / Escritório 20%</option>
+          <option value="dois_associados_50_50" ${p.splitTipo==='dois_associados_50_50'?'selected':''}>Profissionais selecionados dividem 100% igualmente</option>
+      </select></div>
+      <div class="field" id="pf-profissionais-box"><label>Profissional(is) vinculado(s)</label>${profissionaisSelecaoHtml(idsAtuais)}</div>
       <div class="field"><label>Valor do honorário</label><input type="number" step="0.01" id="pf-valor" value="${p.honorarioValor}" oninput="atualizarPreviewPagamentoProcesso()"></div>
       <div class="field"><label>Forma de pagamento</label><select id="pf-forma" onchange="atualizarPreviewPagamentoProcesso()">
         <option value="avista_dinheiro" ${p.formaPagamento==='avista_dinheiro'?'selected':''}>À vista (dinheiro/PIX)</option>
@@ -1298,9 +1336,9 @@ function openProcessoForm(id){
     let honorarioPayload = null;
     if(podeDefinirHonorario()){
       const valor = parseFloat(document.getElementById('pf-valor').value)||0;
-      data.associadoId = document.getElementById('pf-associado').value;
       data.splitTipo = document.getElementById('pf-split').value;
-      data.associadoId2 = data.splitTipo==='dois_associados_50_50' ? document.getElementById('pf-associado2').value : '';
+      data.profissionaisIds = data.splitTipo==='nenhum' ? [] : lerProfissionaisSelecionados();
+      data.associadoId = data.profissionaisIds[0] || ''; data.associadoId2 = data.profissionaisIds[1] || ''; // compatibilidade com registros antigos
       data.honorarioValor = valor;
       data.formaPagamento = document.getElementById('pf-forma').value;
       if(valor>0){ honorarioPayload = montarHonorarioDoProcesso(data, honorarioExistente); }
@@ -1330,7 +1368,7 @@ function openProcessoForm(id){
 }
 function montarHonorarioDoProcesso(data, honorarioExistente){
   const descricao = 'Honorários — '+(data.tipo||'processo '+data.numero);
-  const base = { descricao, valorTotal:data.honorarioValor, associadoId:data.associadoId||null, associadoId2:data.associadoId2||null, splitTipo:data.splitTipo, repasseStatus:'pendente', repasseConfirmadoEm:null };
+  const base = { descricao, valorTotal:data.honorarioValor, profissionaisIds:data.profissionaisIds||[], associadoId:data.associadoId||null, associadoId2:data.associadoId2||null, splitTipo:data.splitTipo, repasseStatus:'pendente', repasseConfirmadoEm:null };
   let novoHonorario;
   if(data.formaPagamento==='avista_dinheiro'){
     novoHonorario = { ...base, forma:'avista', avistaStatus:'pendente', avistaPagoEm:null, parcelas:[] };
@@ -1361,7 +1399,8 @@ function montarHonorarioDoProcesso(data, honorarioExistente){
   return novoHonorario;
 }
 function atualizarPreviewPagamentoProcesso(honorarioExistente){
-  document.getElementById('pf-associado2-box').style.display = document.getElementById('pf-split').value==='dois_associados_50_50' ? 'block':'none';
+  const profBox = document.getElementById('pf-profissionais-box');
+  if(profBox) profBox.style.display = document.getElementById('pf-split').value==='nenhum' ? 'none' : 'block';
   const forma = document.getElementById('pf-forma').value;
   const box = document.getElementById('pf-pagamento-detalhe');
   const valor = parseFloat(document.getElementById('pf-valor').value)||0;
@@ -1460,7 +1499,7 @@ function renderProcessos(){
     <tr>
       <td><strong style="cursor:pointer;" onclick="consultarUltimaMovimentacao('${escapeHtml(p.numero)}')" title="Clique para ver a última movimentação">🔍 ${escapeHtml(p.numero)}</strong><br><span style="font-size:11px;color:var(--ink-soft);">${escapeHtml(p.tipo)||''}</span></td>
       <td>${escapeHtml(clienteNome(p.clienteId))}</td>
-      <td>${p.associadoId? escapeHtml(usuarioNome(p.associadoId)) : 'Escritório'}${p.splitTipo && p.splitTipo!=='nenhum'? '<br><span style="font-size:10.5px;color:var(--ink-soft);">'+splitLabel(p.splitTipo)+'</span>':''}</td>
+      <td>${escapeHtml(nomesProfissionais(p))}${p.splitTipo && p.splitTipo!=='nenhum'? '<br><span style="font-size:10.5px;color:var(--ink-soft);">'+splitLabel(p.splitTipo)+'</span>':''}</td>
       <td><span class="tag tag-${p.status}">${statusLabel[p.status]}</span></td>
       <td><div class="row-actions">
         <button class="icon-btn" onclick="openAtualizacaoProcesso('${p.id}')" title="Adicionar andamento">📝</button>
@@ -1703,11 +1742,11 @@ function setFinTab(tab){
 }
 function partesSplit(splitTipo){
   switch(splitTipo){
-    case 'associado_70_30': return {associado:.7, escritorio:.3};
-    case 'associado_60_40': return {associado:.6, escritorio:.4};
-    case 'associado_50_50': return {associado:.5, escritorio:.5};
-    case 'associado_50_socio_30_escritorio_20': return {associado:.5, socio:.3, escritorio:.2};
-    case 'dois_associados_50_50': return {associado:.5, associado2:.5};
+    case 'associado_70_30': return {profissional:.7, escritorio:.3};
+    case 'associado_60_40': return {profissional:.6, escritorio:.4};
+    case 'associado_50_50': return {profissional:.5, escritorio:.5};
+    case 'associado_50_socio_30_escritorio_20': return {profissional:.5, socio:.3, escritorio:.2};
+    case 'dois_associados_50_50': return {profissional:1};
     default: return {escritorio:1};
   }
 }
@@ -1715,9 +1754,17 @@ function valorRecebidoHonorario(h){
   return h.forma==='avista' ? (h.avistaStatus==='pago'? h.valorTotal:0) : (h.parcelas||[]).filter(p=>p.status==='pago').reduce((s,p)=>s+p.valor,0);
 }
 function fracaoEscritorio(h){
-  if(!h.associadoId) return 1;
+  const ids = idsProfissionaisRegistro(h);
+  if(!ids.length) return 1;
   const partes = partesSplit(h.splitTipo);
-  return 1 - (partes.associado||0) - (partes.associado2||0);
+  return 1 - (partes.profissional||0);
+}
+function parteDoProfissional(h, usuarioId){
+  const ids = idsProfissionaisRegistro(h);
+  if(!ids.includes(usuarioId) || ids.length===0) return 0;
+  const partes = partesSplit(h.splitTipo);
+  const recebido = valorRecebidoHonorario(h);
+  return (recebido * (partes.profissional||0)) / ids.length;
 }
 function buildParcelasPreview(total, n, primeiraData){
   if(!total || !n || n<1 || !primeiraData) return [];
@@ -1814,7 +1861,7 @@ function honorarioSituacao(h){
 function meusHonorarios(){
   if(isMaster()||isSocio()) return DB.honorarios;
   const idsClientes = meusClientes().map(c=>c.id);
-  return DB.honorarios.filter(h=> idsClientes.includes(h.clienteId) || h.associadoId===CURRENT_USER.id || h.associadoId2===CURRENT_USER.id);
+  return DB.honorarios.filter(h=> idsClientes.includes(h.clienteId) || idsProfissionaisRegistro(h).includes(CURRENT_USER.id));
 }
 function renderHonorariosTable(){
   const tbody = document.getElementById('tbl-honorarios'); if(!tbody) return;
@@ -1832,7 +1879,7 @@ function renderHonorariosTable(){
       detalhe = `<div style="margin-top:6px;">` + h.parcelas.map(p=>`<div style="display:flex; align-items:center; gap:8px; font-size:11.5px; padding:3px 0;"><span class="tag tag-${p.status}" style="cursor:pointer;" onclick="markParcelaPaga('${h.id}','${p.id}')">${p.status==='pago'?'Pago':'Pendente'}</span><span>Parcela ${p.numero} — ${fmtDate(p.vencimento)} — ${fmtMoney(p.valor)}</span>${p.status==='pago'? `<button class="icon-btn btn-sm" onclick="imprimirRecibo('${h.id}','${p.id}')" title="Imprimir recibo desta parcela">🧾</button><button class="icon-btn btn-sm" onclick="baixarReciboWord('${h.id}','${p.id}')" title="Baixar recibo em Word">📥</button>`:''}</div>`).join('') + `</div>`;
     }
     return `<tr>
-      <td><strong>${escapeHtml(clienteNome(h.clienteId))}</strong>${h.processoId? '<br><span style="font-size:11.5px;color:var(--ink-soft);">'+escapeHtml(processoLabel(h.processoId)||'')+'</span>':''}${h.associadoId? '<br><span style="font-size:10.5px;color:var(--gold-dark);">'+escapeHtml(usuarioNome(h.associadoId))+' · '+splitLabel(h.splitTipo)+'</span>':''}</td>
+      <td><strong>${escapeHtml(clienteNome(h.clienteId))}</strong>${h.processoId? '<br><span style="font-size:11.5px;color:var(--ink-soft);">'+escapeHtml(processoLabel(h.processoId)||'')+'</span>':''}${idsProfissionaisRegistro(h).length? '<br><span style="font-size:10.5px;color:var(--gold-dark);">'+escapeHtml(nomesProfissionais(h))+' · '+splitLabel(h.splitTipo)+'</span>':''}</td>
       <td>${escapeHtml(h.descricao)||'—'}${detalhe}</td>
       <td><strong>${fmtMoney(h.valorTotal)}</strong></td>
       <td>${formaLabel[h.forma]||h.forma}${h.parcelas&&h.parcelas.length? ' ('+h.parcelas.length+'x)':''}</td>
@@ -1941,19 +1988,19 @@ async function confirmarRepasse(honId){
 }
 function renderRepasses(){
   const box = document.getElementById('fin-repasses');
-  const relevantes = meusHonorarios().filter(h=>h.associadoId);
+  const relevantes = meusHonorarios().filter(h=>idsProfissionaisRegistro(h).length);
   if(relevantes.length===0){ box.innerHTML = `<div class="empty">Nenhum processo com profissional vinculado ainda.</div>`; return; }
   box.innerHTML = relevantes.map(h=>{
-    const partes = partesSplit(h.splitTipo);
+    const ids = idsProfissionaisRegistro(h);
     const recebido = valorRecebidoHonorario(h);
-    const parteAssociado = recebido*(partes.associado||0);
-    const parteEscritorio = recebido*((partes.escritorio||0)+(partes.socio||0));
-    const parteAssociado2 = h.associadoId2 ? recebido*(partes.associado2||0) : 0;
-    const podeConfirmar = isMaster()||isSocio();
+    const partesTexto = ids.map(id=>`${escapeHtml(usuarioNome(id))}: <strong>${fmtMoney(parteDoProfissional(h,id))}</strong>`).join(' · ');
+    // Master/sócio sempre podem confirmar; um associado/sócio vinculado também pode
+    // confirmar o RECEBIMENTO da própria parte (autoatendimento do repasse).
+    const podeConfirmar = isMaster()||isSocio()||ids.includes(CURRENT_USER.id);
     return `<div class="list-row">
       <div><div class="rtitle">${escapeHtml(clienteNome(h.clienteId))} ${h.processoId? '· '+escapeHtml(processoLabel(h.processoId)||''):''}</div>
-      <div class="rsub">${escapeHtml(usuarioNome(h.associadoId))} · ${splitLabel(h.splitTipo)} · recebido do cliente: ${fmtMoney(recebido)}</div>
-      <div class="rsub">Parte do 1º profissional: <strong>${fmtMoney(parteAssociado)}</strong>${h.associadoId2? ' · Parte de '+escapeHtml(usuarioNome(h.associadoId2))+': <strong>'+fmtMoney(parteAssociado2)+'</strong>' : ' · Parte do escritório: '+fmtMoney(parteEscritorio)}</div></div>
+      <div class="rsub">${ids.map(id=>escapeHtml(usuarioNome(id))).join(', ')} · ${splitLabel(h.splitTipo)} · recebido do cliente: ${fmtMoney(recebido)}</div>
+      <div class="rsub">${partesTexto}</div></div>
       <div class="rmeta">
         <span class="tag tag-${h.repasseStatus==='confirmado'?'confirmado':'solicitado'}">${h.repasseStatus==='confirmado'?'Repassado':'Aguardando repasse'}</span>
         ${podeConfirmar? `<br><button class="btn btn-ghost btn-sm" style="margin-top:4px;" onclick="confirmarRepasse('${h.id}')">${h.repasseStatus==='confirmado'?'Desfazer':'Confirmar repasse'}</button>`:''}
@@ -1961,20 +2008,17 @@ function renderRepasses(){
   }).join('');
 }
 function computeAssociadoTotals(){
-  const list = meusHonorarios().filter(h=>h.associadoId===CURRENT_USER.id || h.associadoId2===CURRENT_USER.id);
-  let totalContrato=0, totalRecebidoCliente=0, minhaParteTotal=0, minhaParteRepassada=0, minhaParteAguardando=0, parteEscritorio=0;
+  const list = meusHonorarios().filter(h=>idsProfissionaisRegistro(h).includes(CURRENT_USER.id));
+  let totalContrato=0, totalRecebidoCliente=0, minhaParteTotal=0, minhaParteRepassada=0, minhaParteAguardando=0;
   list.forEach(h=>{
-    const partes = partesSplit(h.splitTipo);
     const recebido = valorRecebidoHonorario(h);
-    const minhaFracao = h.associadoId2===CURRENT_USER.id ? (partes.associado2||0) : (partes.associado||0);
-    const minhaParte = recebido*minhaFracao;
+    const minhaParte = parteDoProfissional(h, CURRENT_USER.id);
     totalContrato += h.valorTotal;
     totalRecebidoCliente += recebido;
     minhaParteTotal += minhaParte;
-    parteEscritorio += recebido*((partes.escritorio||0)+(partes.socio||0));
     if(h.repasseStatus==='confirmado') minhaParteRepassada += minhaParte; else minhaParteAguardando += minhaParte;
   });
-  return {totalContrato, totalRecebidoCliente, minhaParteTotal, minhaParteRepassada, minhaParteAguardando, parteEscritorio, qtd:list.length};
+  return {totalContrato, totalRecebidoCliente, minhaParteTotal, minhaParteRepassada, minhaParteAguardando, qtd:list.length};
 }
 function renderFinanceiro(){
   const kpiGrid = document.getElementById('fin-kpi-grid'); if(!kpiGrid) return;
@@ -2030,21 +2074,20 @@ function imprimirRelatorioFinanceiro(periodo){
   let resumoHtml, listaHtml;
   if(isAssociado()){
     const a = computeAssociadoTotals();
-    const meusRelevantes = meusHonorarios().filter(h=>h.associadoId===CURRENT_USER.id || h.associadoId2===CURRENT_USER.id);
+    const meusRelevantes = meusHonorarios().filter(h=>idsProfissionaisRegistro(h).includes(CURRENT_USER.id));
     resumoHtml = `<p><strong>Total dos contratos fechados:</strong> ${fmtMoney(a.totalContrato)} &nbsp;|&nbsp; <strong>Recebido dos clientes:</strong> ${fmtMoney(a.totalRecebidoCliente)}</p>
       <p><strong>Sua parte já repassada a você:</strong> ${fmtMoney(a.minhaParteRepassada)} &nbsp;|&nbsp; <strong>Sua parte aguardando repasse:</strong> ${fmtMoney(a.minhaParteAguardando)}</p>`;
     listaHtml = `<p><strong>Detalhamento por processo:</strong></p><ul>${meusRelevantes.map(h=>{
-      const partes=partesSplit(h.splitTipo); const recebido=valorRecebidoHonorario(h);
-      const minhaFracao = h.associadoId2===CURRENT_USER.id ? (partes.associado2||0) : (partes.associado||0);
-      const minhaParte=recebido*minhaFracao;
+      const recebido=valorRecebidoHonorario(h);
+      const minhaParte=parteDoProfissional(h, CURRENT_USER.id);
       return `<li>${escapeHtml(clienteNome(h.clienteId))}${h.processoId? ' — '+escapeHtml(processoLabel(h.processoId)||''):''}: contrato ${fmtMoney(h.valorTotal)}, recebido do cliente ${fmtMoney(recebido)}, sua parte ${fmtMoney(minhaParte)} (${h.repasseStatus==='confirmado'?'repassado a você':'aguardando repasse'})</li>`;
     }).join('') || '<li>Nenhum processo vinculado a você ainda.</li>'}</ul>`;
   } else {
-    const relevantes = meusHonorarios().filter(h=>h.associadoId);
+    const relevantes = meusHonorarios().filter(h=>idsProfissionaisRegistro(h).length);
     resumoHtml = `<p><strong>Recebido no período${podeVerCaixa?' (parte do escritório)':''}:</strong> ${fmtMoney(s.recebidoPeriodo)} ${podeVerCaixa? '&nbsp;|&nbsp; <strong>Despesas no período:</strong> '+fmtMoney(s.despesasPeriodo)+' &nbsp;|&nbsp; <strong>Saldo do período:</strong> '+fmtMoney(s.saldoPeriodo):''}</p>
       ${podeVerCaixa? `<p><strong>Caixa acumulado do escritório:</strong> ${fmtMoney(s.caixaAcumulado)}</p>`:''}`;
     listaHtml = `<p><strong>Repasses por processo:</strong></p>
-    <ul>${relevantes.map(h=>{ const partes=partesSplit(h.splitTipo); const recebido=valorRecebidoHonorario(h); return `<li>${escapeHtml(clienteNome(h.clienteId))} — ${escapeHtml(usuarioNome(h.associadoId))}: ${fmtMoney(recebido*(partes.associado||0))} (${h.repasseStatus==='confirmado'?'repassado':'aguardando repasse'})</li>`; }).join('') || '<li>Nenhum processo com associado vinculado.</li>'}</ul>`;
+    <ul>${relevantes.map(h=>{ const recebido=valorRecebidoHonorario(h); const ids=idsProfissionaisRegistro(h); const partesTexto=ids.map(id=>escapeHtml(usuarioNome(id))+': '+fmtMoney(parteDoProfissional(h,id))).join(' · '); return `<li>${escapeHtml(clienteNome(h.clienteId))} — ${partesTexto} (${h.repasseStatus==='confirmado'?'repassado':'aguardando repasse'})</li>`; }).join('') || '<li>Nenhum processo com profissional vinculado.</li>'}</ul>`;
   }
   const body = `<h2>RELATÓRIO FINANCEIRO</h2>
     <p>Período: ${fmtDate(periodo.inicio)} a ${fmtDate(periodo.fim)}. Emitido em ${fmtDateExtenso(todayISO())} por ${escapeHtml(CURRENT_USER.nome)}.</p>

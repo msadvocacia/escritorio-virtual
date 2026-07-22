@@ -10,6 +10,18 @@ function isCliente(user) { return user && user.tipo === 'cliente'; }
 function isStaff(user) { return isMaster(user) || isSocio(user) || isAssociado(user); }
 function podeVerCaixa(user) { return isMaster(user) || isSocio(user); }
 
+// Lê os profissionais vinculados a um processo/honorário, com compatibilidade
+// para registros antigos que usavam associadoId/associadoId2 (no máximo 2 pessoas).
+function idsProfissionaisDoRegistro(registro) {
+  if (Array.isArray(registro.profissionaisIds) && registro.profissionaisIds.length) {
+    return registro.profissionaisIds;
+  }
+  const arr = [];
+  if (registro.associadoId) arr.push(registro.associadoId);
+  if (registro.associadoId2) arr.push(registro.associadoId2);
+  return arr;
+}
+
 // Remove sempre o hash de senha antes de qualquer envio ao cliente.
 function semSenha(usuario) {
   if (!usuario) return usuario;
@@ -31,7 +43,7 @@ function processosVisiveis(user, processos, clientes) {
   if (isMaster(user) || isSocio(user)) return processos;
   if (isAssociado(user)) {
     const idsClientes = idsClientesDoUsuario(user, clientes);
-    return processos.filter((p) => p.associadoId === user.id || p.associadoId2 === user.id || idsClientes.includes(p.clienteId));
+    return processos.filter((p) => idsProfissionaisDoRegistro(p).includes(user.id) || idsClientes.includes(p.clienteId));
   }
   if (isCliente(user)) {
     return processos.filter((p) => p.clienteId === user.clienteId);
@@ -43,7 +55,7 @@ function honorariosVisiveis(user, honorarios, clientes) {
   if (isMaster(user) || isSocio(user)) return honorarios;
   if (isAssociado(user)) {
     const idsClientes = idsClientesDoUsuario(user, clientes);
-    return honorarios.filter((h) => idsClientes.includes(h.clienteId) || h.associadoId === user.id || h.associadoId2 === user.id);
+    return honorarios.filter((h) => idsClientes.includes(h.clienteId) || idsProfissionaisDoRegistro(h).includes(user.id));
   }
   if (isCliente(user)) {
     return honorarios.filter((h) => h.clienteId === user.clienteId);

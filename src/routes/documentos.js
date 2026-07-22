@@ -118,7 +118,7 @@ router.post('/recibo', requireAuth, async (req, res) => {
   if (isAssociado(req.user)) {
     const clientes = await getCollection('clientes', []);
     const idsClientes = clientes.filter((c) => c.vinculoId === req.user.id).map((c) => c.id);
-    if (h.associadoId !== req.user.id && !idsClientes.includes(h.clienteId)) {
+    if (!F.idsProfissionais(h).includes(req.user.id) && !idsClientes.includes(h.clienteId)) {
       return res.status(403).json({ erro: 'Você não tem acesso a este honorário.' });
     }
   } else if (isCliente(req.user)) {
@@ -175,7 +175,7 @@ router.post('/relatorio', requireAuth, async (req, res) => {
     honorarios = todosHonorarios;
   } else if (isAssociado(req.user)) {
     const idsClientes = clientes.filter((c) => c.vinculoId === req.user.id).map((c) => c.id);
-    honorarios = todosHonorarios.filter((h) => h.associadoId === req.user.id || h.associadoId2 === req.user.id || idsClientes.includes(h.clienteId));
+    honorarios = todosHonorarios.filter((h) => F.idsProfissionais(h).includes(req.user.id) || idsClientes.includes(h.clienteId));
   } else {
     return res.status(403).json({ erro: 'Perfil sem acesso a relatórios financeiros.' });
   }
@@ -194,17 +194,13 @@ router.post('/relatorio', requireAuth, async (req, res) => {
     const usuarios = await getCollection('usuarios', []);
     const nomeAdv = (id) => { const u = usuarios.find((x) => x.id === id); return u ? u.nome : '—'; };
     const nomeCli = (id) => { const c = clientes.find((x) => x.id === id); return c ? c.nome : '—'; };
-    itensRepasse = honorarios.filter((h) => h.associadoId).map((h) => {
-      const partes = F.partesSplit(h.splitTipo);
-      const recebido = F.valorRecebidoHonorario(h);
-      let texto = `${nomeCli(h.clienteId)} — ${nomeAdv(h.associadoId)}: ${T.fmtMoney(recebido * (partes.associado || 0))} (${h.repasseStatus === 'confirmado' ? 'repassado' : 'aguardando repasse'})`;
-      if (h.associadoId2) {
-        texto += ` · ${nomeAdv(h.associadoId2)}: ${T.fmtMoney(recebido * (partes.associado2 || 0))} (${h.repasseStatus === 'confirmado' ? 'repassado' : 'aguardando repasse'})`;
-      }
-      return { texto };
+    itensRepasse = honorarios.filter((h) => F.idsProfissionais(h).length).map((h) => {
+      const ids = F.idsProfissionais(h);
+      const partesTexto = ids.map((id) => `${nomeAdv(id)}: ${T.fmtMoney(F.parteDoProfissional(h, id))}`).join(' · ');
+      return { texto: `${nomeCli(h.clienteId)} — ${partesTexto} (${h.repasseStatus === 'confirmado' ? 'repassado' : 'aguardando repasse'})` };
     });
   } else {
-    const meusHonorarios = honorarios.filter((h) => h.associadoId === req.user.id || h.associadoId2 === req.user.id);
+    const meusHonorarios = honorarios.filter((h) => F.idsProfissionais(h).includes(req.user.id));
     const t = F.totaisAssociado(meusHonorarios, req.user.id);
     resumoLinhas = [
       { texto: `Total dos contratos fechados: ${T.fmtMoney(t.totalContrato)}` },
@@ -216,10 +212,8 @@ router.post('/relatorio', requireAuth, async (req, res) => {
     const nomeCli = (id) => { const c = clientes.find((x) => x.id === id); return c ? c.nome : '—'; };
     const numProc = (id) => { const p = processos.find((x) => x.id === id); return p ? p.numero : ''; };
     itensRepasse = meusHonorarios.map((h) => {
-      const partes = F.partesSplit(h.splitTipo);
+      const minhaParte = F.parteDoProfissional(h, req.user.id);
       const recebido = F.valorRecebidoHonorario(h);
-      const minhaFracao = h.associadoId2 === req.user.id ? (partes.associado2 || 0) : (partes.associado || 0);
-      const minhaParte = recebido * minhaFracao;
       return { texto: `${nomeCli(h.clienteId)}${h.processoId ? ' — ' + numProc(h.processoId) : ''}: contrato ${T.fmtMoney(h.valorTotal)}, recebido ${T.fmtMoney(recebido)}, sua parte ${T.fmtMoney(minhaParte)} (${h.repasseStatus === 'confirmado' ? 'repassado' : 'aguardando repasse'})` };
     });
   }

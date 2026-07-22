@@ -18,6 +18,17 @@ router.get('/', requireAuth, requireRole('master', 'socio'), async (req, res) =>
   res.json(usuariosVisiveis(req.user, visiveis));
 });
 
+// Lista "básica" (só id/nome/tipo/oab/ativo, sem nenhum dado sensível) de sócios e
+// associados — acessível a QUALQUER usuário autenticado (inclusive associado),
+// para popular seletores como "profissional vinculado" no cadastro de processo.
+router.get('/basico', requireAuth, async (req, res) => {
+  const usuarios = await getCollection('usuarios', []);
+  const lista = usuarios
+    .filter((u) => (u.tipo === 'socio' || u.tipo === 'associado') && u.ativo !== false)
+    .map((u) => ({ id: u.id, nome: u.nome, tipo: u.tipo, oab: u.oab || '' }));
+  res.json(lista);
+});
+
 // Cria sócio (só master) ou associado (master ou sócio)
 router.post('/', requireAuth, requireRole('master', 'socio'), async (req, res) => {
   const { nome, tipo, login, senha, oab, nacionalidade, estadoCivil, rg, cpf, telefone, endereco, ativo } = req.body || {};
@@ -92,6 +103,23 @@ router.post('/:id/toggle-ativo', requireAuth, requireRole('master', 'socio'), as
   usuario.ativo = usuario.ativo === false ? true : false;
   await setCollection('usuarios', usuarios);
   res.json({ ativo: usuario.ativo });
+});
+
+// Exclui QUALQUER usuário (cliente, associado ou sócio) — exclusivo do administrador master.
+router.delete('/:id', requireAuth, requireRole('master'), async (req, res) => {
+  const usuarios = await getCollection('usuarios', []);
+  const usuario = usuarios.find((u) => u.id === req.params.id);
+  if (!usuario) return res.status(404).json({ erro: 'Usuário não encontrado.' });
+  if (usuario.tipo === 'master') return res.status(403).json({ erro: 'O administrador master não pode ser excluído.' });
+
+  await setCollection('usuarios', usuarios.filter((u) => u.id !== req.params.id));
+
+  // Se for um usuário do tipo cliente, remove também o cadastro correspondente na coleção de clientes.
+  if (usuario.tipo === 'cliente' && usuario.clienteId) {
+    const clientes = await getCollection('clientes', []);
+    await setCollection('clientes', clientes.filter((c) => c.id !== usuario.clienteId));
+  }
+  res.json({ ok: true });
 });
 
 module.exports = router;
