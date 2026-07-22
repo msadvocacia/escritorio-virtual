@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: ms-advocacia-server
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: MASTER_SENHA_INICIAL
+        value: master123
+      - key: CORS_ORIGIN
+        value: "*"
