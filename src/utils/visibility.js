@@ -86,7 +86,12 @@ function audienciasVisiveis(user, audiencias, processos, clientes) {
 }
 
 function lembretesVisiveis(user, lembretes) {
-  if (isStaff(user)) return lembretes;
+  if (isMaster(user)) return lembretes;
+  if (isStaff(user)) {
+    return lembretes.filter((l) =>
+      !l.visivelPara || l.visivelPara.length === 0 || l.visivelPara.includes(user.id) || l.criadoPor === user.id
+    );
+  }
   return [];
 }
 

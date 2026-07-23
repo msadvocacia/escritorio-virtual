@@ -14,7 +14,7 @@ services:
         value: master123
       - key: CORS_ORIGIN
         value: "*"
-      - key: DATAJUD_PUBLIC_KEY
-        value: "cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw=="
+      - key: BUSCAPROCESSOS_API_KEY
+        sync: false
       - key: GEMINI_API_KEY
         sync: false

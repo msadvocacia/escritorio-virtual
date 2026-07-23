@@ -52,7 +52,7 @@ const PREDICADOS = {
   },
   honorarios: (user, ctx) => (registro) => idsProfissionaisDoRegistro(registro).includes(user.id) || (ctx.clientesIds || []).includes(registro.clienteId),
   despesas: () => () => false, // apenas master/sócio
-  lembretes: (user) => () => !isCliente(user), // qualquer membro da equipe pode mexer (lista compartilhada)
+  lembretes: (user) => (registro) => !isCliente(user) && (!registro.visivelPara || registro.visivelPara.length === 0 || registro.visivelPara.includes(user.id) || registro.criadoPor === user.id),
   disponibilidades: (user) => (registro) => registro.usuarioId === user.id,
   agendamentos: (user) => (registro) => {
     if (isCliente(user)) return registro.clienteId === user.clienteId;

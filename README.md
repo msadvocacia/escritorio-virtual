@@ -254,6 +254,103 @@ Encontrei e corrigi os seguintes problemas reportados, todos testados de ponta a
   continuam só com o administrador ou sócio, como pedido.
 
 
+## 13. Atualização: Codilo no lugar do Datajud, lembretes seletivos e consulta restrita ao cliente
+
+### ⚠️ Aviso importante antes de subir esta atualização
+
+Vocês me contaram que já substituíram o Gemini pelo **Groq** diretamente no arquivo
+`src/utils/gemini.js` (ou onde quer que tenham feito essa troca) e que está
+funcionando. **Eu não mexi nesse arquivo nesta atualização.** Mas se vocês forem
+substituir TODOS os arquivos do zip de uma vez no GitHub, tomem cuidado para não
+sobrescrever o arquivo de vocês (com o Groq já configurado) pelo meu (que ainda
+referencia o Gemini/`gemini-flash-latest`). Se não tiverem certeza, me avisem
+qual é o nome exato do arquivo que vocês editaram, que eu confirmo.
+
+**Arquivos que mudaram nesta atualização** (atualize só estes, se quiser ser mais seguro):
+- `src/utils/codilo.js` (novo)
+- `src/routes/processoConsulta.js`
+- `src/utils/visibility.js`
+- `src/utils/merge.js`
+- `.env.example`, `render.yaml`
+- `public/index.html`
+
+### O que mudou
+
+1. **Datajud → Codilo**: a busca de andamentos agora usa a API paga da Codilo, que
+   entrega o texto completo (não só metadados resumidos). Implementei com base na
+   documentação oficial deles (docs.codilo.com.br): autenticação OAuth2 (client
+   credentials), resolução automática de tribunal/plataforma via o endpoint
+   `/available` da própria Codilo (evita eu manter uma tabela fixa que ficaria
+   desatualizada), criação da consulta e espera pelo resultado (a consulta da
+   Codilo é assíncrona — meu código aguarda automaticamente até uns 30 segundos).
+   Testei esse fluxo inteiro simulando as respostas da Codilo (autenticação,
+   abrangência, criação, resultado) — funcionou corretamente, inclusive escolhendo
+   a movimentação mais recente e extraindo o texto completo mesmo quando simulei
+   um formato de campo diferente do esperado.
+
+   **Onde configurar**: adicione `CODILO_CLIENT_ID` e `CODILO_CLIENT_SECRET` nas
+   variáveis de ambiente do Render, assim que o token de homologação chegar no
+   e-mail de vocês.
+
+   **Não testei com credenciais e processos reais** (não tenho acesso a elas) —
+   testei toda a lógica com respostas simuladas da API. O primeiro uso real pode
+   revelar necessidade de ajuste fino no nome exato dos campos de cada tribunal
+   dentro de um "step" (andamento), já que isso pode variar por plataforma
+   (ESAJ, PJe, Eproc, etc.) — se algum andamento aparecer estranho ou incompleto,
+   me mande o retorno bruto da Codilo para eu ajustar a extração.
+
+2. **Consulta de processos restrita ao perfil do cliente**: removi o clique nos
+   números de processo da tela interna "Processos" (equipe) — agora só existe na
+   tela "Meus processos" do cliente. Também bloqueei a rota no servidor para
+   qualquer perfil que não seja cliente, então mesmo que alguém tente pela tela
+   de programador (F12), não consome crédito da Codilo.
+
+3. **Lembretes com visibilidade seletiva**: ao criar um prazo (ou um lembrete
+   avulso), sócio/associado agora escolhem para quais colegas específicos aquele
+   lembrete deve aparecer. Deixando todo mundo desmarcado, continua visível para
+   a equipe inteira (comportamento de antes, preservado). O administrador master
+   sempre vê todos os lembretes, independentemente da seleção.
+
+
+
+## 14. Codilo descontinuada → trocado para BuscaProcessos
+
+A Codilo saiu do ar, então troquei de novo — desta vez para a **BuscaProcessos**
+(docs.buscaprocessos.app.br), com base na documentação técnica oficial deles.
+
+### Boa notícia: essa integração ficou mais simples que a da Codilo
+
+A BuscaProcessos identifica o tribunal automaticamente a partir do próprio número
+CNJ — não preciso mais resolver "qual tribunal/plataforma" no meu código. A
+autenticação também é mais simples: só uma chave fixa no cabeçalho da requisição
+(sem OAuth2 com token expirando). Isso deixa a integração mais enxuta e com
+menos pontos de falha.
+
+**O que fiz:**
+- Criei `src/utils/buscaprocessos.js`, chamando `GET /v1/processos/cnj/{cnj}/movimentacoes`.
+- Tratei as mensagens de erro específicas da BuscaProcessos (créditos insuficientes,
+  chave inválida, processo não encontrado, limite de requisições) com avisos
+  em português, amigáveis para o cliente que for ver a tela.
+- Testei o fluxo inteiro simulando as respostas da API: escolha correta da
+  movimentação mais recente entre várias, formatação correta do número CNJ,
+  cabeçalho de autenticação correto, e cada um dos erros tratados
+  corretamente (inclusive testei via a rota completa do sistema, do login do
+  cliente até o resultado final).
+
+**Onde configurar**: adicione `BUSCAPROCESSOS_API_KEY` nas variáveis de ambiente
+do Render assim que a chave (prefixo `bp_live_...`) sair do painel deles.
+
+**Não testei com créditos e processos reais** — só com respostas simuladas.
+O formato exato dos campos de cada movimentação pode variar um pouco entre
+tribunais; se algum andamento aparecer estranho ou incompleto no primeiro uso
+real, me manda o retorno bruto da BuscaProcessos que eu ajusto a extração.
+
+**Lembrete**: continuo sem mexer no arquivo que faz a explicação em linguagem
+simples (o que está com Groq, funcionando). Só troquei a parte que busca o
+texto da movimentação no tribunal.
+
+
+
 ---
 
 Qualquer erro ao subir, me mostre a mensagem exata que aparece (no Render, aba "Logs")

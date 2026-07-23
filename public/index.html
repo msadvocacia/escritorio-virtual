@@ -1497,7 +1497,7 @@ function renderProcessos(){
   const statusLabel = {andamento:'Em andamento', recurso:'Em recurso', encerrado:'Encerrado'};
   tbody.innerHTML = list.map(p=>`
     <tr>
-      <td><strong style="cursor:pointer;" onclick="consultarUltimaMovimentacao('${escapeHtml(p.numero)}')" title="Clique para ver a última movimentação">🔍 ${escapeHtml(p.numero)}</strong><br><span style="font-size:11px;color:var(--ink-soft);">${escapeHtml(p.tipo)||''}</span></td>
+      <td><strong>${escapeHtml(p.numero)}</strong><br><span style="font-size:11px;color:var(--ink-soft);">${escapeHtml(p.tipo)||''}</span></td>
       <td>${escapeHtml(clienteNome(p.clienteId))}</td>
       <td>${escapeHtml(nomesProfissionais(p))}${p.splitTipo && p.splitTipo!=='nenhum'? '<br><span style="font-size:10.5px;color:var(--ink-soft);">'+splitLabel(p.splitTipo)+'</span>':''}</td>
       <td><span class="tag tag-${p.status}">${statusLabel[p.status]}</span></td>
@@ -1536,8 +1536,17 @@ function calcularVencimentoPrazo(){
   document.getElementById('prf-venc').value = vencimento;
   showToast('Vencimento calculado: '+fmtDate(vencimento));
 }
+function visibilidadeSelecaoHtml(idsSelecionados){
+  idsSelecionados = idsSelecionados || [];
+  const staff = DB.usuarios.filter(u=>u.tipo==='socio'||u.tipo==='associado');
+  return `<div class="hint" style="margin-bottom:4px;">Deixe todos desmarcados para o lembrete ficar visível a toda a equipe. Ou marque quem especificamente deve vê-lo (você, como quem está criando, sempre verá).</div>
+    <div class="pill-select">${staff.map(u=>`<label class="radio-opt" style="border:1px solid var(--line); border-radius:20px; padding:4px 10px;"><input type="checkbox" class="prf-vis-chk" value="${u.id}" ${idsSelecionados.includes(u.id)?'checked':''}> ${escapeHtml(u.nome)}</label>`).join('')}</div>`;
+}
+function lerVisibilidadeSelecionada(classe){
+  return Array.from(document.querySelectorAll('.'+classe+':checked')).map(el=>el.value);
+}
 function openPrazoForm(id){
-  const pr = id ? DB.prazos.find(x=>x.id===id) : {descricao:'',processoId:'',vencimento:todayISO(),prioridade:'media',status:'pendente',obs:'',alertaDias:3};
+  const pr = id ? DB.prazos.find(x=>x.id===id) : {descricao:'',processoId:'',vencimento:todayISO(),prioridade:'media',status:'pendente',obs:'',alertaDias:3,visivelPara:[]};
   const body = `
     <div class="field"><label>Descrição do prazo</label><input id="prf-desc" value="${escapeHtml(pr.descricao)}" placeholder="Ex: Contestação, Recurso, Audiência"></div>
     <div class="field"><label>Processo vinculado</label><select id="prf-processo">${processoOptionsPrazo(pr.processoId)}</select></div>
@@ -1559,20 +1568,21 @@ function openPrazoForm(id){
     </div>
     <div class="field"><label>Status</label><select id="prf-status"><option value="pendente" ${pr.status==='pendente'?'selected':''}>Pendente</option><option value="cumprido" ${pr.status==='cumprido'?'selected':''}>Cumprido</option><option value="perdido" ${pr.status==='perdido'?'selected':''}>Perdido</option></select></div>
     <div class="field"><label>Avisar-me quantos dias antes do vencimento?</label><input type="number" min="0" id="prf-alerta" value="${pr.alertaDias!=null?pr.alertaDias:3}"></div>
+    <div class="field"><label>Visível para</label>${visibilidadeSelecaoHtml(pr.visivelPara)}</div>
     <div class="hint">Este prazo cria automaticamente um lembrete na aba Lembretes, na data calculada acima.</div>
     <div class="field"><label>Observações</label><textarea id="prf-obs">${escapeHtml(pr.obs)}</textarea></div>
   `;
   openModal(id? 'Editar prazo' : 'Novo prazo', body, async ()=>{
     const descricao = document.getElementById('prf-desc').value.trim();
     if(!descricao){ showToast('Descreva o prazo.'); return; }
-    const data = { descricao, processoId: document.getElementById('prf-processo').value, vencimento: document.getElementById('prf-venc').value, prioridade: document.getElementById('prf-prior').value, status: document.getElementById('prf-status').value, obs: document.getElementById('prf-obs').value.trim(), alertaDias: parseInt(document.getElementById('prf-alerta').value)||0 };
+    const data = { descricao, processoId: document.getElementById('prf-processo').value, vencimento: document.getElementById('prf-venc').value, prioridade: document.getElementById('prf-prior').value, status: document.getElementById('prf-status').value, obs: document.getElementById('prf-obs').value.trim(), alertaDias: parseInt(document.getElementById('prf-alerta').value)||0, visivelPara: lerVisibilidadeSelecionada('prf-vis-chk') };
     let prazoSalvo;
     try{
       if(id){
-        const atualizado = await persistMutation('prazos', arr=>{ const alvo = arr.find(x=>x.id===id); if(alvo){ Object.assign(alvo, data); prazoSalvo = alvo; } return arr; });
+        await persistMutation('prazos', arr=>{ const alvo = arr.find(x=>x.id===id); if(alvo){ Object.assign(alvo, data); prazoSalvo = alvo; } return arr; });
       } else {
         const novoId = uid();
-        await persistMutation('prazos', arr=>{ prazoSalvo = {id:novoId, ...data}; arr.push(prazoSalvo); return arr; });
+        await persistMutation('prazos', arr=>{ prazoSalvo = {id:novoId, criadoPor:CURRENT_USER.id, ...data}; arr.push(prazoSalvo); return arr; });
       }
       await sincronizarLembretePrazo(prazoSalvo);
       renderPrazos(); renderDashboard(); renderLembretes(); updateNavBadges(); closeModal(); showToast('Prazo salvo e lembrete atualizado.');
@@ -1586,8 +1596,8 @@ async function sincronizarLembretePrazo(pr){
       if(lembrete) lembrete.feito = true;
     } else {
       const dataAlerta = addDaysISO(pr.vencimento, -(pr.alertaDias||0));
-      if(lembrete){ lembrete.titulo = 'Prazo: '+pr.descricao; lembrete.data = dataAlerta; lembrete.feito = false; }
-      else { arr.push({id:uid(), titulo:'Prazo: '+pr.descricao, descricao:'Vencimento em '+fmtDate(pr.vencimento)+'.', data:dataAlerta, feito:false, prazoId:pr.id}); }
+      if(lembrete){ lembrete.titulo = 'Prazo: '+pr.descricao; lembrete.data = dataAlerta; lembrete.feito = false; lembrete.visivelPara = pr.visivelPara||[]; }
+      else { arr.push({id:uid(), titulo:'Prazo: '+pr.descricao, descricao:'Vencimento em '+fmtDate(pr.vencimento)+'.', data:dataAlerta, feito:false, prazoId:pr.id, criadoPor:pr.criadoPor||CURRENT_USER.id, visivelPara:pr.visivelPara||[]}); }
     }
     return arr;
   });
@@ -2280,16 +2290,16 @@ async function consultarUltimaMovimentacao(numero){
    LEMBRETES
    ============================================================ */
 function openLembreteForm(id){
-  const l = id ? DB.lembretes.find(x=>x.id===id) : {titulo:'',descricao:'',data:todayISO(),feito:false};
-  const body = `<div class="field"><label>Título</label><input id="lf-titulo" value="${escapeHtml(l.titulo)}"></div><div class="field"><label>Descrição</label><textarea id="lf-desc">${escapeHtml(l.descricao)}</textarea></div><div class="field"><label>Data</label><input type="date" id="lf-data" value="${l.data}"></div>`;
+  const l = id ? DB.lembretes.find(x=>x.id===id) : {titulo:'',descricao:'',data:todayISO(),feito:false,visivelPara:[]};
+  const body = `<div class="field"><label>Título</label><input id="lf-titulo" value="${escapeHtml(l.titulo)}"></div><div class="field"><label>Descrição</label><textarea id="lf-desc">${escapeHtml(l.descricao)}</textarea></div><div class="field"><label>Data</label><input type="date" id="lf-data" value="${l.data}"></div><div class="field"><label>Visível para</label>${visibilidadeSelecaoHtml(l.visivelPara).replace(/prf-vis-chk/g,'lf-vis-chk')}</div>`;
   openModal(id? 'Editar lembrete':'Novo lembrete', body, async ()=>{
     const titulo = document.getElementById('lf-titulo').value.trim();
     if(!titulo){ showToast('Informe um título.'); return; }
-    const data = { titulo, descricao: document.getElementById('lf-desc').value.trim(), data: document.getElementById('lf-data').value };
+    const data = { titulo, descricao: document.getElementById('lf-desc').value.trim(), data: document.getElementById('lf-data').value, visivelPara: lerVisibilidadeSelecionada('lf-vis-chk') };
     if(id){
       await persistMutation('lembretes', arr=>{ const alvo = arr.find(x=>x.id===id); if(alvo) Object.assign(alvo, data); return arr; });
     } else {
-      await persistMutation('lembretes', arr=>{ arr.push({id:uid(), feito:false, ...data}); return arr; });
+      await persistMutation('lembretes', arr=>{ arr.push({id:uid(), feito:false, criadoPor:CURRENT_USER.id, ...data}); return arr; });
     }
     renderLembretes(); renderDashboard(); updateNavBadges(); closeModal(); showToast('Lembrete salvo.');
   });
