@@ -351,6 +351,34 @@ texto da movimentação no tribunal.
 
 
 
+## 15. Visual estilo PROJUDI, reformatação de documentos, e abas no Financeiro
+
+- **Consulta de processo com visual de tabela** (como o PROJUDI): mudei só a
+  apresentação do resultado — a consulta continua sendo apenas a capa/última
+  movimentação, sem gastar créditos extras da BuscaProcessos.
+
+- **Procuração e Contrato totalmente reformatados**, seguindo à risca as
+  regras que vocês pediram: Times New Roman 12, espaçamento 1,5 (aplicado no
+  documento inteiro via estilo padrão), rótulos e nomes em caixa alta e
+  negrito, múltiplos outorgados/contratados no mesmo parágrafo com o endereço
+  consolidado quando é igual para todos, valor/parcelas/percentual em negrito,
+  recuos e quebras de linha exatamente onde pedido.
+
+  Tive que reconstruir a geração desses dois documentos do zero (o método
+  anterior não permitia esse nível de controle fino quando o número de pessoas
+  no parágrafo muda a cada processo). Encontrei e corrigi, ao testar, dois bugs
+  reais introduzidos nessa reconstrução: um de texto duplicado por engano, e uma
+  inconsistência onde "ADVOGADO"/"OUTORGANTE" não ficavam em negrito em alguns
+  parágrafos específicos. Testei extraindo o XML gerado (confirmando negrito e
+  consolidação de endereço exatamente como esperado) e também confirmei o texto
+  final via conversão para PDF — tudo limpo, sem corrupção.
+
+- **Financeiro com abas**: "Repasses por processo" agora tem sub-abas
+  Pendentes (padrão) / Repassados. "Honorários" agora tem sub-abas Em aberto
+  (pendente + parcialmente pago, padrão) / Pagos. As listas gigantescas viraram
+  bem mais fáceis de navegar.
+
+
 ---
 
 Qualquer erro ao subir, me mostre a mensagem exata que aparece (no Render, aba "Logs")

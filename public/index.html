@@ -438,14 +438,25 @@
           </div>
         </div>
         <div class="kpi-grid" id="fin-kpi-grid"></div>
-        <div class="panel" id="fin-repasses-panel"><h3>Repasses por processo</h3><div id="fin-repasses"></div></div>
+        <div class="panel" id="fin-repasses-panel">
+          <h3>Repasses por processo</h3>
+          <div class="pill-select" style="margin:8px 0 12px;" id="repasse-tabs">
+            <button class="fin-tab active" data-tab="pendentes" onclick="setRepasseTab('pendentes')">Pendentes</button>
+            <button class="fin-tab" data-tab="repassados" onclick="setRepasseTab('repassados')">Repassados</button>
+          </div>
+          <div id="fin-repasses"></div>
+        </div>
         <div class="pill-select" style="margin-bottom:16px;" id="fin-tabs">
           <button class="fin-tab active" data-tab="honorarios" onclick="setFinTab('honorarios')">Honorários</button>
           <button class="fin-tab" data-tab="despesas" onclick="setFinTab('despesas')">Despesas</button>
         </div>
         <div id="fin-honorarios">
+          <div class="pill-select" style="margin-bottom:10px;" id="honorario-tabs">
+            <button class="fin-tab active" data-tab="abertos" onclick="setHonorarioTab('abertos')">Em aberto</button>
+            <button class="fin-tab" data-tab="pagos" onclick="setHonorarioTab('pagos')">Pagos</button>
+          </div>
           <div class="panel" style="padding:0;"><table><thead><tr><th>Cliente / Processo</th><th>Descrição</th><th>Valor total</th><th>Forma</th><th>Situação</th><th></th></tr></thead><tbody id="tbl-honorarios"></tbody></table>
-          <div class="empty" id="empty-honorarios" style="display:none;"><div class="big">💰</div>Nenhum honorário cadastrado ainda.</div></div>
+          <div class="empty" id="empty-honorarios" style="display:none;"><div class="big">💰</div>Nenhum honorário nesta situação.</div></div>
         </div>
         <div id="fin-despesas" style="display:none;">
           <div class="panel" style="padding:0;"><table><thead><tr><th>Descrição</th><th>Categoria</th><th>Data</th><th>Valor</th><th></th></tr></thead><tbody id="tbl-despesas"></tbody></table>
@@ -1873,10 +1884,17 @@ function meusHonorarios(){
   const idsClientes = meusClientes().map(c=>c.id);
   return DB.honorarios.filter(h=> idsClientes.includes(h.clienteId) || idsProfissionaisRegistro(h).includes(CURRENT_USER.id));
 }
+let HONORARIO_TAB = 'abertos';
+function setHonorarioTab(tab){
+  HONORARIO_TAB = tab;
+  document.querySelectorAll('#honorario-tabs .fin-tab').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
+  renderHonorariosTable();
+}
 function renderHonorariosTable(){
   const tbody = document.getElementById('tbl-honorarios'); if(!tbody) return;
   const empty = document.getElementById('empty-honorarios');
-  const list = meusHonorarios();
+  const todos = meusHonorarios();
+  const list = todos.filter(h=> HONORARIO_TAB==='pagos' ? honorarioSituacao(h)==='pago' : honorarioSituacao(h)!=='pago');
   if(list.length===0){ tbody.innerHTML=''; empty.style.display='block'; return; }
   empty.style.display='none';
   const situLabel = {pago:'Pago', pendente:'Pendente', parcial:'Parcial'};
@@ -1996,10 +2014,17 @@ async function confirmarRepasse(honId){
   });
   renderFinanceiro(); showToast('Repasse atualizado.');
 }
+let REPASSE_TAB = 'pendentes';
+function setRepasseTab(tab){
+  REPASSE_TAB = tab;
+  document.querySelectorAll('#repasse-tabs .fin-tab').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
+  renderRepasses();
+}
 function renderRepasses(){
   const box = document.getElementById('fin-repasses');
-  const relevantes = meusHonorarios().filter(h=>idsProfissionaisRegistro(h).length);
-  if(relevantes.length===0){ box.innerHTML = `<div class="empty">Nenhum processo com profissional vinculado ainda.</div>`; return; }
+  const todosRelevantes = meusHonorarios().filter(h=>idsProfissionaisRegistro(h).length);
+  const relevantes = todosRelevantes.filter(h=> REPASSE_TAB==='repassados' ? h.repasseStatus==='confirmado' : h.repasseStatus!=='confirmado');
+  if(relevantes.length===0){ box.innerHTML = `<div class="empty">Nenhum repasse ${REPASSE_TAB==='repassados'?'já repassado':'pendente'} no momento.</div>`; return; }
   box.innerHTML = relevantes.map(h=>{
     const ids = idsProfissionaisRegistro(h);
     const recebido = valorRecebidoHonorario(h);
@@ -2269,18 +2294,32 @@ function renderMeusProcessos(){
 }
 
 async function consultarUltimaMovimentacao(numero){
-  openModal('Última movimentação — '+numero, `<div class="empty">Consultando a base pública do CNJ, aguarde alguns segundos...</div>`, ()=>closeModal());
+  openModal('Andamento processual — '+numero, `<div class="empty">Consultando a base pública do tribunal, aguarde alguns segundos...</div>`, ()=>closeModal());
   document.getElementById('modal-save-btn').style.display='none';
   try{
     const r = await apiFetch('/api/processos/consulta', { method:'POST', body: JSON.stringify({ numeroCNJ: numero }) });
-    const dataMov = r.dataMovimento ? new Date(r.dataMovimento).toLocaleString('pt-BR') : '—';
+    const dataMov = r.dataMovimento ? new Date(r.dataMovimento).toLocaleDateString('pt-BR') : '—';
     document.getElementById('modal-body').innerHTML = `
-      <div class="panel">
-        <div class="hint" style="margin-bottom:10px;">Última movimentação em ${dataMov} ${r.origem==='cache'?'(consultado hoje mais cedo)':''}</div>
-        <p style="font-size:14px; line-height:1.6;"><strong>Em termos simples:</strong> ${escapeHtml(r.textoSimplificado || r.textoOriginal)}</p>
-        ${r.avisoIA? `<div class="hint" style="margin-top:10px;">${escapeHtml(r.avisoIA)}</div>`:''}
-        <details style="margin-top:12px; font-size:12px; color:var(--ink-soft);"><summary style="cursor:pointer;">Ver texto oficial original</summary><p style="margin-top:6px;">${escapeHtml(r.textoOriginal)}</p></details>
-      </div>`;
+      <div class="hint" style="margin-bottom:8px;">${r.origem==='cache'?'Consultado hoje mais cedo — resultado salvo, sem gastar uma nova consulta.':'Consulta feita agora na base pública do tribunal.'}</div>
+      <table style="width:100%; border-collapse:collapse; font-size:12.5px;">
+        <thead>
+          <tr style="border-bottom:2px solid #8b1c1c;">
+            <th style="text-align:left; padding:6px 6px; color:#8b1c1c; font-size:11px; text-transform:uppercase; letter-spacing:.03em;">Andamento do processo</th>
+            <th style="text-align:right; padding:6px 6px; width:100px; color:#8b1c1c; font-size:11px; text-transform:uppercase; letter-spacing:.03em;">Data</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style="border-bottom:1px solid var(--line); vertical-align:top;">
+            <td style="padding:10px 6px;">
+              <div style="color:#8b1c1c; font-weight:700;">Última movimentação — em termos simples</div>
+              <div style="color:var(--ink); margin-top:4px; line-height:1.6;">${escapeHtml(r.textoSimplificado || r.textoOriginal)}</div>
+              ${r.avisoIA? `<div class="hint" style="margin-top:8px;">${escapeHtml(r.avisoIA)}</div>`:''}
+              <details style="margin-top:10px; font-size:11.5px; color:var(--ink-soft);"><summary style="cursor:pointer;">Ver texto oficial original</summary><p style="margin-top:6px;">${escapeHtml(r.textoOriginal)}</p></details>
+            </td>
+            <td style="padding:10px 6px; white-space:nowrap; color:var(--ink-soft); text-align:right;">${dataMov}</td>
+          </tr>
+        </tbody>
+      </table>`;
   }catch(e){
     document.getElementById('modal-body').innerHTML = `<div class="empty">${escapeHtml(e.message || 'Não foi possível consultar este processo agora.')}</div>`;
   }

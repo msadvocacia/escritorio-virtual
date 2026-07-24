@@ -54,12 +54,21 @@ function enderecoCompleto(c) {
     .filter(Boolean).join(', ');
 }
 
+function qualificacaoClienteSemEndereco(c) {
+  return `${c.nacionalidade || 'brasileiro(a)'}, ${c.estadoCivil || ''}, ${c.profissao || ''}, portador do RG nº ${c.rg || '—'} SSP/BA inscrito no CPF sob nº ${formatCPF(c.cpf)}`;
+}
 function qualificacaoCliente(c) {
-  return `${c.nacionalidade || 'brasileiro(a)'}, ${c.estadoCivil || ''}, ${c.profissao || ''}, portador do RG nº ${c.rg || '—'} SSP/BA inscrito no CPF sob nº ${formatCPF(c.cpf)}, residente e domiciliado na/no ${enderecoCompleto(c) || '—'}`;
+  return `${qualificacaoClienteSemEndereco(c)}, residente e domiciliado na/no ${enderecoCompleto(c) || '—'}`;
 }
 
+function enderecoAdvogado() {
+  return 'Rua Frederico Costa, nº 124, Centro, CEP: 45.200-225, Jequié-BA';
+}
+function qualificacaoAdvogadoSemEndereco(a, telefoneEscritorio) {
+  return `${a.nacionalidade || 'brasileiro(a)'}, ${a.estadoCivil || ''}, advogado(a), OAB/BA ${a.oab || '—'}, portador(a) da cédula de identidade sob nº ${a.rg || '—'}, inscrito(a) no CPF nº ${formatCPF(a.cpf)}, telefone ${telefoneEscritorio || '(73) 99194-3622'}`;
+}
 function qualificacaoAdvogado(a, telefoneEscritorio) {
-  return `${a.nacionalidade || 'brasileiro(a)'}, ${a.estadoCivil || ''}, advogado(a), OAB/BA ${a.oab || '—'}, portador(a) da cédula de identidade sob nº ${a.rg || '—'}, inscrito(a) no CPF nº ${formatCPF(a.cpf)}, com endereço profissional na Rua Frederico Costa, nº 124, Centro, CEP: 45.200-225, Jequié-BA, telefone ${telefoneEscritorio || '(73) 99194-3622'}`;
+  return `${a.nacionalidade || 'brasileiro(a)'}, ${a.estadoCivil || ''}, advogado(a), OAB/BA ${a.oab || '—'}, portador(a) da cédula de identidade sob nº ${a.rg || '—'}, inscrito(a) no CPF nº ${formatCPF(a.cpf)}, com endereço profissional na ${enderecoAdvogado()}, telefone ${telefoneEscritorio || '(73) 99194-3622'}`;
 }
 
 function fmtMoney(v) {
@@ -69,5 +78,6 @@ function fmtMoney(v) {
 
 module.exports = {
   onlyDigits, formatCPF, fmtDateExtenso, numberToWordsPT, valorPorExtenso, enderecoCompleto,
-  qualificacaoCliente, qualificacaoAdvogado, fmtMoney,
+  qualificacaoCliente, qualificacaoClienteSemEndereco, qualificacaoAdvogado, qualificacaoAdvogadoSemEndereco,
+  enderecoAdvogado, fmtMoney,
 };

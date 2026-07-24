@@ -1,0 +1,106 @@
+// Helpers para montar parágrafos/rodadas de texto (runs) em OOXML "na mão",
+// dando controle total sobre negrito, caixa alta, alinhamento e recuo — coisa
+// que o docxtemplater (usado no resto do sistema) não permite fazer de forma
+// dinâmica quando o número de pessoas no parágrafo muda a cada processo.
+//
+// A fonte (Times New Roman 12) e o espaçamento (1,5 linha) já vêm do estilo
+// "Normal" do próprio arquivo-base (ver templates/letterhead_base.docx), então
+// aqui só precisamos nos preocupar com negrito, alinhamento e recuos.
+
+function xmlEscape(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+const CM_PARA_TWIPS = 566.929; // 1 cm em "twentieths of a point" (unidade do OOXML)
+function cmParaTwips(cm) {
+  return Math.round(cm * CM_PARA_TWIPS);
+}
+
+/** Uma "rodada" de texto (w:r), com negrito e tamanho de fonte opcionais. */
+function run(texto, { bold = false, sizeHalfPt = null } = {}) {
+  const partes = [];
+  if (bold) partes.push('<w:b/>');
+  if (sizeHalfPt) partes.push(`<w:sz w:val="${sizeHalfPt}"/><w:szCs w:val="${sizeHalfPt}"/>`);
+  const rPr = partes.length ? `<w:rPr>${partes.join('')}</w:rPr>` : '';
+  return `<w:r>${rPr}<w:t xml:space="preserve">${xmlEscape(texto)}</w:t></w:r>`;
+}
+
+/** Um parágrafo, a partir de uma lista de runs (strings XML já prontas), de um texto simples, ou de um único run já pronto (string começando com "<w:r>"). */
+function paragraph(runsOuTexto, { center = false, justify = true, indentCm = null, bold = false } = {}) {
+  let runsXml;
+  if (Array.isArray(runsOuTexto)) {
+    runsXml = runsOuTexto.join('');
+  } else if (typeof runsOuTexto === 'string' && runsOuTexto.startsWith('<w:r')) {
+    runsXml = runsOuTexto; // já é XML de um run pronto (ex: veio de run() diretamente)
+  } else {
+    runsXml = run(runsOuTexto, { bold });
+  }
+  const jc = center ? '<w:jc w:val="center"/>' : (justify ? '<w:jc w:val="both"/>' : '');
+  const ind = indentCm != null ? `<w:ind w:left="${cmParaTwips(indentCm)}"/>` : '';
+  const pPr = (jc || ind) ? `<w:pPr>${jc}${ind}</w:pPr>` : '';
+  return `<w:p>${pPr}${runsXml}</w:p>`;
+}
+
+function blank() { return '<w:p/>'; }
+
+/**
+ * Monta os "runs" de um parágrafo com vários nomes (outorgantes, outorgados,
+ * contratantes ou contratados), cada nome em negrito seguido da qualificação
+ * normal. Se TODOS tiverem o mesmo endereço, o endereço não se repete pessoa a
+ * pessoa — aparece uma única vez ao final do parágrafo.
+ * pessoas: [{ nome (já em caixa alta), qualificacaoSemEndereco, endereco }]
+ */
+function montarBlocoPessoas(pessoas) {
+  if (!pessoas || !pessoas.length) return [run('—')];
+  const enderecos = pessoas.map((p) => (p.endereco || '').trim()).filter(Boolean);
+  const enderecoComum = pessoas.length > 1 && enderecos.length === pessoas.length && enderecos.every((e) => e === enderecos[0]);
+
+  const runs = [];
+  pessoas.forEach((p, i) => {
+    if (i > 0) {
+      const isLast = i === pessoas.length - 1;
+      runs.push(run(isLast && pessoas.length > 1 ? ' e ' : ', '));
+    }
+    runs.push(run(p.nome, { bold: true }));
+    let qualif = ', ' + (p.qualificacaoSemEndereco || '');
+    if (!enderecoComum && p.endereco) {
+      qualif += ', residente e domiciliado(a) em ' + p.endereco;
+    }
+    runs.push(run(qualif));
+  });
+  if (enderecoComum) {
+    runs.push(run(`, residentes e domiciliados em ${enderecos[0]}`));
+  }
+  runs.push(run('.'));
+  return runs;
+}
+
+/**
+ * Divide um texto em runs, deixando em negrito qualquer ocorrência exata dos
+ * termos informados (ex: "OUTORGANTE", "O ADVOGADO"). Sempre casa a ocorrência
+ * mais à esquerda entre todos os termos, o que naturalmente prioriza frases
+ * mais longas quando elas começam no mesmo ponto (ex: "O ADVOGADO" antes de
+ * "ADVOGADO" sozinho).
+ */
+function comDestaques(texto, termos) {
+  let restante = texto;
+  const runs = [];
+  while (restante.length) {
+    let melhorIdx = -1;
+    let melhorTermo = null;
+    for (const t of termos) {
+      const idx = restante.indexOf(t);
+      if (idx !== -1 && (melhorIdx === -1 || idx < melhorIdx)) { melhorIdx = idx; melhorTermo = t; }
+    }
+    if (melhorIdx === -1) { runs.push(run(restante)); break; }
+    if (melhorIdx > 0) runs.push(run(restante.slice(0, melhorIdx)));
+    runs.push(run(melhorTermo, { bold: true }));
+    restante = restante.slice(melhorIdx + melhorTermo.length);
+  }
+  return runs;
+}
+
+module.exports = { xmlEscape, cmParaTwips, run, paragraph, blank, montarBlocoPessoas, comDestaques };
