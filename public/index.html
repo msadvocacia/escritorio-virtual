@@ -288,9 +288,14 @@
     <h2>Acesso ao sistema</h2>
     <div class="sub">Administradores, sócios, associados e clientes</div>
     <div class="field"><label>Login (usuário ou CPF)</label><input id="login-user" placeholder="Digite seu login"></div>
-    <div class="field"><label>Senha</label><input id="login-pass" type="password" placeholder="Digite sua senha" onkeydown="if(event.key==='Enter')doLogin()"></div>
+    <div class="field"><label>Senha</label>
+      <div style="position:relative;">
+        <input id="login-pass" type="password" placeholder="Digite sua senha" style="padding-right:38px;" onkeydown="if(event.key==='Enter')doLogin()">
+        <button type="button" onclick="toggleLoginPassVisibility()" title="Mostrar/ocultar senha" style="position:absolute; right:6px; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; font-size:16px; padding:4px; color:var(--ink-soft);" id="login-pass-eye">👁</button>
+      </div>
+    </div>
     <button class="btn btn-gold btn-block" onclick="doLogin()">Entrar</button>
-    <div class="login-hint" id="login-hint-text">Primeiro acesso do administrador: usuário <b>master</b> · senha <b>master123</b> (troque assim que entrar). Clientes: login = CPF, senha = CPF (somente números).</div>
+    <div class="login-hint" id="login-hint-text"></div>
     <div class="login-back" onclick="showLanding()">← Voltar ao site</div>
   </div>
 </div>
@@ -336,7 +341,7 @@
 
       <!-- PAINEL -->
       <div class="page active" id="page-dashboard">
-        <div class="section-head"><div><h2>Visão geral</h2><p id="dash-sub">Prazos, honorários e lembretes em um só lugar.</p></div></div>
+        <div class="section-head"><div><h2>Visão geral</h2><p id="dash-sub">Prazos, honorários e lembretes em um só lugar.</p></div><button class="btn btn-ghost btn-sm" id="btn-toggle-valores-dash" onclick="toggleValoresOcultos()" style="display:none;">👁 Mostrar valores</button></div>
         <div class="kpi-grid" id="kpi-grid"></div>
         <div class="grid-2">
           <div>
@@ -432,12 +437,14 @@
       <div class="page" id="page-financeiro">
         <div class="section-head"><div><h2>Financeiro</h2><p id="fin-sub">Honorários, parcelas, despesas e repasses.</p></div>
           <div style="display:flex; gap:8px;" id="fin-actions">
+            <button class="btn btn-ghost btn-sm" id="btn-toggle-valores-fin" onclick="toggleValoresOcultos()" style="display:none;">👁 Mostrar valores</button>
             <button class="btn btn-ghost" id="btn-despesa" onclick="openDespesaForm()">+ Despesa</button>
             <button class="btn btn-gold" onclick="openHonorarioForm()">+ Honorário avulso</button>
             <button class="btn btn-dark" onclick="abrirSelecaoPeriodoRelatorio()">🖨 Imprimir relatório</button>
           </div>
         </div>
         <div class="kpi-grid" id="fin-kpi-grid"></div>
+        <div class="panel" id="fin-parcelas-panel"><h3>Parcelas em aberto — ordem cronológica</h3><div class="hint" style="margin-bottom:8px;">O que vai entrar, e em quais datas, considerando as parcelas ainda pendentes.</div><div id="fin-parcelas-cronologicas"></div></div>
         <div class="panel" id="fin-repasses-panel">
           <h3>Repasses por processo</h3>
           <div class="pill-select" style="margin:8px 0 12px;" id="repasse-tabs">
@@ -579,6 +586,24 @@ async function apiFetch(path, options={}){
 
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
 function fmtMoney(v){ v = Number(v)||0; return v.toLocaleString('pt-BR', {style:'currency', currency:'BRL'}); }
+let VALORES_OCULTOS = true; // padrão: oculto ao entrar, para ninguém "de lado" ver os valores
+function vmoney(v){ return VALORES_OCULTOS ? '••••••' : fmtMoney(v); }
+function toggleValoresOcultos(){
+  VALORES_OCULTOS = !VALORES_OCULTOS;
+  atualizarBotoesValoresOcultos();
+  renderDashboard();
+  if(typeof renderFinanceiro==='function' && document.getElementById('fin-kpi-grid')) renderFinanceiro();
+}
+function atualizarBotoesValoresOcultos(){
+  const texto = VALORES_OCULTOS? '👁 Mostrar valores' : '🙈 Ocultar valores';
+  const podeVer = isMaster()||isSocio();
+  ['btn-toggle-valores-dash','btn-toggle-valores-fin'].forEach(id=>{
+    const btn = document.getElementById(id);
+    if(!btn) return;
+    btn.style.display = podeVer? 'inline-flex':'none';
+    btn.textContent = texto;
+  });
+}
 function fmtDate(iso){ if(!iso) return '—'; const [y,m,d] = iso.split('-'); return d+'/'+m+'/'+y; }
 function fmtDateExtenso(iso){ const meses=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro']; const [y,m,d]=iso.split('-'); return `${parseInt(d)} de ${meses[parseInt(m)-1]} de ${y}`; }
 function todayISO(){ const d = new Date(); return d.toISOString().slice(0,10); }
@@ -751,8 +776,16 @@ function showLogin(tipo){
   document.getElementById('app-shell').classList.remove('active');
   const hint = document.getElementById('login-hint-text');
   if(tipo==='cliente') hint.innerHTML = 'Acesso do cliente: login = CPF (somente números) · senha = CPF. Troque a senha após o primeiro acesso.';
-  else if(tipo==='advogado') hint.innerHTML = 'Acesso de sócios e associados. Primeiro acesso do administrador: usuário <b>master</b> · senha <b>master123</b>.';
-  else hint.innerHTML = 'Primeiro acesso do administrador: usuário <b>master</b> · senha <b>master123</b>. Clientes: login = CPF, senha = CPF.';
+  else if(tipo==='advogado') hint.innerHTML = 'Acesso de sócios e associados.';
+  else hint.innerHTML = '';
+  document.getElementById('login-pass').type = 'password';
+  document.getElementById('login-pass-eye').textContent = '👁';
+}
+function toggleLoginPassVisibility(){
+  const input = document.getElementById('login-pass');
+  const oculto = input.type==='password';
+  input.type = oculto? 'text':'password';
+  document.getElementById('login-pass-eye').textContent = oculto? '🙈':'👁';
 }
 const ICON_PHONE = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M22 16.9v3a2 2 0 01-2.2 2 19.8 19.8 0 01-8.6-3.1 19.5 19.5 0 01-6-6 19.8 19.8 0 01-3.1-8.7A2 2 0 014.1 2h3a2 2 0 012 1.7c.1.9.3 1.8.6 2.7a2 2 0 01-.5 2.1L8 9.7a16 16 0 006 6l1.2-1.2a2 2 0 012.1-.5c.9.3 1.8.5 2.7.6a2 2 0 011.7 2z"/></svg>';
 function renderLandingContact(){
@@ -802,6 +835,8 @@ async function enterApp(){
   document.getElementById('role-tag').textContent = labels[CURRENT_USER.tipo];
   document.getElementById('user-name-label').textContent = CURRENT_USER.nome;
   document.getElementById('btn-meu-perfil').style.display = isCliente()? 'none':'inline-flex';
+  VALORES_OCULTOS = true; // sempre começa oculto ao entrar, por segurança/privacidade
+  atualizarBotoesValoresOcultos();
   buildNav();
   await loadAll();
   goPage(PAGES_BY_ROLE[CURRENT_USER.tipo][0].id);
@@ -1271,28 +1306,22 @@ function nomesProfissionais(r){
 }
 function profissionaisSelecaoHtml(idsSelecionados){
   idsSelecionados = idsSelecionados || [];
-  if(isAssociado()){
-    const socios = DB.usuarios.filter(u=>u.tipo==='socio');
-    const socioSelecionado = socios.find(u=>idsSelecionados.includes(u.id));
-    return `<div class="hint" style="margin-bottom:6px;">Você já entra automaticamente como profissional deste processo. Se quiser, escolha também 1 sócio para dividir com você.</div>
-      <div class="radio-group">
-        <label class="radio-opt"><input type="radio" name="pf-prof-socio" value="" ${!socioSelecionado?'checked':''}> Nenhum sócio adicional</label>
-        ${socios.map(u=>`<label class="radio-opt"><input type="radio" name="pf-prof-socio" value="${u.id}" ${socioSelecionado&&socioSelecionado.id===u.id?'checked':''}> ${escapeHtml(u.nome)}</label>`).join('')}
-      </div>`;
-  }
   const socios = DB.usuarios.filter(u=>u.tipo==='socio');
   const associados = DB.usuarios.filter(u=>u.tipo==='associado');
   const grupo = (titulo, lista) => lista.length? `<div style="margin-top:8px;"><strong style="font-size:11.5px; color:var(--ink-soft);">${titulo}</strong><div class="pill-select" style="margin-top:4px;">${lista.map(u=>`<label class="radio-opt" style="border:1px solid var(--line); border-radius:20px; padding:4px 10px;"><input type="checkbox" class="pf-prof-chk" value="${u.id}" ${idsSelecionados.includes(u.id)?'checked':''}> ${escapeHtml(u.nome)}</label>`).join('')}</div></div>` : '';
-  return `<div class="hint" style="margin-bottom:4px;">Selecione quantos profissionais quiser — o percentual desta seção será dividido igualmente entre eles.</div>` + grupo('Sócios', socios) + grupo('Associados', associados);
+  const avisoAssociado = isAssociado()? `<div class="hint" style="margin-bottom:4px;">Você pode vincular qualquer sócio ou associado, desde que pelo menos 1 sócio esteja incluído. Não é permitido vincular apenas outros associados, sem nenhum sócio.</div>` : `<div class="hint" style="margin-bottom:4px;">Selecione quantos profissionais quiser — o percentual desta seção será dividido igualmente entre eles.</div>`;
+  return avisoAssociado + grupo('Sócios', socios) + grupo('Associados', associados);
 }
 function lerProfissionaisSelecionados(){
-  if(isAssociado()){
-    const radio = document.querySelector('input[name="pf-prof-socio"]:checked');
-    const ids = [CURRENT_USER.id];
-    if(radio && radio.value) ids.push(radio.value);
-    return ids;
-  }
-  return Array.from(document.querySelectorAll('.pf-prof-chk:checked')).map(el=>el.value);
+  const ids = Array.from(document.querySelectorAll('.pf-prof-chk:checked')).map(el=>el.value);
+  if(isAssociado() && !ids.includes(CURRENT_USER.id)) ids.push(CURRENT_USER.id); // o associado sempre entra junto
+  return ids;
+}
+function validarProfissionaisSelecionados(ids){
+  if(!isAssociado()) return true;
+  const temSocio = ids.some(id=>{ const u = DB.usuarios.find(x=>x.id===id); return u && u.tipo==='socio'; });
+  if(!temSocio){ showToast('Como associado, você só pode vincular profissionais se houver pelo menos 1 sócio incluído.'); return false; }
+  return true;
 }
 function openProcessoForm(id){
   const p = id ? DB.processos.find(x=>x.id===id) : {numero:'',clienteId:'',tipo:'',vara:'',status:'andamento',obs:'', profissionaisIds:[], splitTipo:'nenhum', honorarioValor:'', formaPagamento:'avista_dinheiro'};
@@ -1349,6 +1378,7 @@ function openProcessoForm(id){
       const valor = parseFloat(document.getElementById('pf-valor').value)||0;
       data.splitTipo = document.getElementById('pf-split').value;
       data.profissionaisIds = data.splitTipo==='nenhum' ? [] : lerProfissionaisSelecionados();
+      if(data.profissionaisIds.length && !validarProfissionaisSelecionados(data.profissionaisIds)) return;
       data.associadoId = data.profissionaisIds[0] || ''; data.associadoId2 = data.profissionaisIds[1] || ''; // compatibilidade com registros antigos
       data.honorarioValor = valor;
       data.formaPagamento = document.getElementById('pf-forma').value;
@@ -2014,6 +2044,29 @@ async function confirmarRepasse(honId){
   });
   renderFinanceiro(); showToast('Repasse atualizado.');
 }
+function renderParcelasCronologicas(){
+  const box = document.getElementById('fin-parcelas-cronologicas'); if(!box) return;
+  const itens = [];
+  meusHonorarios().forEach(h=>{
+    (h.parcelas||[]).forEach(p=>{
+      if(p.status!=='pago'){ itens.push({ vencimento:p.vencimento, valor:p.valor, cliente:clienteNome(h.clienteId), processo:h.processoId?processoLabel(h.processoId):'', numero:p.numero, total:(h.parcelas||[]).length, honId:h.id, parcId:p.id }); }
+    });
+  });
+  itens.sort((a,b)=> (a.vencimento||'').localeCompare(b.vencimento||''));
+  if(itens.length===0){ box.innerHTML = `<div class="empty">Nenhuma parcela pendente no momento.</div>`; return; }
+  const hoje = todayISO();
+  box.innerHTML = `<table><thead><tr><th>Vencimento</th><th>Cliente / Processo</th><th>Parcela</th><th>Valor</th></tr></thead><tbody>
+    ${itens.map(it=>{
+      const atrasada = it.vencimento && it.vencimento < hoje;
+      return `<tr>
+        <td><span class="tag ${atrasada?'tag-perdido':'tag-pendente'}">${fmtDate(it.vencimento)}</span></td>
+        <td>${escapeHtml(it.cliente)}${it.processo? ' · '+escapeHtml(it.processo):''}</td>
+        <td>${it.numero} de ${it.total}</td>
+        <td><strong>${fmtMoney(it.valor)}</strong></td>
+      </tr>`;
+    }).join('')}
+  </tbody></table>`;
+}
 let REPASSE_TAB = 'pendentes';
 function setRepasseTab(tab){
   REPASSE_TAB = tab;
@@ -2063,7 +2116,7 @@ function renderFinanceiro(){
   document.getElementById('fin-tabs').style.display = podeVerCaixa? 'flex':'none';
   if(!podeVerCaixa) setFinTab('honorarios');
   document.getElementById('fin-sub').textContent = podeVerCaixa? 'Honorários, parcelas, despesas e repasses.' : 'Seus contratos, valores recebidos e repassados nos processos em que você atua.';
-  renderHonorariosTable(); renderDespesasTable(); renderRepasses();
+  renderHonorariosTable(); renderDespesasTable(); renderRepasses(); renderParcelasCronologicas();
   const s = computeFinanceSummary();
   if(isAssociado()){
     const a = computeAssociadoTotals();
@@ -2075,12 +2128,13 @@ function renderFinanceiro(){
     `;
     return;
   }
+  atualizarBotoesValoresOcultos();
   kpiGrid.innerHTML = `
-    <div class="kpi kpi-warning"><div class="label">A receber (total dos clientes)</div><div class="value">${fmtMoney(s.aReceber)}</div><div class="sub">${s.atrasadoReceber>0? fmtMoney(s.atrasadoReceber)+' em atraso':'nenhum valor em atraso'}</div></div>
-    <div class="kpi kpi-success"><div class="label">Recebido no mês${podeVerCaixa?' (parte do escritório)':''}</div><div class="value">${fmtMoney(s.recebidoMes)}</div><div class="sub">${podeVerCaixa? 'já descontada a parte dos associados':'honorários pagos neste mês'}</div></div>
-    ${podeVerCaixa? `<div class="kpi kpi-danger"><div class="label">Despesas no mês</div><div class="value">${fmtMoney(s.despesasMes)}</div><div class="sub">total ${fmtMoney(s.totalDespesas)} acumulado</div></div>
-    <div class="kpi"><div class="label">Saldo do mês</div><div class="value" style="color:${s.saldoMes>=0?'var(--success)':'var(--danger)'}">${fmtMoney(s.saldoMes)}</div><div class="sub">parte do escritório − despesas</div></div>
-    <div class="kpi kpi-info"><div class="label">Caixa do escritório (acumulado)</div><div class="value" style="color:${s.caixaAcumulado>=0?'var(--success)':'var(--danger)'}">${fmtMoney(s.caixaAcumulado)}</div><div class="sub">parte do escritório recebida historicamente − despesas totais</div></div>` : ''}
+    <div class="kpi kpi-warning"><div class="label">A receber (total dos clientes)</div><div class="value">${vmoney(s.aReceber)}</div><div class="sub">${s.atrasadoReceber>0? vmoney(s.atrasadoReceber)+' em atraso':'nenhum valor em atraso'}</div></div>
+    <div class="kpi kpi-success"><div class="label">Recebido no mês${podeVerCaixa?' (parte do escritório)':''}</div><div class="value">${vmoney(s.recebidoMes)}</div><div class="sub">${podeVerCaixa? 'já descontada a parte dos associados':'honorários pagos neste mês'}</div></div>
+    ${podeVerCaixa? `<div class="kpi kpi-danger"><div class="label">Despesas no mês</div><div class="value">${vmoney(s.despesasMes)}</div><div class="sub">total ${vmoney(s.totalDespesas)} acumulado</div></div>
+    <div class="kpi"><div class="label">Saldo do mês</div><div class="value" style="color:${s.saldoMes>=0?'var(--success)':'var(--danger)'}">${vmoney(s.saldoMes)}</div><div class="sub">parte do escritório − despesas</div></div>
+    <div class="kpi kpi-info"><div class="label">Caixa do escritório (acumulado)</div><div class="value" style="color:${s.caixaAcumulado>=0?'var(--success)':'var(--danger)'}">${vmoney(s.caixaAcumulado)}</div><div class="sub">parte do escritório recebida historicamente − despesas totais</div></div>` : ''}
   `;
 }
 function abrirSelecaoPeriodoRelatorio(){
@@ -2579,8 +2633,8 @@ function renderDashboard(){
   grid.innerHTML = `
     <div class="kpi ${atrasadosCount>0?'kpi-danger':''}" style="cursor:pointer;" onclick="goPage('prazos')"><div class="label">Prazos em aberto</div><div class="value">${meusPrazosVisiveis().filter(p=>p.status==='pendente').length}</div><div class="sub">${atrasadosCount>0? atrasadosCount+' atrasado(s)':'nenhum atrasado'}</div></div>
     <div class="kpi" style="cursor:pointer;" onclick="goToAudiencias()"><div class="label">Próximas audiências</div><div class="value">${proximasAudiencias.length}</div><div class="sub">nos próximos dias</div></div>
-    <div class="kpi kpi-warning" style="cursor:pointer;" onclick="goPage('financeiro')"><div class="label">A receber</div><div class="value">${fmtMoney(s.aReceber)}</div><div class="sub">honorários e parcelas pendentes</div></div>
-    <div class="kpi kpi-success" style="cursor:pointer;" onclick="goPage('financeiro')"><div class="label">Recebido no mês</div><div class="value">${fmtMoney(s.recebidoMes)}</div><div class="sub">${meusClientes().length} cliente(s)</div></div>
+    <div class="kpi kpi-warning" style="cursor:pointer;" onclick="goPage('financeiro')"><div class="label">A receber</div><div class="value">${(isMaster()||isSocio())? vmoney(s.aReceber) : fmtMoney(s.aReceber)}</div><div class="sub">honorários e parcelas pendentes</div></div>
+    <div class="kpi kpi-success" style="cursor:pointer;" onclick="goPage('financeiro')"><div class="label">Recebido no mês</div><div class="value">${(isMaster()||isSocio())? vmoney(s.recebidoMes) : fmtMoney(s.recebidoMes)}</div><div class="sub">${meusClientes().length} cliente(s)</div></div>
     <div class="kpi" style="cursor:pointer;" onclick="goPage('lembretes')"><div class="label">Lembretes ativos</div><div class="value">${DB.lembretes.filter(l=>!l.feito).length}</div><div class="sub">${lembHojeCount>0? lembHojeCount+' para hoje/atrasados':'em dia'}</div></div>
   `;
   document.getElementById('dash-prazos').parentElement.style.display='block';

@@ -270,6 +270,9 @@ router.post('/relatorio', requireAuth, async (req, res) => {
   const todosHonorarios = await getCollection('honorarios', []);
   const clientes = await getCollection('clientes', []);
   const despesasTodas = await getCollection('despesas', []);
+  const usuarios = await getCollection('usuarios', []);
+  const nomeAdv = (id) => { const u = usuarios.find((x) => x.id === id); return u ? u.nome : '—'; };
+  const nomeCli = (id) => { const c = clientes.find((x) => x.id === id); return c ? c.nome : '—'; };
 
   let honorarios;
   if (isMaster(req.user) || isSocio(req.user)) {
@@ -281,53 +284,84 @@ router.post('/relatorio', requireAuth, async (req, res) => {
     return res.status(403).json({ erro: 'Perfil sem acesso a relatórios financeiros.' });
   }
 
-  let resumoLinhas = [];
-  let itensRepasse = [];
+  // campos: rótulo (caixa alta e negrito) + valor (negrito)
+  let campos = [];
+  let linhasTabela = []; // [{ cliente, profissional, valor, status }]
 
   if (isMaster(req.user) || isSocio(req.user)) {
     const r = F.resumoEscritorio(honorarios, despesasTodas, periodo);
-    resumoLinhas = [
-      { texto: `Recebido no período (parte do escritório): ${T.fmtMoney(r.recebidoPeriodo)}` },
-      { texto: `Despesas no período: ${T.fmtMoney(r.despesasPeriodo)}` },
-      { texto: `Saldo do período: ${T.fmtMoney(r.saldoPeriodo)}` },
-      { texto: `Caixa acumulado do escritório: ${T.fmtMoney(r.caixaAcumulado)}` },
+    campos = [
+      { label: 'RECEBIDO NO PERÍODO (PARTE DO ESCRITÓRIO)', valor: T.fmtMoney(r.recebidoPeriodo) },
+      { label: 'DESPESAS DO PERÍODO', valor: T.fmtMoney(r.despesasPeriodo) },
+      { label: 'SALDO DO PERÍODO', valor: T.fmtMoney(r.saldoPeriodo) },
+      { label: 'CAIXA ACUMULADO DO ESCRITÓRIO', valor: T.fmtMoney(r.caixaAcumulado) },
     ];
-    const usuarios = await getCollection('usuarios', []);
-    const nomeAdv = (id) => { const u = usuarios.find((x) => x.id === id); return u ? u.nome : '—'; };
-    const nomeCli = (id) => { const c = clientes.find((x) => x.id === id); return c ? c.nome : '—'; };
-    itensRepasse = honorarios.filter((h) => F.idsProfissionais(h).length).map((h) => {
-      const ids = F.idsProfissionais(h);
-      const partesTexto = ids.map((id) => `${nomeAdv(id)}: ${T.fmtMoney(F.parteDoProfissional(h, id))}`).join(' · ');
-      return { texto: `${nomeCli(h.clienteId)} — ${partesTexto} (${h.repasseStatus === 'confirmado' ? 'repassado' : 'aguardando repasse'})` };
+    honorarios.filter((h) => F.idsProfissionais(h).length).forEach((h) => {
+      F.idsProfissionais(h).forEach((id) => {
+        const valorNum = F.parteDoProfissional(h, id);
+        linhasTabela.push({
+          cliente: nomeCli(h.clienteId), profissional: nomeAdv(id),
+          valor: T.fmtMoney(valorNum), valorNum, confirmado: h.repasseStatus === 'confirmado',
+        });
+      });
     });
   } else {
     const meusHonorarios = honorarios.filter((h) => F.idsProfissionais(h).includes(req.user.id));
     const t = F.totaisAssociado(meusHonorarios, req.user.id);
-    resumoLinhas = [
-      { texto: `Total dos contratos fechados: ${T.fmtMoney(t.totalContrato)}` },
-      { texto: `Recebido dos clientes: ${T.fmtMoney(t.totalRecebidoCliente)}` },
-      { texto: `Sua parte já repassada a você: ${T.fmtMoney(t.minhaParteRepassada)}` },
-      { texto: `Sua parte aguardando repasse: ${T.fmtMoney(t.minhaParteAguardando)}` },
+    campos = [
+      { label: 'TOTAL DOS CONTRATOS FECHADOS', valor: T.fmtMoney(t.totalContrato) },
+      { label: 'RECEBIDO DOS CLIENTES', valor: T.fmtMoney(t.totalRecebidoCliente) },
+      { label: 'SUA PARTE JÁ REPASSADA A VOCÊ', valor: T.fmtMoney(t.minhaParteRepassada) },
+      { label: 'SUA PARTE AGUARDANDO REPASSE', valor: T.fmtMoney(t.minhaParteAguardando) },
     ];
-    const processos = await getCollection('processos', []);
-    const nomeCli = (id) => { const c = clientes.find((x) => x.id === id); return c ? c.nome : '—'; };
-    const numProc = (id) => { const p = processos.find((x) => x.id === id); return p ? p.numero : ''; };
-    itensRepasse = meusHonorarios.map((h) => {
-      const minhaParte = F.parteDoProfissional(h, req.user.id);
-      const recebido = F.valorRecebidoHonorario(h);
-      return { texto: `${nomeCli(h.clienteId)}${h.processoId ? ' — ' + numProc(h.processoId) : ''}: contrato ${T.fmtMoney(h.valorTotal)}, recebido ${T.fmtMoney(recebido)}, sua parte ${T.fmtMoney(minhaParte)} (${h.repasseStatus === 'confirmado' ? 'repassado' : 'aguardando repasse'})` };
+    meusHonorarios.forEach((h) => {
+      const valorNum = F.parteDoProfissional(h, req.user.id);
+      linhasTabela.push({
+        cliente: nomeCli(h.clienteId), profissional: nomeAdv(req.user.id),
+        valor: T.fmtMoney(valorNum), valorNum, confirmado: h.repasseStatus === 'confirmado',
+      });
     });
   }
 
+  linhasTabela.sort((a, b) => a.cliente.localeCompare(b.cliente, 'pt-BR'));
+  const totalRepassado = linhasTabela.filter((l) => l.confirmado).reduce((s, l) => s + l.valorNum, 0);
+  const totalAguardando = linhasTabela.filter((l) => !l.confirmado).reduce((s, l) => s + l.valorNum, 0);
+
   try {
-    const buffer = renderTemplate('relatorio_template.docx', {
-      periodo_inicio: periodoInicio.split('-').reverse().join('/'),
-      periodo_fim: periodoFim.split('-').reverse().join('/'),
-      data_emissao: T.fmtDateExtenso(todayISO()),
-      emitido_por: req.user.nome,
-      resumoLinhas,
-      itensRepasse,
-    });
+    const SZ = 23; // 11,5pt
+    const corpo = [
+      D.paragraph(D.run('RELATÓRIO FINANCEIRO', { bold: true, sizeHalfPt: 28 }), { center: true, justify: false }),
+      D.blank(),
+      D.paragraph([
+        D.run('PERÍODO: ', { bold: true, sizeHalfPt: SZ }),
+        D.run(`${periodoInicio.split('-').reverse().join('/')} a ${periodoFim.split('-').reverse().join('/')}. `, { sizeHalfPt: SZ }),
+        D.run('Emitido em ', { sizeHalfPt: SZ }),
+        D.run(T.fmtDateExtenso(todayISO()), { sizeHalfPt: SZ }),
+        D.run(' por ', { sizeHalfPt: SZ }),
+        D.run(req.user.nome, { sizeHalfPt: SZ }),
+        D.run('.', { sizeHalfPt: SZ }),
+      ]),
+      D.blank(),
+      ...campos.map((c) => D.paragraph([
+        D.run(c.label + ': ', { bold: true, sizeHalfPt: SZ }),
+        D.run(c.valor, { bold: true, sizeHalfPt: SZ }),
+      ])),
+      D.blank(),
+      D.paragraph(D.run('REPASSES POR PROCESSO', { bold: true, sizeHalfPt: SZ })),
+      D.blank(),
+      linhasTabela.length
+        ? D.tabela(
+            ['Cliente', 'Profissional', 'Valor', 'Status'],
+            linhasTabela.map((l) => [l.cliente, l.profissional, D.run(l.valor, { bold: true, sizeHalfPt: SZ }), l.confirmado ? 'Repassado' : 'Aguardando repasse']),
+            { largurasCm: [5, 5, 3, 3.5] }
+          )
+        : D.paragraph(D.run('Nenhum processo com profissional vinculado neste período.', { sizeHalfPt: SZ })),
+      D.blank(),
+      D.paragraph([D.run('Total repassado: ', { bold: true, sizeHalfPt: SZ }), D.run(T.fmtMoney(totalRepassado), { bold: true, sizeHalfPt: SZ })]),
+      D.paragraph([D.run('Total aguardando repasse: ', { bold: true, sizeHalfPt: SZ }), D.run(T.fmtMoney(totalAguardando), { bold: true, sizeHalfPt: SZ })]),
+    ].join('');
+
+    const buffer = gerarDocxComCorpo(corpo);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     res.setHeader('Content-Disposition', 'attachment; filename="Relatorio Financeiro.docx"');
     res.send(buffer);

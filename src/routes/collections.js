@@ -74,7 +74,7 @@ router.put('/:nome', requireAuth, async (req, res) => {
   if (!Array.isArray(req.body)) return res.status(400).json({ erro: 'Corpo da requisição deve ser um array.' });
 
   const existentes = await getCollection(nome, []);
-  const ctx = await carregarContexto(['clientes', 'processos']);
+  const ctx = await carregarContexto(['clientes', 'processos', 'usuarios']);
   ctx.clientesIds = V.clientesVisiveis(req.user, ctx.clientes || []).map((c) => c.id);
 
   const final = mergeCollection(nome, existentes, req.body, req.user, ctx);

@@ -30,11 +30,22 @@ function idsProfissionaisDoRegistro(registro) {
   return arr;
 }
 
+// Um associado só pode vincular profissionais a um processo/honorário se pelo
+// menos um deles for sócio (nunca só outros associados, sem nenhum sócio).
+function vinculoValidoParaAssociado(registro, ctx) {
+  const ids = idsProfissionaisDoRegistro(registro);
+  if (!ids.length) return true; // sem vínculo nenhum, não há o que validar
+  const usuarios = ctx.usuarios || [];
+  return ids.some((id) => { const u = usuarios.find((x) => x.id === id); return u && u.tipo === 'socio'; });
+}
+
 const PREDICADOS = {
   usuarios: () => () => false, // apenas master/sócio (tratado como `full`); ninguém mais grava aqui
   clientes: (user) => (registro) => registro.vinculoId === user.id,
   processos: (user, ctx) => (registro) => {
-    if (idsProfissionaisDoRegistro(registro).includes(user.id)) return true;
+    if (idsProfissionaisDoRegistro(registro).includes(user.id)) {
+      return isAssociado(user) ? vinculoValidoParaAssociado(registro, ctx) : true;
+    }
     const idsClientes = (ctx.clientes || []).filter((c) => c.vinculoId === user.id).map((c) => c.id);
     return idsClientes.includes(registro.clienteId);
   },
@@ -50,7 +61,12 @@ const PREDICADOS = {
       .map((p) => p.id);
     return idsProc.includes(registro.processoId);
   },
-  honorarios: (user, ctx) => (registro) => idsProfissionaisDoRegistro(registro).includes(user.id) || (ctx.clientesIds || []).includes(registro.clienteId),
+  honorarios: (user, ctx) => (registro) => {
+    if (idsProfissionaisDoRegistro(registro).includes(user.id)) {
+      return isAssociado(user) ? vinculoValidoParaAssociado(registro, ctx) : true;
+    }
+    return (ctx.clientesIds || []).includes(registro.clienteId);
+  },
   despesas: () => () => false, // apenas master/sócio
   lembretes: (user) => (registro) => !isCliente(user) && (!registro.visivelPara || registro.visivelPara.length === 0 || registro.visivelPara.includes(user.id) || registro.criadoPor === user.id),
   disponibilidades: (user) => (registro) => registro.usuarioId === user.id,

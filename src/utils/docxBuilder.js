@@ -103,4 +103,37 @@ function comDestaques(texto, termos) {
   return runs;
 }
 
-module.exports = { xmlEscape, cmParaTwips, run, paragraph, blank, montarBlocoPessoas, comDestaques };
+/**
+ * Uma tabela OOXML de verdade (bordas finas, cabeçalho em negrito), a partir de
+ * um array de cabeçalhos (strings) e um array de linhas, onde cada linha é um
+ * array de células — cada célula pode ser uma string simples ou um array de
+ * runs já prontos (para poder deixar só parte do conteúdo em negrito).
+ */
+function tabela(cabecalhos, linhas, { largurasCm = null } = {}) {
+  const borda = '<w:tcBorders>' + ['top', 'left', 'bottom', 'right'].map((lado) =>
+    `<w:${lado} w:val="single" w:sz="4" w:space="0" w:color="CCCCCC"/>`).join('') + '</w:tcBorders>';
+
+  function celula(conteudo, { bold = false, larguraCm = null } = {}) {
+    let runsXml;
+    if (Array.isArray(conteudo)) {
+      runsXml = conteudo.join('');
+    } else if (typeof conteudo === 'string' && conteudo.startsWith('<w:r')) {
+      runsXml = conteudo; // já é XML de um run pronto
+    } else {
+      runsXml = run(conteudo, { bold });
+    }
+    const tcW = larguraCm != null ? `<w:tcW w:w="${cmParaTwips(larguraCm)}" w:type="dxa"/>` : '<w:tcW w:w="0" w:type="auto"/>';
+    return `<w:tc><w:tcPr>${tcW}${borda}<w:vAlign w:val="center"/></w:tcPr><w:p><w:pPr><w:spacing w:line="240" w:lineRule="auto"/></w:pPr>${runsXml}</w:p></w:tc>`;
+  }
+
+  const grid = largurasCm ? `<w:tblGrid>${largurasCm.map((c) => `<w:gridCol w:w="${cmParaTwips(c)}"/>`).join('')}</w:tblGrid>` : '';
+  const linhaCabecalho = `<w:tr>${cabecalhos.map((h, i) => celula(h, { bold: true, larguraCm: largurasCm ? largurasCm[i] : null })).join('')}</w:tr>`;
+  const linhasXml = linhas.map((linha) =>
+    `<w:tr>${linha.map((c, i) => celula(c, { larguraCm: largurasCm ? largurasCm[i] : null })).join('')}</w:tr>`
+  ).join('');
+
+  return `<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblBorders>${['top', 'left', 'bottom', 'right', 'insideH', 'insideV'].map((lado) =>
+    `<w:${lado} w:val="single" w:sz="4" w:space="0" w:color="CCCCCC"/>`).join('')}</w:tblBorders></w:tblPr>${grid}${linhaCabecalho}${linhasXml}</w:tbl>`;
+}
+
+module.exports = { xmlEscape, cmParaTwips, run, paragraph, blank, montarBlocoPessoas, comDestaques, tabela };

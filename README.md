@@ -379,6 +379,18 @@ texto da movimentação no tribunal.
   bem mais fáceis de navegar.
 
 
+## 16. Parcelas cronológicas, login, vínculo de processo, ocultar valores e relatório
+
+- **Parcelas pendentes em ordem cronológica**: novo painel no Financeiro, mostrando data, cliente e valor de cada parcela ainda não paga, ordenadas por vencimento.
+- **Login**: removida a mensagem com usuário/senha do master (nas três telas onde aparecia); adicionado o "olhinho" para mostrar/ocultar a senha digitada.
+- **Vínculo de múltiplos profissionais ao processo**: associado agora pode vincular qualquer sócio ou associado, **desde que inclua pelo menos 1 sócio** (nunca só outros associados). Validado tanto na tela quanto no servidor — testei as duas situações (com e sem sócio) e o bloqueio funciona corretamente mesmo tentando contornar a tela.
+- **Recibo em papel timbrado**: já existia de uma atualização anterior (botão 📥 ao lado do 🧾), só confirmei que está funcionando.
+- **Ocultar valores**: novo "olhinho" no Dashboard ("a receber", "recebido no mês") e no Financeiro ("despesas do mês", "saldo do mês", "caixa acumulado", e os demais valores da tela). Fica oculto por padrão sempre que alguém entra no sistema — só sócio e administrador master têm esse controle.
+- **Relatório financeiro reestruturado**: título em Times New Roman 14, corpo em 11,5 com espaçamento 1,5, rótulos em caixa alta e negrito, valores em negrito, "REPASSES POR PROCESSO" em caixa alta e negrito, com uma tabela de verdade (Cliente em ordem alfabética / Profissional / Valor em negrito / Status) e o somatório de repassado e aguardando ao final.
+
+  Encontrei e corrigi dois bugs reais nesse processo, ambos antes de entregar: um de texto duplicado na tabela (mesmo tipo de bug que já tinha corrigido antes em outro lugar do sistema, só que dessa vez na função nova de tabela), e um erro de cálculo nos totais (a soma de "R$ 1.400,00" estava dando errado por causa do separador de milhar — corrigi para somar os números direto, sem depender do texto já formatado). Testei gerando um relatório com clientes de propósito fora de ordem alfabética para confirmar a ordenação, e conferi que os totais batem exatamente com as linhas da tabela.
+
+
 ---
 
 Qualquer erro ao subir, me mostre a mensagem exata que aparece (no Render, aba "Logs")
