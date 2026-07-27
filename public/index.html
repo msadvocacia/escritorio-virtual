@@ -2150,10 +2150,6 @@ const CALCULO_CATEGORIAS = [
     itens:['Indenização por justo valor + juros compensatórios e moratórios'] },
   { id:'seguros', titulo:'13. Seguros', implementado:'seguros-dpvat',
     itens:['DPVAT/SPVAT (morte, invalidez, DAMS)','Seguros de vida/acidentes (indenizações tabeladas)'] },
-  { id:'eleitoral', titulo:'14. Eleitoral', implementado:null,
-    itens:['Cálculo de multas eleitorais'] },
-  { id:'ambiental', titulo:'15. Ambiental', implementado:null,
-    itens:['Indenização por dano ambiental'] },
   { id:'fgts', titulo:'16. FGTS (bloco próprio)', implementado:'fgts-diferencas',
     itens:['Correção de expurgos inflacionários (Verão, Collor I e II)','Diferenças de FGTS não recolhido'] },
 ];
@@ -2162,7 +2158,7 @@ function renderCalculoJuridico(){
   const lista = document.getElementById('calculo-lista');
   lista.innerHTML = `<div class="list-row" style="cursor:pointer; font-weight:700; color:var(--gold-dark);" onclick="selecionarCategoriaCalculo('nucleo')">🧮 Núcleo: Correção + Juros</div>` +
     (isMaster()||isSocio()? `<div class="list-row" style="cursor:pointer; font-weight:700;" onclick="selecionarCategoriaCalculo('parametros')">⚙️ Parâmetros de Cálculo</div>` : '') +
-    CALCULO_CATEGORIAS.map(c=>`<div class="list-row" style="cursor:pointer;" onclick="selecionarCategoriaCalculo('${c.id}')"><div>${escapeHtml(c.titulo)}</div>${c.implementado?'<span class="tag tag-confirmado" style="font-size:9px;">pronto</span>':''}</div>`).join('');
+    CALCULO_CATEGORIAS.map(c=>`<div class="list-row" style="cursor:pointer;" onclick="selecionarCategoriaCalculo('${c.id}')"><div>${escapeHtml(c.titulo)}</div></div>`).join('');
   if(CALCULO_ATIVO) selecionarCategoriaCalculo(CALCULO_ATIVO);
 }
 async function selecionarCategoriaCalculo(id){
