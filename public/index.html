@@ -471,6 +471,16 @@
         </div>
       </div>
 
+      <!-- CÁLCULO JURÍDICO -->
+      <div class="page" id="page-calculo">
+        <div class="section-head"><div><h2>Cálculo Jurídico</h2><p>Núcleo de correção monetária/juros (índices ao vivo do Banco Central) + calculadoras por área do direito.</p></div></div>
+        <div class="hint" style="margin-bottom:14px;">Estes cálculos são um ponto de partida — sempre confira o resultado antes de usar em petição, especialmente em casos com regras específicas (convenção coletiva, decisão judicial determinando índice próprio, etc.). Os módulos ainda "em construção" podem ser implementados a pedido.</div>
+        <div style="display:grid; grid-template-columns:260px 1fr; gap:16px; align-items:start;">
+          <div class="panel" style="padding:8px;" id="calculo-lista"></div>
+          <div class="panel" id="calculo-conteudo"><div class="empty">Selecione uma categoria ao lado.</div></div>
+        </div>
+      </div>
+
       <!-- AGENDA -->
       <div class="page" id="page-agenda">
         <div class="section-head"><div><h2>Agenda</h2><p id="agenda-sub">Disponibilidade e visitas agendadas.</p></div></div>
@@ -893,11 +903,12 @@ const ICONS = {
   msg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a8 8 0 11-3.2-6.4"/><path d="M21 4l-9 9"/></svg>',
   cog:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.9-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1-1.6 1.7 1.7 0 00-1.9.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.9 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1 1.7 1.7 0 00-.3-1.9l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.9.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.6 1.7 1.7 0 001.9-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.9V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>',
   gavel:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 5l5 5M9 10l6 6M4 21l6-6M2 22l3-3"/><path d="M12.5 3.5l3-3 5 5-3 3z"/></svg>',
+  calc:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M8 6h8M8 11h.01M12 11h.01M16 11h.01M8 15h.01M12 15h.01M16 15h.01M8 19h.01M12 19h.01M16 19h.01"/></svg>',
 };
 const PAGES_BY_ROLE = {
-  master: [ {id:'dashboard',label:'Painel',icon:'grid'}, {id:'usuarios',label:'Usuários',icon:'users'}, {id:'clientes',label:'Clientes',icon:'user'}, {id:'processos',label:'Processos',icon:'folder'}, {id:'prazos',label:'Prazos',icon:'calendar'}, {id:'financeiro',label:'Financeiro',icon:'money'}, {id:'agenda',label:'Agenda',icon:'calendar'}, {id:'mensagens',label:'Mensagens',icon:'msg'}, {id:'lembretes',label:'Lembretes',icon:'bell'}, {id:'config',label:'Configurações',icon:'cog'} ],
-  socio: [ {id:'dashboard',label:'Painel',icon:'grid'}, {id:'usuarios',label:'Usuários',icon:'users'}, {id:'clientes',label:'Clientes',icon:'user'}, {id:'processos',label:'Processos',icon:'folder'}, {id:'prazos',label:'Prazos',icon:'calendar'}, {id:'financeiro',label:'Financeiro',icon:'money'}, {id:'agenda',label:'Agenda',icon:'calendar'}, {id:'mensagens',label:'Mensagens',icon:'msg'}, {id:'lembretes',label:'Lembretes',icon:'bell'} ],
-  associado: [ {id:'dashboard',label:'Painel',icon:'grid'}, {id:'clientes',label:'Clientes',icon:'user'}, {id:'processos',label:'Processos',icon:'folder'}, {id:'prazos',label:'Prazos',icon:'calendar'}, {id:'financeiro',label:'Financeiro',icon:'money'}, {id:'agenda',label:'Agenda',icon:'calendar'}, {id:'mensagens',label:'Mensagens',icon:'msg'}, {id:'lembretes',label:'Lembretes',icon:'bell'} ],
+  master: [ {id:'dashboard',label:'Painel',icon:'grid'}, {id:'usuarios',label:'Usuários',icon:'users'}, {id:'clientes',label:'Clientes',icon:'user'}, {id:'processos',label:'Processos',icon:'folder'}, {id:'prazos',label:'Prazos',icon:'calendar'}, {id:'financeiro',label:'Financeiro',icon:'money'}, {id:'calculo',label:'Cálculo Jurídico',icon:'calc'}, {id:'agenda',label:'Agenda',icon:'calendar'}, {id:'mensagens',label:'Mensagens',icon:'msg'}, {id:'lembretes',label:'Lembretes',icon:'bell'}, {id:'config',label:'Configurações',icon:'cog'} ],
+  socio: [ {id:'dashboard',label:'Painel',icon:'grid'}, {id:'usuarios',label:'Usuários',icon:'users'}, {id:'clientes',label:'Clientes',icon:'user'}, {id:'processos',label:'Processos',icon:'folder'}, {id:'prazos',label:'Prazos',icon:'calendar'}, {id:'financeiro',label:'Financeiro',icon:'money'}, {id:'calculo',label:'Cálculo Jurídico',icon:'calc'}, {id:'agenda',label:'Agenda',icon:'calendar'}, {id:'mensagens',label:'Mensagens',icon:'msg'}, {id:'lembretes',label:'Lembretes',icon:'bell'} ],
+  associado: [ {id:'dashboard',label:'Painel',icon:'grid'}, {id:'clientes',label:'Clientes',icon:'user'}, {id:'processos',label:'Processos',icon:'folder'}, {id:'prazos',label:'Prazos',icon:'calendar'}, {id:'financeiro',label:'Financeiro',icon:'money'}, {id:'calculo',label:'Cálculo Jurídico',icon:'calc'}, {id:'agenda',label:'Agenda',icon:'calendar'}, {id:'mensagens',label:'Mensagens',icon:'msg'}, {id:'lembretes',label:'Lembretes',icon:'bell'} ],
   cliente: [ {id:'meus-processos',label:'Meus processos',icon:'folder'}, {id:'agendar-cliente',label:'Agendar visita',icon:'calendar'}, {id:'mensagens',label:'Mensagens',icon:'msg'} ],
 };
 function buildNav(){
@@ -920,6 +931,7 @@ function goPage(id){
   if(id==='config') carregarConfigForm();
   if(id==='prazos'){ renderPrazos(); renderAudiencias(); }
   if(id==='processos') renderProcessos();
+  if(id==='calculo') renderCalculoJuridico();
 }
 function setPrazoSecaoTab(tab){
   document.querySelectorAll('.prazo-sec-tab').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
@@ -2108,6 +2120,748 @@ function computeAssociadoTotals(){
   });
   return {totalContrato, totalRecebidoCliente, minhaParteTotal, minhaParteRepassada, minhaParteAguardando, qtd:list.length};
 }
+/* ============================================================
+   CÁLCULO JURÍDICO
+   ============================================================ */
+const CALCULO_CATEGORIAS = [
+  { id:'trabalhista', titulo:'1. Cálculos Trabalhistas', implementado:'trabalhista-rescisao',
+    itens:['Verbas rescisórias: saldo de salário, aviso prévio, 13º proporcional, férias proporcionais + 1/3, FGTS + multa de 40%','Horas extras (50%/100%), DSR sobre horas extras, hora noturna reduzida','Adicionais: insalubridade (10/20/40%), periculosidade (30%), noturno (20%)','Multas art. 477 e art. 467','Equiparação salarial e diferenças salariais'] },
+  { id:'civel', titulo:'2. Cálculos Cíveis', implementado:'civel-indebito',
+    itens:['Liquidação de sentença (por artigos, cálculo, arbitramento)','Correção monetária e juros de mora — use o núcleo abaixo','Danos materiais e lucros cessantes','Pensão alimentícia (fixação, revisão, execução de alimentos)','Honorários advocatícios (sucumbenciais e contratuais)','Repetição de indébito (simples e em dobro, art. 42 CDC)'] },
+  { id:'previdenciario', titulo:'3. Cálculos Previdenciários', implementado:'previdenciario-rmi',
+    itens:['RMI (Renda Mensal Inicial) de benefícios — regra permanente, ver escopo na tela','Revisões de benefícios (buraco negro, teto, vida toda, RMI) — "vida toda" rejeitada pelo STF em 2026, ver aviso','Atualização de benefícios em atraso','Tempo de contribuição e carência'] },
+  { id:'tributario', titulo:'4. Cálculos Tributários', implementado:'tributario-multa-juros',
+    itens:['Multas e juros SELIC sobre tributos','Parcelamentos fiscais (REFIS, PERT etc.)','Compensação e restituição tributária'] },
+  { id:'execucao-fiscal', titulo:'5. Execução Fiscal', implementado:'execucao-fiscal',
+    itens:['Atualização de débitos inscritos em dívida ativa'] },
+  { id:'empresarial', titulo:'6. Empresarial/Societário', implementado:'empresarial-lucros',
+    itens:['Apuração de haveres (dissolução de sociedade) — muito dependente de perícia contábil, ainda em construção','Distribuição de lucros e dividendos'] },
+  { id:'penal', titulo:'7. Cálculos Penais', implementado:'penal-dosimetria',
+    itens:['Dosimetria da pena (3 fases)','Detração penal (tempo de prisão provisória)','Progressão de regime (frações da LEP)'] },
+  { id:'familia', titulo:'8. Direito de Família', implementado:'familia-partilha',
+    itens:['Partilha de bens e sobrepartilha','Compensação de valores entre cônjuges/companheiros'] },
+  { id:'consumidor', titulo:'9. Consumidor / Bancário', implementado:'consumidor-amortizacao',
+    itens:['Revisão de contratos bancários — comparação Tabela Price x SAC (juros abusivos exigem perícia específica, ainda em construção)','Superendividamento'] },
+  { id:'administrativo', titulo:'10. Administrativo / Servidor Público', implementado:'administrativo',
+    itens:['Reposição salarial e diferenças de reajuste (por índice)','Diferenças de planos econômicos (percentuais fixados em jurisprudência)','Quintos/décimos incorporados, VPNI — muito específico por ente/tribunal, ainda em construção'] },
+  { id:'locacao', titulo:'11. Locação Imobiliária', implementado:'locacao',
+    itens:['Ação de despejo (débitos locatícios)','Revisional de aluguel'] },
+  { id:'desapropriacao', titulo:'12. Desapropriação', implementado:'desapropriacao',
+    itens:['Indenização por justo valor + juros compensatórios e moratórios'] },
+  { id:'seguros', titulo:'13. Seguros', implementado:'seguros-dpvat',
+    itens:['DPVAT/SPVAT (morte, invalidez, DAMS)','Seguros de vida/acidentes (indenizações tabeladas)'] },
+  { id:'eleitoral', titulo:'14. Eleitoral', implementado:null,
+    itens:['Cálculo de multas eleitorais'] },
+  { id:'ambiental', titulo:'15. Ambiental', implementado:null,
+    itens:['Indenização por dano ambiental'] },
+  { id:'fgts', titulo:'16. FGTS (bloco próprio)', implementado:'fgts-diferencas',
+    itens:['Correção de expurgos inflacionários (Verão, Collor I e II)','Diferenças de FGTS não recolhido'] },
+];
+let CALCULO_ATIVO = null;
+function renderCalculoJuridico(){
+  const lista = document.getElementById('calculo-lista');
+  lista.innerHTML = `<div class="list-row" style="cursor:pointer; font-weight:700; color:var(--gold-dark);" onclick="selecionarCategoriaCalculo('nucleo')">🧮 Núcleo: Correção + Juros</div>` +
+    (isMaster()||isSocio()? `<div class="list-row" style="cursor:pointer; font-weight:700;" onclick="selecionarCategoriaCalculo('parametros')">⚙️ Parâmetros de Cálculo</div>` : '') +
+    CALCULO_CATEGORIAS.map(c=>`<div class="list-row" style="cursor:pointer;" onclick="selecionarCategoriaCalculo('${c.id}')"><div>${escapeHtml(c.titulo)}</div>${c.implementado?'<span class="tag tag-confirmado" style="font-size:9px;">pronto</span>':''}</div>`).join('');
+  if(CALCULO_ATIVO) selecionarCategoriaCalculo(CALCULO_ATIVO);
+}
+async function selecionarCategoriaCalculo(id){
+  CALCULO_ATIVO = id;
+  document.querySelectorAll('#calculo-lista .list-row').forEach(el=>el.classList.remove('active'));
+  const box = document.getElementById('calculo-conteudo');
+  if(id==='nucleo'){ box.innerHTML = formularioNucleoCorrecao(); return; }
+  if(id==='parametros'){ box.innerHTML = '<div class="empty">Carregando...</div>'; box.innerHTML = await formularioParametrosCalculo(); return; }
+  const cat = CALCULO_CATEGORIAS.find(c=>c.id===id);
+  if(!cat) return;
+  if(cat.implementado==='trabalhista-rescisao'){ box.innerHTML = formularioRescisaoTrabalhista(); return; }
+  if(cat.implementado==='civel-indebito'){ box.innerHTML = formularioIndebitoCivel(cat); return; }
+  if(cat.implementado==='tributario-multa-juros'){ box.innerHTML = formularioTributario(cat); return; }
+  if(cat.implementado==='execucao-fiscal'){ box.innerHTML = formularioExecucaoFiscal(cat); return; }
+  if(cat.implementado==='locacao'){ box.innerHTML = formularioLocacao(cat); setLocacaoTab('reajuste'); return; }
+  if(cat.implementado==='seguros-dpvat'){ box.innerHTML = formularioDpvat(cat); return; }
+  if(cat.implementado==='familia-partilha'){ box.innerHTML = formularioPartilha(cat); return; }
+  if(cat.implementado==='penal-dosimetria'){ box.innerHTML = formularioDosimetria(cat); return; }
+  if(cat.implementado==='desapropriacao'){ box.innerHTML = formularioDesapropriacao(cat); return; }
+  if(cat.implementado==='fgts-diferencas'){ box.innerHTML = formularioFgtsDiferencas(cat); return; }
+  if(cat.implementado==='previdenciario-rmi'){ box.innerHTML = formularioPrevidenciario(cat); return; }
+  if(cat.implementado==='empresarial-lucros'){ box.innerHTML = formularioDistribuicaoLucros(cat); return; }
+  if(cat.implementado==='consumidor-amortizacao'){ box.innerHTML = formularioAmortizacao(cat); return; }
+  if(cat.implementado==='administrativo'){ box.innerHTML = formularioAdministrativo(cat); setAdministrativoTab('reposicao'); return; }
+  box.innerHTML = `<h3>${escapeHtml(cat.titulo)}</h3>
+    <div class="hint" style="margin:8px 0;">Módulo ainda em construção. Itens previstos:</div>
+    <ul style="margin:0 0 0 18px; font-size:13px; color:var(--ink-soft); line-height:1.8;">${cat.itens.map(i=>`<li>${escapeHtml(i)}</li>`).join('')}</ul>
+    <div class="hint" style="margin-top:12px;">Peça para este módulo ser implementado quando precisar — o núcleo de correção monetária/juros já está pronto e pode ser usado manualmente enquanto isso.</div>`;
+}
+const INDICES_DISPONIVEIS = [
+  {v:'INPC', l:'INPC (IBGE)'}, {v:'IPCA', l:'IPCA (IBGE)'}, {v:'IPCA-E', l:'IPCA-E (aproximado pelo IPCA mensal — confira tabela oficial do tribunal para precatórios)'},
+  {v:'SELIC', l:'Selic (já embute juros — não some juros por fora)'}, {v:'IGPM', l:'IGP-M (FGV)'}, {v:'TR', l:'TR — Taxa Referencial'},
+];
+function formularioNucleoCorrecao(){
+  return `<h3>Núcleo: Correção Monetária + Juros</h3>
+    <div class="hint" style="margin-bottom:10px;">Busca os índices ao vivo direto do Banco Central (SGS). Convenção: a correção incide do mês seguinte ao inicial até o mês final — confira se a decisão do seu caso determina outra convenção.</div>
+    <div class="field-row">
+      <div class="field"><label>Valor base (R$)</label><input type="number" step="0.01" id="nc-valor" placeholder="0,00"></div>
+      <div class="field"><label>Índice</label><select id="nc-indice">${INDICES_DISPONIVEIS.map(i=>`<option value="${i.v}">${i.l}</option>`).join('')}</select></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Data inicial</label><input type="date" id="nc-data-inicial"></div>
+      <div class="field"><label>Data final</label><input type="date" id="nc-data-final" value="${todayISO()}"></div>
+    </div>
+    <fieldset><legend>Juros de mora (opcional)</legend>
+      <div class="field-row">
+        <div class="field"><label>Tipo</label><select id="nc-juros-tipo"><option value="nenhum">Sem juros</option><option value="simples">Simples</option><option value="composto">Composto</option></select></div>
+        <div class="field"><label>Taxa ao mês (%)</label><input type="number" step="0.01" id="nc-juros-taxa" placeholder="Ex: 1"></div>
+      </div>
+      <div class="field"><label>Juros a partir de (padrão: mesma data inicial)</label><input type="date" id="nc-juros-data"></div>
+    </fieldset>
+    <button class="btn btn-gold" onclick="calcularNucleoCorrecao()">Calcular</button>
+    <div id="nc-resultado" style="margin-top:14px;"></div>`;
+}
+async function calcularNucleoCorrecao(){
+  const valorBase = parseFloat(document.getElementById('nc-valor').value);
+  const dataInicial = document.getElementById('nc-data-inicial').value;
+  const dataFinal = document.getElementById('nc-data-final').value;
+  const indice = document.getElementById('nc-indice').value;
+  const tipoJuros = document.getElementById('nc-juros-tipo').value;
+  const taxaAoMes = parseFloat(document.getElementById('nc-juros-taxa').value)||0;
+  const dataInicioJuros = document.getElementById('nc-juros-data').value || dataInicial;
+  if(!valorBase || !dataInicial || !dataFinal){ showToast('Preencha valor e as duas datas.'); return; }
+  const box = document.getElementById('nc-resultado');
+  box.innerHTML = '<div class="empty">Consultando os índices no Banco Central...</div>';
+  try{
+    const r = await apiFetch('/api/calculos/correcao', { method:'POST', body: JSON.stringify({ valorBase, dataInicial, dataFinal, indice, juros:{tipo:tipoJuros, taxaAoMes, dataInicioJuros} }) });
+    box.innerHTML = `<div class="panel">
+      <div class="irow"><span>Valor base</span><strong>${fmtMoney(r.valorBase)}</strong></div>
+      <div class="irow"><span>Fator de correção acumulado</span><strong>${r.fatorCorrecao.toFixed(6)}</strong></div>
+      <div class="irow"><span>Valor corrigido</span><strong>${fmtMoney(r.valorCorrigido)}</strong></div>
+      <div class="irow"><span>Juros de mora</span><strong>${fmtMoney(r.valorJuros)}</strong></div>
+      <div class="irow" style="border-top:1px solid var(--line); padding-top:8px; margin-top:4px;"><span>Valor final</span><strong style="color:var(--gold-dark); font-size:16px;">${fmtMoney(r.valorFinal)}</strong></div>
+      <details style="margin-top:10px; font-size:11.5px; color:var(--ink-soft);"><summary style="cursor:pointer;">Ver meses usados no cálculo (${r.mesesUsados.length})</summary>
+        ${r.mesesUsados.map(m=>`<div>${m.mes}: ${m.indice}%</div>`).join('')}
+      </details>
+    </div>`;
+  }catch(e){ box.innerHTML = `<div class="empty">${escapeHtml(e.message||'Não foi possível calcular.')}</div>`; }
+}
+function formularioRescisaoTrabalhista(){
+  return `<h3>Trabalhista — Verbas Rescisórias (dispensa sem justa causa)</h3>
+    <div class="hint" style="margin-bottom:10px;">Fórmulas padronizadas da CLT. Não considera adicionais, médias variáveis, convenção coletiva ou hora extra habitual — confira com atenção antes de usar em petição.</div>
+    <div class="field-row">
+      <div class="field"><label>Salário (R$)</label><input type="number" step="0.01" id="rt-salario" placeholder="0,00"></div>
+      <div class="field"><label>Saldo de FGTS já depositado (opcional — se vazio, estima 8% ao mês)</label><input type="number" step="0.01" id="rt-fgts" placeholder="Deixe vazio para estimar"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Data de admissão</label><input type="date" id="rt-admissao"></div>
+      <div class="field"><label>Data de demissão</label><input type="date" id="rt-demissao"></div>
+    </div>
+    <div class="field"><label><input type="checkbox" id="rt-aviso" checked style="width:auto; margin-right:6px;"> Aviso prévio indenizado (desmarque se foi trabalhado)</label></div>
+    <button class="btn btn-gold" onclick="calcularRescisaoTrabalhista()">Calcular</button>
+    <div id="rt-resultado" style="margin-top:14px;"></div>`;
+}
+async function calcularRescisaoTrabalhista(){
+  const salario = parseFloat(document.getElementById('rt-salario').value);
+  const dataAdmissao = document.getElementById('rt-admissao').value;
+  const dataDemissao = document.getElementById('rt-demissao').value;
+  const avisoPrevioIndenizado = document.getElementById('rt-aviso').checked;
+  const saldoFgtsInformado = parseFloat(document.getElementById('rt-fgts').value) || null;
+  if(!salario || !dataAdmissao || !dataDemissao){ showToast('Preencha salário e as duas datas.'); return; }
+  const box = document.getElementById('rt-resultado');
+  try{
+    const r = await apiFetch('/api/calculos/trabalhista/rescisao', { method:'POST', body: JSON.stringify({ salario, dataAdmissao, dataDemissao, avisoPrevioIndenizado, saldoFgtsInformado }) });
+    box.innerHTML = `<div class="panel">
+      <div class="irow"><span>Saldo de salário (${r.diasNoMesDemissao} dia(s))</span><strong>${fmtMoney(r.saldoSalario)}</strong></div>
+      <div class="irow"><span>Aviso prévio ${r.avisoPrevioIndenizado?'indenizado':'(trabalhado — sem indenização)'} (${r.diasAvisoPrevio} dias)</span><strong>${fmtMoney(r.avisoPrevioValor)}</strong></div>
+      <div class="irow"><span>13º proporcional (${r.mesesPara13}/12)</span><strong>${fmtMoney(r.decimoTerceiro)}</strong></div>
+      <div class="irow"><span>Férias proporcionais + 1/3 (${r.mesesParaFerias}/12)</span><strong>${fmtMoney(r.feriasProporcionais)}</strong></div>
+      <div class="irow"><span>Saldo FGTS</span><strong>${fmtMoney(r.saldoFgts)}</strong></div>
+      <div class="irow"><span>Multa 40% sobre FGTS</span><strong>${fmtMoney(r.multaFgts)}</strong></div>
+      <div class="irow" style="border-top:1px solid var(--line); padding-top:8px; margin-top:4px;"><span>TOTAL</span><strong style="color:var(--gold-dark); font-size:16px;">${fmtMoney(r.total)}</strong></div>
+    </div>`;
+  }catch(e){ box.innerHTML = `<div class="empty">${escapeHtml(e.message||'Não foi possível calcular.')}</div>`; }
+}
+function formularioIndebitoCivel(cat){
+  return `<h3>${escapeHtml(cat.titulo)} — Repetição de Indébito</h3>
+    <div class="hint" style="margin-bottom:10px;">Simples ou em dobro (art. 42, parágrafo único, CDC), com correção monetária opcional via o núcleo. Os demais itens desta categoria (liquidação de sentença, danos materiais, pensão alimentícia, honorários) ainda estão em construção.</div>
+    <div class="field-row">
+      <div class="field"><label>Valor pago indevidamente (R$)</label><input type="number" step="0.01" id="ci-valor" placeholder="0,00"></div>
+      <div class="field"><label>Restituição</label><select id="ci-dobro"><option value="false">Simples</option><option value="true">Em dobro (art. 42 CDC)</option></select></div>
+    </div>
+    <div class="field"><label><input type="checkbox" id="ci-corrigir" style="width:auto; margin-right:6px;" onchange="document.getElementById('ci-datas-box').style.display=this.checked?'block':'none'"> Aplicar correção monetária</label></div>
+    <div id="ci-datas-box" style="display:none;">
+      <div class="field-row">
+        <div class="field"><label>Índice</label><select id="ci-indice">${INDICES_DISPONIVEIS.map(i=>`<option value="${i.v}">${i.l}</option>`).join('')}</select></div>
+        <div class="field"><label>Data do pagamento indevido</label><input type="date" id="ci-data-inicial"></div>
+        <div class="field"><label>Data final</label><input type="date" id="ci-data-final" value="${todayISO()}"></div>
+      </div>
+    </div>
+    <button class="btn btn-gold" onclick="calcularIndebitoCivel()">Calcular</button>
+    <div id="ci-resultado" style="margin-top:14px;"></div>`;
+}
+async function calcularIndebitoCivel(){
+  const valorPago = parseFloat(document.getElementById('ci-valor').value);
+  const emDobro = document.getElementById('ci-dobro').value==='true';
+  const aplicarCorrecao = document.getElementById('ci-corrigir').checked;
+  if(!valorPago){ showToast('Informe o valor pago.'); return; }
+  const body = { valorPago, emDobro, aplicarCorrecao };
+  if(aplicarCorrecao){ body.indice = document.getElementById('ci-indice').value; body.dataInicial = document.getElementById('ci-data-inicial').value; body.dataFinal = document.getElementById('ci-data-final').value; }
+  const box = document.getElementById('ci-resultado');
+  try{
+    const r = await apiFetch('/api/calculos/civel/indebito', { method:'POST', body: JSON.stringify(body) });
+    box.innerHTML = `<div class="panel">
+      <div class="irow"><span>Valor base (${emDobro?'em dobro':'simples'})</span><strong>${fmtMoney(r.valorBase)}</strong></div>
+      ${aplicarCorrecao? `<div class="irow"><span>Fator de correção</span><strong>${r.fatorCorrecao.toFixed(6)}</strong></div>`:''}
+      <div class="irow" style="border-top:1px solid var(--line); padding-top:8px; margin-top:4px;"><span>Valor final</span><strong style="color:var(--gold-dark); font-size:16px;">${fmtMoney(r.valorFinal)}</strong></div>
+    </div>`;
+  }catch(e){ box.innerHTML = `<div class="empty">${escapeHtml(e.message||'Não foi possível calcular.')}</div>`; }
+}
+
+function formularioTributario(cat){
+  return `<h3>${escapeHtml(cat.titulo)} — Multa + Juros Selic</h3>
+    <div class="hint" style="margin-bottom:10px;">Aplica a multa percentual sobre o tributo e depois corrige pela Selic acumulada (que já embute juros) entre o vencimento e o pagamento.</div>
+    <div class="field-row">
+      <div class="field"><label>Valor do tributo (R$)</label><input type="number" step="0.01" id="tr-valor" placeholder="0,00"></div>
+      <div class="field"><label>Multa (%)</label><input type="number" step="0.01" id="tr-multa" value="20"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Data de vencimento</label><input type="date" id="tr-vencimento"></div>
+      <div class="field"><label>Data de pagamento</label><input type="date" id="tr-pagamento" value="${todayISO()}"></div>
+    </div>
+    <button class="btn btn-gold" onclick="calcularTributario()">Calcular</button>
+    <div id="tr-resultado" style="margin-top:14px;"></div>`;
+}
+async function calcularTributario(){
+  const valorTributo = parseFloat(document.getElementById('tr-valor').value);
+  const percentualMulta = parseFloat(document.getElementById('tr-multa').value)||0;
+  const dataVencimento = document.getElementById('tr-vencimento').value;
+  const dataPagamento = document.getElementById('tr-pagamento').value;
+  if(!valorTributo || !dataVencimento || !dataPagamento){ showToast('Preencha valor e as duas datas.'); return; }
+  const box = document.getElementById('tr-resultado');
+  box.innerHTML = '<div class="empty">Consultando a Selic no Banco Central...</div>';
+  try{
+    const r = await apiFetch('/api/calculos/tributario/multa-juros', { method:'POST', body: JSON.stringify({ valorTributo, dataVencimento, dataPagamento, percentualMulta }) });
+    box.innerHTML = `<div class="panel">
+      <div class="irow"><span>Tributo original</span><strong>${fmtMoney(r.valorTributo)}</strong></div>
+      <div class="irow"><span>Multa (${percentualMulta}%)</span><strong>${fmtMoney(r.multa)}</strong></div>
+      <div class="irow"><span>Fator Selic acumulada</span><strong>${r.fatorCorrecao.toFixed(6)}</strong></div>
+      <div class="irow" style="border-top:1px solid var(--line); padding-top:8px; margin-top:4px;"><span>Valor final</span><strong style="color:var(--gold-dark); font-size:16px;">${fmtMoney(r.valorFinal)}</strong></div>
+    </div>`;
+  }catch(e){ box.innerHTML = `<div class="empty">${escapeHtml(e.message||'Não foi possível calcular.')}</div>`; }
+}
+function formularioExecucaoFiscal(cat){
+  return `<h3>${escapeHtml(cat.titulo)} — Atualização de débito em dívida ativa</h3>
+    <div class="hint" style="margin-bottom:10px;">Corrige o valor inscrito pela Selic acumulada (padrão para débitos com a Fazenda Pública).</div>
+    <div class="field-row">
+      <div class="field"><label>Valor inscrito (R$)</label><input type="number" step="0.01" id="ef-valor" placeholder="0,00"></div>
+      <div class="field"><label>Data da inscrição</label><input type="date" id="ef-data-inicial"></div>
+      <div class="field"><label>Data da atualização</label><input type="date" id="ef-data-final" value="${todayISO()}"></div>
+    </div>
+    <button class="btn btn-gold" onclick="calcularExecucaoFiscal()">Calcular</button>
+    <div id="ef-resultado" style="margin-top:14px;"></div>`;
+}
+async function calcularExecucaoFiscal(){
+  const valorInscrito = parseFloat(document.getElementById('ef-valor').value);
+  const dataInscricao = document.getElementById('ef-data-inicial').value;
+  const dataAtualizacao = document.getElementById('ef-data-final').value;
+  if(!valorInscrito || !dataInscricao || !dataAtualizacao){ showToast('Preencha valor e as duas datas.'); return; }
+  const box = document.getElementById('ef-resultado');
+  box.innerHTML = '<div class="empty">Consultando a Selic no Banco Central...</div>';
+  try{
+    const r = await apiFetch('/api/calculos/execucao-fiscal/atualizacao', { method:'POST', body: JSON.stringify({ valorInscrito, dataInscricao, dataAtualizacao }) });
+    box.innerHTML = `<div class="panel">
+      <div class="irow"><span>Valor inscrito</span><strong>${fmtMoney(r.valorBase)}</strong></div>
+      <div class="irow"><span>Fator Selic acumulada</span><strong>${r.fatorCorrecao.toFixed(6)}</strong></div>
+      <div class="irow" style="border-top:1px solid var(--line); padding-top:8px; margin-top:4px;"><span>Valor atualizado</span><strong style="color:var(--gold-dark); font-size:16px;">${fmtMoney(r.valorFinal)}</strong></div>
+    </div>`;
+  }catch(e){ box.innerHTML = `<div class="empty">${escapeHtml(e.message||'Não foi possível calcular.')}</div>`; }
+}
+function formularioLocacao(cat){
+  return `<h3>${escapeHtml(cat.titulo)}</h3>
+    <div class="pill-select" style="margin-bottom:10px;" id="loc-tabs">
+      <button class="fin-tab active" data-tab="reajuste" onclick="setLocacaoTab('reajuste')">Revisional de aluguel</button>
+      <button class="fin-tab" data-tab="debitos" onclick="setLocacaoTab('debitos')">Débitos locatícios (despejo)</button>
+    </div>
+    <div id="loc-conteudo"></div>`;
+}
+function setLocacaoTab(tab){
+  document.querySelectorAll('#loc-tabs .fin-tab').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
+  const box = document.getElementById('loc-conteudo');
+  if(tab==='reajuste'){
+    box.innerHTML = `<div class="field-row">
+        <div class="field"><label>Valor atual do aluguel (R$)</label><input type="number" step="0.01" id="loc-valor"></div>
+        <div class="field"><label>Índice</label><select id="loc-indice">${INDICES_DISPONIVEIS.map(i=>`<option value="${i.v}">${i.l}</option>`).join('')}</select></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Data do último reajuste</label><input type="date" id="loc-data-inicial"></div>
+        <div class="field"><label>Data do novo reajuste</label><input type="date" id="loc-data-final" value="${todayISO()}"></div>
+      </div>
+      <button class="btn btn-gold" onclick="calcularReajusteLocacao()">Calcular</button>
+      <div id="loc-resultado" style="margin-top:14px;"></div>`;
+  } else {
+    box.innerHTML = `<div class="field-row">
+        <div class="field"><label>Valor do débito (R$)</label><input type="number" step="0.01" id="locd-valor"></div>
+        <div class="field"><label>Multa contratual (%)</label><input type="number" step="0.01" id="locd-multa" value="10"></div>
+        <div class="field"><label>Índice</label><select id="locd-indice">${INDICES_DISPONIVEIS.map(i=>`<option value="${i.v}">${i.l}</option>`).join('')}</select></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Data de vencimento</label><input type="date" id="locd-data-inicial"></div>
+        <div class="field"><label>Data de pagamento</label><input type="date" id="locd-data-final" value="${todayISO()}"></div>
+      </div>
+      <button class="btn btn-gold" onclick="calcularDebitosLocacao()">Calcular</button>
+      <div id="locd-resultado" style="margin-top:14px;"></div>`;
+  }
+}
+async function calcularReajusteLocacao(){
+  const valorAluguel = parseFloat(document.getElementById('loc-valor').value);
+  const indice = document.getElementById('loc-indice').value;
+  const dataUltimoReajuste = document.getElementById('loc-data-inicial').value;
+  const dataNova = document.getElementById('loc-data-final').value;
+  if(!valorAluguel || !dataUltimoReajuste || !dataNova){ showToast('Preencha valor e as duas datas.'); return; }
+  const box = document.getElementById('loc-resultado');
+  box.innerHTML = '<div class="empty">Consultando o índice no Banco Central...</div>';
+  try{
+    const r = await apiFetch('/api/calculos/locacao/reajuste', { method:'POST', body: JSON.stringify({ valorAluguel, dataUltimoReajuste, dataNova, indice }) });
+    box.innerHTML = `<div class="panel">
+      <div class="irow"><span>Aluguel atual</span><strong>${fmtMoney(r.valorBase)}</strong></div>
+      <div class="irow"><span>Fator de reajuste</span><strong>${r.fatorCorrecao.toFixed(6)}</strong></div>
+      <div class="irow" style="border-top:1px solid var(--line); padding-top:8px; margin-top:4px;"><span>Novo valor</span><strong style="color:var(--gold-dark); font-size:16px;">${fmtMoney(r.valorFinal)}</strong></div>
+    </div>`;
+  }catch(e){ box.innerHTML = `<div class="empty">${escapeHtml(e.message||'Não foi possível calcular.')}</div>`; }
+}
+async function calcularDebitosLocacao(){
+  const valorDebito = parseFloat(document.getElementById('locd-valor').value);
+  const percentualMulta = parseFloat(document.getElementById('locd-multa').value)||0;
+  const indice = document.getElementById('locd-indice').value;
+  const dataVencimento = document.getElementById('locd-data-inicial').value;
+  const dataPagamento = document.getElementById('locd-data-final').value;
+  if(!valorDebito || !dataVencimento || !dataPagamento){ showToast('Preencha valor e as duas datas.'); return; }
+  const box = document.getElementById('locd-resultado');
+  box.innerHTML = '<div class="empty">Consultando o índice no Banco Central...</div>';
+  try{
+    const r = await apiFetch('/api/calculos/locacao/debitos', { method:'POST', body: JSON.stringify({ valorDebito, percentualMulta, dataVencimento, dataPagamento, indice }) });
+    box.innerHTML = `<div class="panel">
+      <div class="irow"><span>Débito original</span><strong>${fmtMoney(valorDebito)}</strong></div>
+      <div class="irow"><span>Multa contratual (${percentualMulta}%)</span><strong>${fmtMoney(r.multa)}</strong></div>
+      <div class="irow"><span>Fator de correção</span><strong>${r.fatorCorrecao.toFixed(6)}</strong></div>
+      <div class="irow" style="border-top:1px solid var(--line); padding-top:8px; margin-top:4px;"><span>Valor final</span><strong style="color:var(--gold-dark); font-size:16px;">${fmtMoney(r.valorFinal)}</strong></div>
+    </div>`;
+  }catch(e){ box.innerHTML = `<div class="empty">${escapeHtml(e.message||'Não foi possível calcular.')}</div>`; }
+}
+function formularioDpvat(cat){
+  return `<h3>${escapeHtml(cat.titulo)} — DPVAT/SPVAT</h3>
+    <div class="hint" style="margin-bottom:10px;">Valores fixos por lei (Lei nº 11.945/2009), mantidos no SPVAT (sucessor do DPVAT a partir de 2026). <strong>Atenção ao prazo</strong>: acidentes dentro do período de cobertura do antigo DPVAT só podem ser reclamados até 14/11/2026.</div>
+    <div class="field"><label>Tipo de indenização</label><select id="dp-tipo" onchange="document.getElementById('dp-invalidez-box').style.display=this.value==='invalidez'?'block':'none'">
+      <option value="morte">Morte (R$ 13.500,00 fixo)</option>
+      <option value="invalidez">Invalidez permanente (proporcional ao grau, até R$ 13.500,00)</option>
+      <option value="dams">Despesas médicas — DAMS (até R$ 2.700,00)</option>
+    </select></div>
+    <div class="field" id="dp-invalidez-box" style="display:none;"><label>Grau de invalidez (% do laudo pericial)</label><input type="number" step="0.01" id="dp-percentual" placeholder="Ex: 50"></div>
+    <button class="btn btn-gold" onclick="calcularDpvat()">Calcular</button>
+    <div id="dp-resultado" style="margin-top:14px;"></div>`;
+}
+async function calcularDpvat(){
+  const tipo = document.getElementById('dp-tipo').value;
+  const percentualInvalidez = parseFloat(document.getElementById('dp-percentual').value)||100;
+  const box = document.getElementById('dp-resultado');
+  try{
+    const r = await apiFetch('/api/calculos/seguros/dpvat', { method:'POST', body: JSON.stringify({ tipo, percentualInvalidez }) });
+    box.innerHTML = `<div class="panel"><div class="irow" style="border-top:none; padding-top:0;"><span>Valor da indenização</span><strong style="color:var(--gold-dark); font-size:16px;">${fmtMoney(r.valor)}</strong></div></div>`;
+  }catch(e){ box.innerHTML = `<div class="empty">${escapeHtml(e.message||'Não foi possível calcular.')}</div>`; }
+}
+let PARTILHA_BENS = [];
+function formularioPartilha(cat){
+  PARTILHA_BENS = [];
+  return `<h3>${escapeHtml(cat.titulo)} — Partilha de Bens</h3>
+    <div class="hint" style="margin-bottom:10px;">Some os bens (e marque dívidas/bens não partilháveis) para calcular a meação (50/50). Para partilha em proporção diferente do acordo, ajuste manualmente sobre o total.</div>
+    <div class="field-row">
+      <div class="field"><label>Descrição do bem</label><input id="pt-desc" placeholder="Ex: Imóvel, veículo, conta..."></div>
+      <div class="field"><label>Valor (R$)</label><input type="number" step="0.01" id="pt-valor"></div>
+    </div>
+    <div class="field"><label><input type="checkbox" id="pt-partilhavel" checked style="width:auto; margin-right:6px;"> Bem partilhável (desmarque para dívida pessoal/bem excluído da partilha)</label></div>
+    <button class="btn btn-ghost" onclick="adicionarBemPartilha()">+ Adicionar à lista</button>
+    <div id="pt-lista" style="margin:14px 0;"></div>
+    <button class="btn btn-gold" onclick="calcularPartilha()">Calcular meação</button>
+    <div id="pt-resultado" style="margin-top:14px;"></div>`;
+}
+function adicionarBemPartilha(){
+  const descricao = document.getElementById('pt-desc').value.trim();
+  const valor = parseFloat(document.getElementById('pt-valor').value);
+  const partilhavel = document.getElementById('pt-partilhavel').checked;
+  if(!descricao || !valor){ showToast('Preencha descrição e valor.'); return; }
+  PARTILHA_BENS.push({descricao, valor, partilhavel});
+  document.getElementById('pt-desc').value=''; document.getElementById('pt-valor').value='';
+  renderListaPartilha();
+}
+function removerBemPartilha(i){ PARTILHA_BENS.splice(i,1); renderListaPartilha(); }
+function renderListaPartilha(){
+  document.getElementById('pt-lista').innerHTML = PARTILHA_BENS.length? PARTILHA_BENS.map((b,i)=>`<div class="list-row"><div>${escapeHtml(b.descricao)} ${b.partilhavel?'':'<span class="hint">(não partilhável)</span>'}</div><div class="rmeta">${fmtMoney(b.valor)} <button class="icon-btn danger" onclick="removerBemPartilha(${i})">🗑</button></div></div>`).join('') : '<div class="empty">Nenhum bem adicionado ainda.</div>';
+}
+async function calcularPartilha(){
+  if(!PARTILHA_BENS.length){ showToast('Adicione ao menos um bem.'); return; }
+  const box = document.getElementById('pt-resultado');
+  try{
+    const r = await apiFetch('/api/calculos/familia/partilha', { method:'POST', body: JSON.stringify({ bens: PARTILHA_BENS }) });
+    box.innerHTML = `<div class="panel">
+      <div class="irow"><span>Total de bens partilháveis</span><strong>${fmtMoney(r.totalBens)}</strong></div>
+      <div class="irow"><span>Meação — Parte A (50%)</span><strong>${fmtMoney(r.meacaoParteA)}</strong></div>
+      <div class="irow"><span>Meação — Parte B (50%)</span><strong>${fmtMoney(r.meacaoParteB)}</strong></div>
+    </div>`;
+  }catch(e){ box.innerHTML = `<div class="empty">${escapeHtml(e.message||'Não foi possível calcular.')}</div>`; }
+}
+function formularioDosimetria(cat){
+  return `<h3>${escapeHtml(cat.titulo)} — Dosimetria da Pena (art. 68 CP)</h3>
+    <div class="hint" style="margin-bottom:10px;">Calcula as 3 fases sobre o intervalo pena mínima–máxima do tipo penal. Informe as frações em % que você já decidiu aplicar em cada fase — este cálculo não substitui a fundamentação da sentença/peça, só a aritmética.</div>
+    <div class="field-row">
+      <div class="field"><label>Pena mínima (meses)</label><input type="number" step="0.01" id="ds-min"></div>
+      <div class="field"><label>Pena máxima (meses)</label><input type="number" step="0.01" id="ds-max"></div>
+    </div>
+    <fieldset><legend>1ª fase — circunstâncias judiciais (art. 59)</legend>
+      <div class="field"><label>% do intervalo mínimo-máximo a somar à pena mínima</label><input type="number" step="0.01" id="ds-circunstancias" value="0" placeholder="0 a 100"></div>
+    </fieldset>
+    <fieldset><legend>2ª fase — agravantes e atenuantes</legend>
+      <div class="field-row">
+        <div class="field"><label>Agravantes (% de aumento)</label><input type="number" step="0.01" id="ds-agravantes" value="0"></div>
+        <div class="field"><label>Atenuantes (% de redução)</label><input type="number" step="0.01" id="ds-atenuantes" value="0"></div>
+      </div>
+    </fieldset>
+    <fieldset><legend>3ª fase — causas de aumento e diminuição</legend>
+      <div class="field-row">
+        <div class="field"><label>Aumento (%, ex: 33.33 para 1/3)</label><input type="number" step="0.01" id="ds-aumento" value="0"></div>
+        <div class="field"><label>Diminuição (%, ex: 16.66 para 1/6)</label><input type="number" step="0.01" id="ds-diminuicao" value="0"></div>
+      </div>
+    </fieldset>
+    <button class="btn btn-gold" onclick="calcularDosimetria()">Calcular</button>
+    <div id="ds-resultado" style="margin-top:14px;"></div>`;
+}
+async function calcularDosimetria(){
+  const penaMinimaMeses = parseFloat(document.getElementById('ds-min').value);
+  const penaMaximaMeses = parseFloat(document.getElementById('ds-max').value);
+  if(penaMinimaMeses==null || penaMaximaMeses==null || isNaN(penaMinimaMeses) || isNaN(penaMaximaMeses)){ showToast('Preencha a pena mínima e máxima.'); return; }
+  const body = {
+    penaMinimaMeses, penaMaximaMeses,
+    fracaoCircunstanciasJudiciais: parseFloat(document.getElementById('ds-circunstancias').value)||0,
+    fracaoAgravantes: parseFloat(document.getElementById('ds-agravantes').value)||0,
+    fracaoAtenuantes: parseFloat(document.getElementById('ds-atenuantes').value)||0,
+    fracaoAumento: parseFloat(document.getElementById('ds-aumento').value)||0,
+    fracaoDiminuicao: parseFloat(document.getElementById('ds-diminuicao').value)||0,
+  };
+  const box = document.getElementById('ds-resultado');
+  try{
+    const r = await apiFetch('/api/calculos/penal/dosimetria', { method:'POST', body: JSON.stringify(body) });
+    box.innerHTML = `<div class="panel">
+      <div class="irow"><span>1ª fase — pena-base</span><strong>${r.penaBase.toFixed(2)} meses</strong></div>
+      <div class="irow"><span>2ª fase — após agravantes/atenuantes</span><strong>${r.penaFase2.toFixed(2)} meses</strong></div>
+      <div class="irow" style="border-top:1px solid var(--line); padding-top:8px; margin-top:4px;"><span>3ª fase — pena final</span><strong style="color:var(--gold-dark); font-size:16px;">${r.penaFinal.toFixed(2)} meses (${r.penaFinalAnos.toFixed(2)} anos)</strong></div>
+    </div>`;
+  }catch(e){ box.innerHTML = `<div class="empty">${escapeHtml(e.message||'Não foi possível calcular.')}</div>`; }
+}
+
+function formularioDesapropriacao(cat){
+  return `<h3>${escapeHtml(cat.titulo)}</h3>
+    <div class="hint" style="margin-bottom:10px;">Juros compensatórios de 12% ao ano (Súmula 618 STF) sobre o valor corrigido, mais juros moratórios opcionais (se houver atraso no pagamento após decisão).</div>
+    <div class="field-row">
+      <div class="field"><label>Valor justo (R$)</label><input type="number" step="0.01" id="dsp-valor"></div>
+      <div class="field"><label>Índice de correção</label><select id="dsp-indice">${INDICES_DISPONIVEIS.map(i=>`<option value="${i.v}">${i.l}</option>`).join('')}</select></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Data da imissão na posse</label><input type="date" id="dsp-data-inicial"></div>
+      <div class="field"><label>Data do pagamento</label><input type="date" id="dsp-data-final" value="${todayISO()}"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Juros compensatórios (% ao ano)</label><input type="number" step="0.01" id="dsp-comp" value="12"></div>
+      <div class="field"><label>Juros moratórios (% ao mês, opcional)</label><input type="number" step="0.01" id="dsp-mora" placeholder="deixe vazio se não houver"></div>
+    </div>
+    <button class="btn btn-gold" onclick="calcularDesapropriacao()">Calcular</button>
+    <div id="dsp-resultado" style="margin-top:14px;"></div>`;
+}
+async function calcularDesapropriacao(){
+  const valorJusto = parseFloat(document.getElementById('dsp-valor').value);
+  const indice = document.getElementById('dsp-indice').value;
+  const dataImissaoPosse = document.getElementById('dsp-data-inicial').value;
+  const dataPagamento = document.getElementById('dsp-data-final').value;
+  const taxaJurosCompensatoriosAnual = parseFloat(document.getElementById('dsp-comp').value)||12;
+  const taxaJurosMoratoriosAoMes = parseFloat(document.getElementById('dsp-mora').value)||0;
+  if(!valorJusto || !dataImissaoPosse || !dataPagamento){ showToast('Preencha valor e as duas datas.'); return; }
+  const box = document.getElementById('dsp-resultado');
+  box.innerHTML = '<div class="empty">Consultando o índice no Banco Central...</div>';
+  try{
+    const r = await apiFetch('/api/calculos/desapropriacao/indenizacao', { method:'POST', body: JSON.stringify({ valorJusto, dataImissaoPosse, dataPagamento, taxaJurosCompensatoriosAnual, taxaJurosMoratoriosAoMes, indice }) });
+    box.innerHTML = `<div class="panel">
+      <div class="irow"><span>Valor justo corrigido</span><strong>${fmtMoney(r.valorCorrigido)}</strong></div>
+      <div class="irow"><span>Juros compensatórios (${taxaJurosCompensatoriosAnual}% a.a.)</span><strong>${fmtMoney(r.jurosCompensatorios)}</strong></div>
+      ${taxaJurosMoratoriosAoMes? `<div class="irow"><span>Juros moratórios</span><strong>${fmtMoney(r.jurosMoratorios)}</strong></div>`:''}
+      <div class="irow" style="border-top:1px solid var(--line); padding-top:8px; margin-top:4px;"><span>Valor final</span><strong style="color:var(--gold-dark); font-size:16px;">${fmtMoney(r.valorFinal)}</strong></div>
+    </div>`;
+  }catch(e){ box.innerHTML = `<div class="empty">${escapeHtml(e.message||'Não foi possível calcular.')}</div>`; }
+}
+function formularioFgtsDiferencas(cat){
+  return `<h3>${escapeHtml(cat.titulo)} — Diferenças de FGTS não recolhido</h3>
+    <div class="hint" style="margin-bottom:10px;">Estima 8% da remuneração por mês não recolhido, corrigido pelo índice escolhido. Não cobre a correção de expurgos inflacionários específicos (Planos Verão/Collor) — esse cálculo é mais específico e ainda não está implementado.</div>
+    <div class="field-row">
+      <div class="field"><label>Remuneração mensal (R$)</label><input type="number" step="0.01" id="fg-remuneracao"></div>
+      <div class="field"><label>Meses não recolhidos</label><input type="number" step="1" id="fg-meses"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Índice</label><select id="fg-indice">${INDICES_DISPONIVEIS.map(i=>`<option value="${i.v}">${i.l}</option>`).join('')}</select></div>
+      <div class="field"><label>Data inicial</label><input type="date" id="fg-data-inicial"></div>
+      <div class="field"><label>Data final</label><input type="date" id="fg-data-final" value="${todayISO()}"></div>
+    </div>
+    <button class="btn btn-gold" onclick="calcularFgtsDiferencas()">Calcular</button>
+    <div id="fg-resultado" style="margin-top:14px;"></div>`;
+}
+async function calcularFgtsDiferencas(){
+  const remuneracaoMensal = parseFloat(document.getElementById('fg-remuneracao').value);
+  const mesesNaoRecolhidos = parseFloat(document.getElementById('fg-meses').value);
+  const indice = document.getElementById('fg-indice').value;
+  const dataInicial = document.getElementById('fg-data-inicial').value;
+  const dataFinal = document.getElementById('fg-data-final').value;
+  if(!remuneracaoMensal || !mesesNaoRecolhidos || !dataInicial || !dataFinal){ showToast('Preencha todos os campos.'); return; }
+  const box = document.getElementById('fg-resultado');
+  box.innerHTML = '<div class="empty">Consultando o índice no Banco Central...</div>';
+  try{
+    const r = await apiFetch('/api/calculos/fgts/diferencas', { method:'POST', body: JSON.stringify({ remuneracaoMensal, mesesNaoRecolhidos, dataInicial, dataFinal, indice }) });
+    box.innerHTML = `<div class="panel">
+      <div class="irow"><span>Valor não recolhido (estimado)</span><strong>${fmtMoney(r.valorNaoRecolhido)}</strong></div>
+      <div class="irow"><span>Fator de correção</span><strong>${r.fatorCorrecao.toFixed(6)}</strong></div>
+      <div class="irow" style="border-top:1px solid var(--line); padding-top:8px; margin-top:4px;"><span>Valor final</span><strong style="color:var(--gold-dark); font-size:16px;">${fmtMoney(r.valorFinal)}</strong></div>
+    </div>`;
+  }catch(e){ box.innerHTML = `<div class="empty">${escapeHtml(e.message||'Não foi possível calcular.')}</div>`; }
+}
+
+let PREV_SALARIOS = [];
+function formularioPrevidenciario(cat){
+  PREV_SALARIOS = [];
+  return `<h3>${escapeHtml(cat.titulo)} — RMI (regra permanente, EC 103/2019)</h3>
+    <div class="hint" style="background:#fff3cd; border:1px solid #ffe08a; padding:10px; border-radius:8px; margin-bottom:12px; color:#7a5c00;">
+      ⚠️ <strong>Escopo limitado de propósito.</strong> Este cálculo cobre só a <strong>regra permanente</strong> (quem não tinha direito adquirido nem cumpriu regra de transição até 13/11/2019).
+      <strong>NÃO cobre</strong>: fator previdenciário, regras de transição por pontos/pedágio 50%/100%, divisor mínimo de 108 contribuições, aposentadoria especial com conversão de tempo, ou invalidez.
+      A <strong>"Revisão da Vida Toda" foi definitivamente rejeitada pelo STF</strong> em 2026 (Tema 1.102, 7x3, trânsito em julgado 19/06/2026) — não é mais uma tese viável.
+      Para qualquer caso fora desse escopo, faça o cálculo com um especialista.
+    </div>
+    <fieldset><legend>1. Salário de Benefício (média dos salários de contribuição, corrigidos pelo INPC)</legend>
+      <div class="field-row">
+        <div class="field"><label>Competência (mês/ano)</label><input type="month" id="pv-competencia"></div>
+        <div class="field"><label>Salário de contribuição (R$)</label><input type="number" step="0.01" id="pv-salario-mes"></div>
+      </div>
+      <button class="btn btn-ghost" onclick="adicionarSalarioPrev()">+ Adicionar à lista</button>
+      <div id="pv-lista" style="margin:10px 0;"></div>
+      <div class="field"><label>Data de início do benefício (DIB)</label><input type="date" id="pv-dib" value="${todayISO()}"></div>
+      <button class="btn btn-gold" onclick="calcularSalarioBeneficioPrev()">Calcular salário de benefício</button>
+      <div id="pv-sb-resultado" style="margin-top:14px;"></div>
+    </fieldset>
+    <fieldset style="margin-top:14px;"><legend>2. RMI — Renda Mensal Inicial</legend>
+      <div class="field-row">
+        <div class="field"><label>Salário de benefício (R$)</label><input type="number" step="0.01" id="pv-sb-final" placeholder="Preenchido automaticamente, ou digite manualmente"></div>
+        <div class="field"><label>Tempo de contribuição (anos)</label><input type="number" step="0.01" id="pv-anos-contrib"></div>
+        <div class="field"><label>Tempo mínimo exigido (anos)</label><input type="number" step="0.01" id="pv-anos-minimo" placeholder="Ex: 20 (H) ou 15 (M)"></div>
+      </div>
+      <button class="btn btn-gold" onclick="calcularRmiPrev()">Calcular RMI</button>
+      <div id="pv-rmi-resultado" style="margin-top:14px;"></div>
+    </fieldset>`;
+}
+function adicionarSalarioPrev(){
+  const competencia = document.getElementById('pv-competencia').value; // 'aaaa-mm'
+  const valor = parseFloat(document.getElementById('pv-salario-mes').value);
+  if(!competencia || !valor){ showToast('Preencha a competência e o valor.'); return; }
+  PREV_SALARIOS.push({competencia, valor});
+  PREV_SALARIOS.sort((a,b)=>a.competencia.localeCompare(b.competencia));
+  document.getElementById('pv-salario-mes').value='';
+  renderListaPrev();
+}
+function removerSalarioPrev(i){ PREV_SALARIOS.splice(i,1); renderListaPrev(); }
+function renderListaPrev(){
+  document.getElementById('pv-lista').innerHTML = PREV_SALARIOS.length? PREV_SALARIOS.map((s,i)=>`<div class="list-row"><div>${s.competencia}</div><div class="rmeta">${fmtMoney(s.valor)} <button class="icon-btn danger" onclick="removerSalarioPrev(${i})">🗑</button></div></div>`).join('') : '<div class="empty">Nenhum salário adicionado ainda.</div>';
+}
+async function calcularSalarioBeneficioPrev(){
+  if(!PREV_SALARIOS.length){ showToast('Adicione ao menos um salário de contribuição.'); return; }
+  const dataCalculo = document.getElementById('pv-dib').value;
+  const box = document.getElementById('pv-sb-resultado');
+  box.innerHTML = '<div class="empty">Consultando o INPC no Banco Central...</div>';
+  try{
+    const r = await apiFetch('/api/calculos/previdenciario/salario-beneficio', { method:'POST', body: JSON.stringify({ salarios: PREV_SALARIOS, dataCalculo }) });
+    box.innerHTML = `<div class="panel">
+      <div class="hint" style="margin-bottom:8px;">${r.quantidadeMeses} competência(s) usada(s), corrigidas pelo INPC até ${fmtDate(dataCalculo)}.</div>
+      <div class="irow" style="border-top:1px solid var(--line); padding-top:8px;"><span>Salário de benefício (média)</span><strong style="color:var(--gold-dark); font-size:16px;">${fmtMoney(r.salarioBeneficio)}</strong></div>
+    </div>`;
+    document.getElementById('pv-sb-final').value = r.salarioBeneficio.toFixed(2);
+  }catch(e){ box.innerHTML = `<div class="empty">${escapeHtml(e.message||'Não foi possível calcular.')}</div>`; }
+}
+async function calcularRmiPrev(){
+  const salarioBeneficio = parseFloat(document.getElementById('pv-sb-final').value);
+  const anosContribuicao = parseFloat(document.getElementById('pv-anos-contrib').value);
+  const anosMinimoExigido = parseFloat(document.getElementById('pv-anos-minimo').value);
+  if(!salarioBeneficio || anosContribuicao==null || !anosMinimoExigido){ showToast('Preencha o salário de benefício e os anos de contribuição/mínimo.'); return; }
+  const box = document.getElementById('pv-rmi-resultado');
+  try{
+    const r = await apiFetch('/api/calculos/previdenciario/rmi', { method:'POST', body: JSON.stringify({ salarioBeneficio, anosContribuicao, anosMinimoExigido }) });
+    box.innerHTML = `<div class="panel">
+      <div class="irow"><span>Coeficiente aplicado</span><strong>${(r.coeficiente*100).toFixed(0)}%</strong></div>
+      <div class="irow"><span>RMI antes do teto/piso</span><strong>${fmtMoney(r.rmiAntesLimites)}</strong></div>
+      <div class="irow" style="border-top:1px solid var(--line); padding-top:8px; margin-top:4px;"><span>RMI final (respeitando teto ${fmtMoney(r.teto)} e piso ${fmtMoney(r.piso)})</span><strong style="color:var(--gold-dark); font-size:16px;">${fmtMoney(r.rmi)}</strong></div>
+    </div>`;
+  }catch(e){ box.innerHTML = `<div class="empty">${escapeHtml(e.message||'Não foi possível calcular.')}</div>`; }
+}
+
+let LUCROS_SOCIOS = [];
+function formularioDistribuicaoLucros(cat){
+  LUCROS_SOCIOS = [];
+  return `<h3>${escapeHtml(cat.titulo)} — Distribuição de Lucros</h3>
+    <div class="hint" style="margin-bottom:10px;">Apuração de haveres (dissolução de sociedade) ainda está em construção — depende muito de perícia contábil específica do caso.</div>
+    <div class="field"><label>Lucro total a distribuir (R$)</label><input type="number" step="0.01" id="dl-total"></div>
+    <div class="field-row">
+      <div class="field"><label>Nome do sócio</label><input id="dl-nome"></div>
+      <div class="field"><label>Percentual de participação (%)</label><input type="number" step="0.01" id="dl-percentual"></div>
+    </div>
+    <button class="btn btn-ghost" onclick="adicionarSocioLucro()">+ Adicionar sócio</button>
+    <div id="dl-lista" style="margin:10px 0;"></div>
+    <button class="btn btn-gold" onclick="calcularDistribuicaoLucros()">Calcular distribuição</button>
+    <div id="dl-resultado" style="margin-top:14px;"></div>`;
+}
+function adicionarSocioLucro(){
+  const nome = document.getElementById('dl-nome').value.trim();
+  const percentual = parseFloat(document.getElementById('dl-percentual').value);
+  if(!nome || !percentual){ showToast('Preencha nome e percentual.'); return; }
+  LUCROS_SOCIOS.push({nome, percentual});
+  document.getElementById('dl-nome').value=''; document.getElementById('dl-percentual').value='';
+  renderListaLucros();
+}
+function removerSocioLucro(i){ LUCROS_SOCIOS.splice(i,1); renderListaLucros(); }
+function renderListaLucros(){
+  const soma = LUCROS_SOCIOS.reduce((s,x)=>s+x.percentual,0);
+  document.getElementById('dl-lista').innerHTML = (LUCROS_SOCIOS.length? LUCROS_SOCIOS.map((s,i)=>`<div class="list-row"><div>${escapeHtml(s.nome)}</div><div class="rmeta">${s.percentual}% <button class="icon-btn danger" onclick="removerSocioLucro(${i})">🗑</button></div></div>`).join('') : '<div class="empty">Nenhum sócio adicionado ainda.</div>') + `<div class="hint" style="margin-top:6px;">Soma atual: ${soma}% ${Math.abs(soma-100)>0.01?'(precisa somar 100% para calcular)':'✓'}</div>`;
+}
+async function calcularDistribuicaoLucros(){
+  const lucroTotal = parseFloat(document.getElementById('dl-total').value);
+  if(!lucroTotal || !LUCROS_SOCIOS.length){ showToast('Preencha o lucro total e adicione ao menos um sócio.'); return; }
+  const box = document.getElementById('dl-resultado');
+  try{
+    const r = await apiFetch('/api/calculos/empresarial/distribuicao-lucros', { method:'POST', body: JSON.stringify({ lucroTotal, socios: LUCROS_SOCIOS }) });
+    box.innerHTML = `<div class="panel">${r.distribuicao.map(d=>`<div class="irow"><span>${escapeHtml(d.nome)} (${d.percentual}%)</span><strong>${fmtMoney(d.valor)}</strong></div>`).join('')}</div>`;
+  }catch(e){ box.innerHTML = `<div class="empty">${escapeHtml(e.message||'Não foi possível calcular.')}</div>`; }
+}
+function formularioAmortizacao(cat){
+  return `<h3>${escapeHtml(cat.titulo)} — Price x SAC</h3>
+    <div class="hint" style="margin-bottom:10px;">Compara os dois sistemas de amortização mais comuns em financiamentos. Análise de juros abusivos, capitalização indevida ou comissão de permanência exige perícia específica do contrato — ainda em construção.</div>
+    <div class="field-row">
+      <div class="field"><label>Valor financiado (R$)</label><input type="number" step="0.01" id="am-valor"></div>
+      <div class="field"><label>Taxa de juros ao mês (%)</label><input type="number" step="0.01" id="am-taxa"></div>
+      <div class="field"><label>Número de parcelas</label><input type="number" step="1" id="am-parcelas"></div>
+    </div>
+    <button class="btn btn-gold" onclick="calcularAmortizacao()">Comparar</button>
+    <div id="am-resultado" style="margin-top:14px;"></div>`;
+}
+async function calcularAmortizacao(){
+  const valorFinanciado = parseFloat(document.getElementById('am-valor').value);
+  const taxaJurosAoMes = parseFloat(document.getElementById('am-taxa').value);
+  const numeroParcelas = parseInt(document.getElementById('am-parcelas').value);
+  if(!valorFinanciado || !taxaJurosAoMes || !numeroParcelas){ showToast('Preencha todos os campos.'); return; }
+  const box = document.getElementById('am-resultado');
+  try{
+    const r = await apiFetch('/api/calculos/consumidor/amortizacao', { method:'POST', body: JSON.stringify({ valorFinanciado, taxaJurosAoMes, numeroParcelas }) });
+    box.innerHTML = `<div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+      <div class="panel"><h4>Tabela Price</h4>
+        <div class="irow"><span>1ª parcela</span><strong>${fmtMoney(r.price.primeiraParcela)}</strong></div>
+        <div class="irow"><span>Última parcela</span><strong>${fmtMoney(r.price.ultimaParcela)}</strong></div>
+        <div class="irow"><span>Total de juros</span><strong>${fmtMoney(r.price.totalJuros)}</strong></div>
+        <div class="irow" style="border-top:1px solid var(--line); padding-top:6px;"><span>Total pago</span><strong>${fmtMoney(r.price.totalPago)}</strong></div>
+      </div>
+      <div class="panel"><h4>Tabela SAC</h4>
+        <div class="irow"><span>1ª parcela</span><strong>${fmtMoney(r.sac.primeiraParcela)}</strong></div>
+        <div class="irow"><span>Última parcela</span><strong>${fmtMoney(r.sac.ultimaParcela)}</strong></div>
+        <div class="irow"><span>Total de juros</span><strong>${fmtMoney(r.sac.totalJuros)}</strong></div>
+        <div class="irow" style="border-top:1px solid var(--line); padding-top:6px;"><span>Total pago</span><strong>${fmtMoney(r.sac.totalPago)}</strong></div>
+      </div>
+    </div>
+    <div class="hint" style="margin-top:10px;">Diferença de juros entre os sistemas: ${fmtMoney(Math.abs(r.price.totalJuros - r.sac.totalJuros))}</div>`;
+  }catch(e){ box.innerHTML = `<div class="empty">${escapeHtml(e.message||'Não foi possível calcular.')}</div>`; }
+}
+
+async function formularioParametrosCalculo(){
+  let p;
+  try{ p = await apiFetch('/api/calculos/parametros'); }catch(e){ return `<div class="empty">${escapeHtml(e.message)}</div>`; }
+  return `<h3>⚙️ Parâmetros de Cálculo</h3>
+    <div class="hint" style="margin-bottom:10px;">Valores que mudam por portaria/lei (não por índice econômico, que já é buscado ao vivo). Edite aqui quando sair uma nova portaria — não precisa mexer no código nem reimplantar o servidor. ${p.atualizadoEm? 'Última atualização: '+new Date(p.atualizadoEm).toLocaleString('pt-BR') : 'Ainda usando os valores padrão de 2026.'}</div>
+    <div class="field-row">
+      <div class="field"><label>Teto do INSS (R$)</label><input type="number" step="0.01" id="pc-teto" value="${p.tetoInss}"></div>
+      <div class="field"><label>Piso do INSS / salário mínimo (R$)</label><input type="number" step="0.01" id="pc-piso" value="${p.pisoInss}"></div>
+    </div>
+    <button class="btn btn-gold" onclick="salvarParametrosCalculoUI()">Salvar</button>
+    <div class="hint" style="margin-top:14px;">Percentuais de planos econômicos (fatos históricos já consolidados em jurisprudência — normalmente não precisam de edição, mas ficam aqui caso surja necessidade de ajuste).</div>
+    <div style="font-size:12.5px; color:var(--ink-soft); margin-top:6px;">${p.planosEconomicos.map(pl=>`${escapeHtml(pl.label)}: ${pl.percentual}%`).join('<br>')}</div>`;
+}
+async function salvarParametrosCalculoUI(){
+  const tetoInss = parseFloat(document.getElementById('pc-teto').value);
+  const pisoInss = parseFloat(document.getElementById('pc-piso').value);
+  try{
+    await apiFetch('/api/calculos/parametros', { method:'PUT', body: JSON.stringify({ tetoInss, pisoInss }) });
+    showToast('Parâmetros atualizados.');
+  }catch(e){ showToast(e.message || 'Não foi possível salvar.'); }
+}
+function formularioAdministrativo(cat){
+  return `<h3>${escapeHtml(cat.titulo)}</h3>
+    <div class="pill-select" style="margin-bottom:10px;" id="adm-tabs">
+      <button class="fin-tab active" data-tab="reposicao" onclick="setAdministrativoTab('reposicao')">Reposição salarial</button>
+      <button class="fin-tab" data-tab="planos" onclick="setAdministrativoTab('planos')">Diferenças de planos econômicos</button>
+    </div>
+    <div id="adm-conteudo"></div>`;
+}
+async function setAdministrativoTab(tab){
+  document.querySelectorAll('#adm-tabs .fin-tab').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
+  const box = document.getElementById('adm-conteudo');
+  if(tab==='reposicao'){
+    box.innerHTML = `<div class="field-row">
+        <div class="field"><label>Valor base (R$)</label><input type="number" step="0.01" id="adm-valor"></div>
+        <div class="field"><label>Índice</label><select id="adm-indice">${INDICES_DISPONIVEIS.map(i=>`<option value="${i.v}">${i.l}</option>`).join('')}</select></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Data inicial</label><input type="date" id="adm-data-inicial"></div>
+        <div class="field"><label>Data final</label><input type="date" id="adm-data-final" value="${todayISO()}"></div>
+      </div>
+      <button class="btn btn-gold" onclick="calcularReposicaoAdm()">Calcular</button>
+      <div id="adm-resultado" style="margin-top:14px;"></div>`;
+  } else {
+    let p;
+    try{ p = await apiFetch('/api/calculos/parametros'); }catch(e){ box.innerHTML = `<div class="empty">${escapeHtml(e.message)}</div>`; return; }
+    box.innerHTML = `<div class="hint" style="margin-bottom:8px;">Percentuais fixados em jurisprudência consolidada (STJ, recursos repetitivos — Temas 264/284/285 STF). Selecione um ou mais meses aplicáveis ao seu caso; se mais de um, eles são compostos (multiplicados) sequencialmente.</div>
+      <div class="field"><label>Valor base (R$)</label><input type="number" step="0.01" id="admp-valor"></div>
+      <div class="field"><label>Planos aplicáveis</label>
+        <div class="pill-select">${p.planosEconomicos.map(pl=>`<label class="radio-opt" style="border:1px solid var(--line); border-radius:20px; padding:4px 10px;"><input type="checkbox" class="admp-chk" value="${pl.chave}"> ${escapeHtml(pl.label)} (${pl.percentual}%)</label>`).join('')}</div>
+      </div>
+      <button class="btn btn-gold" onclick="calcularPlanosEconomicos()">Calcular</button>
+      <div id="admp-resultado" style="margin-top:14px;"></div>`;
+  }
+}
+async function calcularReposicaoAdm(){
+  const valorBase = parseFloat(document.getElementById('adm-valor').value);
+  const indice = document.getElementById('adm-indice').value;
+  const dataInicial = document.getElementById('adm-data-inicial').value;
+  const dataFinal = document.getElementById('adm-data-final').value;
+  if(!valorBase || !dataInicial || !dataFinal){ showToast('Preencha valor e as duas datas.'); return; }
+  const box = document.getElementById('adm-resultado');
+  box.innerHTML = '<div class="empty">Consultando o índice no Banco Central...</div>';
+  try{
+    const r = await apiFetch('/api/calculos/administrativo/reposicao', { method:'POST', body: JSON.stringify({ valorBase, dataInicial, dataFinal, indice }) });
+    box.innerHTML = `<div class="panel">
+      <div class="irow"><span>Valor base</span><strong>${fmtMoney(r.valorBase)}</strong></div>
+      <div class="irow"><span>Fator de correção</span><strong>${r.fatorCorrecao.toFixed(6)}</strong></div>
+      <div class="irow" style="border-top:1px solid var(--line); padding-top:8px; margin-top:4px;"><span>Valor final</span><strong style="color:var(--gold-dark); font-size:16px;">${fmtMoney(r.valorFinal)}</strong></div>
+    </div>`;
+  }catch(e){ box.innerHTML = `<div class="empty">${escapeHtml(e.message||'Não foi possível calcular.')}</div>`; }
+}
+async function calcularPlanosEconomicos(){
+  const valorBase = parseFloat(document.getElementById('admp-valor').value);
+  const chavesPlanos = Array.from(document.querySelectorAll('.admp-chk:checked')).map(el=>el.value);
+  if(!valorBase || !chavesPlanos.length){ showToast('Preencha o valor e selecione ao menos um plano.'); return; }
+  const box = document.getElementById('admp-resultado');
+  try{
+    const r = await apiFetch('/api/calculos/administrativo/planos-economicos', { method:'POST', body: JSON.stringify({ valorBase, chavesPlanos }) });
+    box.innerHTML = `<div class="panel">
+      <div class="irow"><span>Valor base</span><strong>${fmtMoney(r.valorBase)}</strong></div>
+      <div class="irow"><span>Fator composto (${r.planosAplicados.length} plano(s))</span><strong>${r.fator.toFixed(6)}</strong></div>
+      <div class="irow"><span>Diferença</span><strong>${fmtMoney(r.diferenca)}</strong></div>
+      <div class="irow" style="border-top:1px solid var(--line); padding-top:8px; margin-top:4px;"><span>Valor final</span><strong style="color:var(--gold-dark); font-size:16px;">${fmtMoney(r.valorFinal)}</strong></div>
+    </div>`;
+  }catch(e){ box.innerHTML = `<div class="empty">${escapeHtml(e.message||'Não foi possível calcular.')}</div>`; }
+}
+
 function renderFinanceiro(){
   const kpiGrid = document.getElementById('fin-kpi-grid'); if(!kpiGrid) return;
   const podeVerCaixa = isMaster()||isSocio();

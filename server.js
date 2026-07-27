@@ -16,6 +16,7 @@ const publicRoutes = require('./src/routes/public');
 const meRoutes = require('./src/routes/me');
 const processoConsultaRoutes = require('./src/routes/processoConsulta');
 const documentosRoutes = require('./src/routes/documentos');
+const calculosRoutes = require('./src/routes/calculos');
 
 const app = express();
 app.use(cors({ origin: process.env.CORS_ORIGIN || '*' }));
@@ -30,6 +31,7 @@ app.use('/api/public', publicRoutes);
 app.use('/api/me', meRoutes);
 app.use('/api/processos', processoConsultaRoutes);
 app.use('/api/documentos', documentosRoutes);
+app.use('/api/calculos', calculosRoutes);
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 

@@ -391,6 +391,103 @@ texto da movimentação no tribunal.
   Encontrei e corrigi dois bugs reais nesse processo, ambos antes de entregar: um de texto duplicado na tabela (mesmo tipo de bug que já tinha corrigido antes em outro lugar do sistema, só que dessa vez na função nova de tabela), e um erro de cálculo nos totais (a soma de "R$ 1.400,00" estava dando errado por causa do separador de milhar — corrigi para somar os números direto, sem depender do texto já formatado). Testei gerando um relatório com clientes de propósito fora de ordem alfabética para confirmar a ordenação, e conferi que os totais batem exatamente com as linhas da tabela.
 
 
+## 17. Novo: Cálculo Jurídico (item no menu lateral)
+
+Você pediu um módulo cobrindo 16 áreas do direito. Fui honesto sobre o escopo:
+não dá para eu entregar as 16 áreas com confiabilidade total numa única vez —
+alguns desses cálculos (dosimetria penal, RMI previdenciário, revisão bancária)
+têm regras jurídicas específicas e mudam com a jurisprudência, e um erro ali
+não é "só um bug de tela", tem consequência real. Por isso, construí a
+**arquitetura certa** primeiro e entreguei **3 módulos totalmente funcionais**
+como base, com as outras 13 áreas já organizadas no menu, prontas para eu
+implementar uma de cada vez quando você pedir.
+
+### O que já está pronto e testado
+
+- **Núcleo de correção monetária + juros**: em vez de eu digitar uma tabela de
+  índices "fixa" (que ficaria desatualizada e poderia ter erro de digitação
+  com consequência financeira real), o sistema busca os índices **ao vivo,
+  direto do Banco Central** (Sistema Gerenciador de Séries Temporais, API
+  pública, sem custo). Índices disponíveis: INPC, IPCA, IPCA-E (veja aviso
+  abaixo), Selic, IGP-M e TR. Bloqueei a combinação Selic + juros por fora,
+  porque a Selic já embute juros — somar os dois causaria dupla contagem (um
+  erro jurídico real, não só de código).
+- **Trabalhista — Verbas rescisórias** (dispensa sem justa causa): saldo de
+  salário, aviso prévio (indenizado/trabalhado, com a projeção correta de +3
+  dias por ano completo), 13º proporcional, férias proporcionais + 1/3, FGTS +
+  multa de 40%. **Encontrei e corrigi um bug real** nos testes: o cálculo de
+  férias proporcionais estava usando o tempo total de casa em vez do período
+  aquisitivo em curso — corrigido e testado com dois casos diferentes antes de
+  entregar.
+- **Cível — Repetição de indébito** (simples ou em dobro, art. 42 CDC), com
+  correção monetária opcional pelo núcleo acima.
+
+### Limitações importantes (leia antes de usar)
+
+- **IPCA-E**: o índice "oficial" usado em precatórios é composto
+  trimestralmente a partir do IPCA-15, um cálculo mais específico que o IPCA
+  mensal comum. Por enquanto, uso o IPCA mensal como aproximação — para casos
+  de precatório, **confira a tabela oficial do tribunal** antes de protocolar.
+- **Lei 14.905/2024** mudou recentemente as regras de correção monetária do
+  Código Civil (índice padrão passou a ser o IPCA, não mais IPCA-E, e a Selic
+  já embute juros). O sistema reflete isso, mas a lei é recente — confirme com
+  a jurisprudência do seu tribunal se o caso for anterior a 30/08/2024.
+- As **13 áreas restantes** (previdenciário, tributário, execução fiscal,
+  empresarial, penal, família — além da pensão, consumidor/bancário,
+  administrativo, locação, desapropriação, seguros, eleitoral, ambiental, e o
+  bloco próprio de FGTS) aparecem no menu com a lista do que está previsto,
+  mas ainda não têm calculadora funcionando — é só pedir para eu implementar
+  qualquer uma delas, uma de cada vez, com o mesmo cuidado de teste que apliquei
+  nestas três.
+- Nenhum desses cálculos substitui a conferência de um profissional antes de
+  usar em petição, principalmente em casos com regras específicas (convenção
+  coletiva, decisão judicial determinando índice próprio, médias variáveis,
+  etc.).
+
+
+## 18. Administrativo/Servidor Público + Parâmetros de Cálculo editáveis
+
+### Sobre "busca automática de atualizações"
+
+Pensei bastante nisso antes de decidir o caminho. **Não** implementei uma busca
+automática que altera os cálculos jurídicos sozinha, e o motivo é de segurança:
+leis e jurisprudência não têm uma API pública estruturada (diferente dos índices
+econômicos, que têm o SGS do Banco Central). Uma automação que "lê a internet e
+muda a fórmula sozinha" correria o risco de interpretar errado uma mudança e
+corromper um cálculo jurídico sem ninguém perceber — isso seria pior do que o
+problema que estamos tentando resolver.
+
+Em vez disso, fiz o que dá pra fazer com segurança: os valores que **mudam por
+portaria** (teto e piso do INSS, por enquanto) agora ficam guardados no banco de
+dados, **editáveis direto na tela** ("⚙️ Parâmetros de Cálculo", visível para
+master/sócio) — sem precisar mexer no código nem reimplantar o servidor toda vez
+que uma nova portaria sair. Testei: editei o teto na tela e confirmei que o
+cálculo de RMI já passou a usar o novo valor imediatamente, e que um associado
+tentando editar esses parâmetros é bloqueado corretamente.
+
+Os índices econômicos (INPC, IPCA, Selic, etc.) **já são** buscados ao vivo — não
+precisam de atualização manual, isso já está resolvido desde o início.
+
+### Administrativo/Servidor Público
+
+- **Reposição salarial / diferenças de reajuste**: usa o núcleo de correção,
+  com qualquer um dos índices disponíveis.
+- **Diferenças de planos econômicos**: pesquisei e confirmei os percentuais
+  exatos na jurisprudência consolidada do STJ (recursos repetitivos, Temas
+  264/284/285 do STF) — Bresser (jun/1987, 26,06%), Verão (jan/1989 42,72% e
+  fev/1989 10,14%), Collor I (mar/1990 84,32%, abr/1990 44,80%, jun/1990 9,55%,
+  jul/1990 12,92%) e Collor II (jan/1991 13,69%, mar/1991 13,90%). Listados
+  mês a mês (não combinados por mim) para você compor exatamente os meses do
+  seu caso, evitando erro de composição.
+- **Não cobre** quintos/décimos incorporados nem VPNI — isso varia muito por
+  ente federativo e tribunal, exigindo análise específica que uma calculadora
+  genérica não consegue fazer com segurança.
+
+Testei os parâmetros editáveis (edição, reflexo imediato no cálculo, bloqueio
+de associado) e o cálculo de planos econômicos com valores conhecidos antes de
+entregar.
+
+
 ---
 
 Qualquer erro ao subir, me mostre a mensagem exata que aparece (no Render, aba "Logs")
