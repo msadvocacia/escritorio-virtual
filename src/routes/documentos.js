@@ -23,16 +23,19 @@ const MARCADOR_CORPO_VAZIO = '<w:p w:rsidR="00DB1E63" w:rsidRPr="00B565BB" w:rsi
 // que precisam de controle fino de negrito/caixa alta por trecho — algo que o
 // docxtemplater (usado no recibo/relatório) não permite fazer dinamicamente
 // quando o número de pessoas no parágrafo muda a cada processo.
-function gerarDocxComCorpo(corpoXml) {
+function gerarDocxComCorpo(corpoXml, { margemInferiorTwips } = {}) {
   const caminho = path.join(__dirname, '..', '..', 'templates', 'letterhead_base.docx');
   const conteudo = fs.readFileSync(caminho, 'binary');
   const zip = new PizZip(conteudo);
   const documentXmlPath = 'word/document.xml';
-  const original = zip.file(documentXmlPath).asText();
-  if (!original.includes(MARCADOR_CORPO_VAZIO)) {
+  let atualizado = zip.file(documentXmlPath).asText();
+  if (!atualizado.includes(MARCADOR_CORPO_VAZIO)) {
     throw new Error('Modelo de timbrado inesperado (marcador do corpo não encontrado).');
   }
-  const atualizado = original.replace(MARCADOR_CORPO_VAZIO, corpoXml);
+  atualizado = atualizado.replace(MARCADOR_CORPO_VAZIO, corpoXml);
+  if (margemInferiorTwips) {
+    atualizado = atualizado.replace(/(<w:pgMar[^>]*w:bottom=")\d+(")/, `$1${margemInferiorTwips}$2`);
+  }
   zip.file(documentXmlPath, atualizado);
   return zip.generate({ type: 'nodebuffer' });
 }
@@ -80,26 +83,36 @@ router.post('/procuracao', requireAuth, requireRole('master', 'socio', 'associad
       endereco: T.enderecoAdvogado(),
     }));
 
+    const PODERES_TEXTO = 'Por este instrumento particular de procuração, constituo meu bastante procurador o outorgado, concedendo-lhe os poderes inerentes da CLÁUSULA AD JUDITIA ET EXTRA, para o foro em geral, podendo, portanto, promover quaisquer medidas judiciais ou administrativas, assinar termo, oferecer defesa, direta ou indireta, interpor recursos, ajuizar ações e conduzir os respectivos processos, solicitar, providenciar, receber e ter acesso a documentos de qualquer natureza, sendo o presente instrumento de mandato oneroso e contratual podendo substabelecer este a outrem, com ou sem reserva de poderes, dando tudo por bom e valioso, a fim de praticar todos os demais atos necessários ao fiel desempenho deste mandato.';
+    const PODERES_ESPECIFICOS_TEXTO = 'A presente procuração outorga o Advogado acima descrito, os poderes especiais para receber citação, confessar, reconhecer a procedência do pedido, transigir, desistir, renunciar ao direito sobre que se funda a ação, firmar compromissos ou acordos, receber valores/dinheiro, dar e receber quitação, levantar ou receber RPV e ALVARÁS, pedir à justiça gratuita e assinar declaração de hipossuficiência econômica, em conformidade com a norma do art. 105 da Lei 13.105/2015.';
+
+    // Estima o tamanho do corpo para decidir entre 11,5 e 11 — evita que só a
+    // data/assinatura vazem para uma segunda página. Calibrado testando casos
+    // reais (1 outorgado cabe em 1 página a 11,5; 2+ outorgados só cabem a 11).
+    const tamanhoEstimado = outorgantes.reduce((s, p) => s + p.nome.length + p.qualificacaoSemEndereco.length, 0)
+      + outorgados.reduce((s, p) => s + p.nome.length + p.qualificacaoSemEndereco.length, 0)
+      + PODERES_TEXTO.length + PODERES_ESPECIFICOS_TEXTO.length;
+    const PROC_SZ = tamanhoEstimado > 1450 ? 22 : 23; // 22=11pt, 23=11,5pt
     const corpo = [
       D.paragraph(D.run('PROCURAÇÃO', { bold: true, sizeHalfPt: 28 }), { center: true, justify: false }),
       D.blank(),
-      D.paragraph([D.run('OUTORGANTE: ', { bold: true }), ...D.montarBlocoPessoas(outorgantes)]),
+      D.paragraph([D.run('OUTORGANTE: ', { bold: true, sizeHalfPt: PROC_SZ }), ...D.montarBlocoPessoas(outorgantes, PROC_SZ)]),
       D.blank(),
-      D.paragraph([D.run('OUTORGADO: ', { bold: true }), ...D.montarBlocoPessoas(outorgados)]),
+      D.paragraph([D.run('OUTORGADO: ', { bold: true, sizeHalfPt: PROC_SZ }), ...D.montarBlocoPessoas(outorgados, PROC_SZ)]),
       D.blank(),
       D.paragraph([
-        D.run('PODERES: ', { bold: true }),
-        D.run('Por este instrumento particular de procuração, constituo minha bastante procuradora a outorgada, concedendo-lhe os poderes da cláusula ad judicia et extra, para todo o foro em geral, podendo, portanto, promover quaisquer medidas judiciais ou administrativas, em qualquer instância, assinar termos, substabelecer com ou sem reserva de poderes, e praticar, ainda, todos e quaisquer atos necessários e convenientes ao bom e fiel desempenho deste mandato.'),
+        D.run('PODERES: ', { bold: true, sizeHalfPt: PROC_SZ }),
+        D.run(PODERES_TEXTO, { sizeHalfPt: PROC_SZ }),
       ]),
       D.blank(),
       D.paragraph([
-        D.run('PODERES ESPECÍFICOS: ', { bold: true }),
-        D.run('A presente procuração outorga à Advogada acima descrito, os poderes para receber citação, confessar, reconhecer a procedência do pedido, transigir, desistir, renunciar ao direito sobre o qual se funda a ação, receber Alvará, dar quitação, firmar compromisso, pedir a justiça gratuita, assinar declaração de hipossuficiência econômica e assinar declaração de isenção de imposto de renda. (Em conformidade com a norma do art. 105 do NCPC15). Os poderes específicos acima outorgados poderão ser substabelecidos. Ademais, constitui o exercício da advocacia como atividade meio, não podendo o advogado garantir nenhum resultado valorável ao cliente.'),
+        D.run('PODERES ESPECÍFICOS: ', { bold: true, sizeHalfPt: PROC_SZ }),
+        D.run(PODERES_ESPECIFICOS_TEXTO, { sizeHalfPt: PROC_SZ }),
       ]),
+      D.blank(),
+      D.paragraph(D.run(`Jequié-Ba, ${T.fmtDateExtenso(todayISO())}.`, { sizeHalfPt: PROC_SZ }), { indentCm: 2, justify: false }),
       D.blank(), D.blank(),
-      D.paragraph(D.run(`Jequié-Ba, ${T.fmtDateExtenso(todayISO())}.`), { indentCm: 2, justify: false }),
-      D.blank(), D.blank(),
-      D.paragraph(D.run('____________________________________________'), { center: true, justify: false }),
+      D.paragraph(D.run('____________________________________________', { sizeHalfPt: PROC_SZ }), { center: true, justify: false }),
     ].join('');
 
     const buffer = gerarDocxComCorpo(corpo);
@@ -155,7 +168,7 @@ router.post('/contrato', requireAuth, requireRole('master', 'socio', 'associado'
     ? [D.run(', dividido em '), D.run(`${nParcelas} (${T.numberToWordsPT(nParcelas)})`, { bold: true }), D.run(' parcelas')]
     : [D.run(', a ser paga à vista')];
 
-  const TERMOS_DESTAQUE = ['O ADVOGADO', 'ADVOGADO', 'OUTORGANTE', tipoProcessoUpper];
+  const TERMOS_DESTAQUE = ['O ADVOGADO', 'ADVOGADO', 'OUTORGANTE', 'CONTRATANTE', 'CONTRATADOS', 'CONTRATADO', tipoProcessoUpper];
 
   try {
     const corpo = [
@@ -167,38 +180,75 @@ router.post('/contrato', requireAuth, requireRole('master', 'socio', 'associado'
       D.blank(),
       D.paragraph([D.run('CONTRATADO: ', { bold: true }), ...D.montarBlocoPessoas(contratados)]),
       D.blank(),
-      D.paragraph(D.run('Tem justo e contratado o seguinte:')),
+      D.paragraph(D.run('As partes acima identificadas têm, entre si, justo e acertado o presente Contrato de Honorários Advocatícios, que se regerá pelas cláusulas e pelas condições a seguir descritas.')),
       D.blank(),
-      D.paragraph(D.comDestaques(`1. O ADVOGADO, face ao mandato judicial que lhe foi outorgado, se obriga a prestar os seus serviços profissionais na defesa dos direitos do OUTORGANTE, no ${tipoProcessoUpper}, em qualquer juízo, instância ou Tribunal, devendo desincumbir-se com zelo a atividade do seu encargo.`, TERMOS_DESTAQUE)),
+      D.paragraph(D.run('DO OBJETO DO CONTRATO', { bold: true }), { center: true, justify: false }),
+      D.blank(),
+      D.paragraph(D.comDestaques(`Cláusula 1ª. O ADVOGADO, face ao mandato judicial que lhe foi outorgado, se obriga a prestar os seus serviços profissionais na defesa dos direitos do OUTORGANTE, no ${tipoProcessoUpper}, em qualquer juízo, instância ou Tribunal, devendo desincumbir-se com zelo a atividade do seu encargo.`, TERMOS_DESTAQUE)),
+      D.blank(),
+      D.paragraph(D.run('DAS ATIVIDADES', { bold: true }), { center: true, justify: false }),
+      D.blank(),
+      D.paragraph(D.comDestaques('Cláusula 2ª. O CONTRATADO deverá praticar todos os atos relacionados ao exercício da advocacia, obrigações tipicamente de meio, particularmente aqueles constantes no Estatuto da OAB, assim como o que for especificado na outorga da procuração, com a diligência habitual que se presume da atuação profissional.', TERMOS_DESTAQUE)),
+      D.blank(),
+      D.paragraph(D.run('DOS ATOS PROCESSUAIS', { bold: true }), { center: true, justify: false }),
+      D.blank(),
+      D.paragraph(D.comDestaques('Cláusula 3ª. Havendo necessidade de contratação de outros profissionais no decurso do processo, o CONTRATADO elaborará substabelecimento, indicando advogado de sua confiança, para auxiliá-lo na defesa dos interesses da CONTRATANTE, correndo as despesas decorrentes desta delegação às expensas da CONTRATANTE.', TERMOS_DESTAQUE)),
+      D.blank(),
+      D.paragraph(D.run('DAS DESPESAS', { bold: true }), { center: true, justify: false }),
+      D.blank(),
+      D.paragraph(D.comDestaques('Cláusula 4ª. Todas as despesas efetuadas pelo CONTRATADO, mesmo que indiretamente relacionadas com a sua atuação, incluindo-se cópias, digitalizações, envio de correspondência, emolumentos, viagens, estacionamento, custas, preparo e demais gastos de natureza diversa da verba honorária, ficarão a expensas da CONTRATANTE, desde que previamente por autorizadas.', TERMOS_DESTAQUE)),
+      D.paragraph(D.comDestaques('Cláusula 5ª. Todas as despesas serão acompanhadas de documento comprobatório, devidamente organizado pelo CONTRATADO.', TERMOS_DESTAQUE)),
+      D.blank(),
+      D.paragraph(D.run('DOS HONORÁRIOS', { bold: true }), { center: true, justify: false }),
       D.blank(),
       D.paragraph([
-        ...D.comDestaques('2. O OUTORGANTE pagará ao ADVOGADO, a título de honorários/remuneração pelos seus serviços contratados, ', TERMOS_DESTAQUE),
+        ...D.comDestaques('Cláusula 6ª. O CONTRATANTE, como contraprestação aos serviços jurídicos prestados, pagará ao CONTRATADO, a título de pro labore, ', TERMOS_DESTAQUE),
         ...runsValor, ...runsDivisao, D.run('.'),
       ]),
-      D.paragraph(D.comDestaques('§1º. Os honorários porventura recebidos da parte contrária, como sucumbência, pertencerão ao ADVOGADO.', TERMOS_DESTAQUE)),
       D.blank(),
-      D.paragraph(D.comDestaques('3. O OUTORGANTE deverá fornecer ao ADVOGADO os documentos, informações e rol de testemunhas necessárias ao bom e rápido andamento da ação ou para satisfazer exigências do processo ou atividades extrajudiciais, dentro dos prazos legais.', TERMOS_DESTAQUE)),
-      D.paragraph(D.comDestaques('Parágrafo Primeiro: O OUTORGANTE fica obrigado a comparecer à audiência e perícia médica, sob pena de arcar com as custas e emolumentos cobrados pelo Juízo.', TERMOS_DESTAQUE)),
-      D.paragraph(D.comDestaques('Parágrafo segundo: Ficará o ADVOGADO isento de qualquer responsabilidade pela entrega de documentos e cumprimento das exigências acima, quando feitas fora dos prazos estabelecidos por lei.', TERMOS_DESTAQUE)),
+      D.paragraph(D.comDestaques('Cláusula 7ª. Os honorários de sucumbência pertencem ao CONTRATADO e não se confundem com os honorários contratuais aqui tratados.', TERMOS_DESTAQUE)),
+      D.paragraph(D.comDestaques('Parágrafo único. Caso haja morte ou incapacidade civil do CONTRATADO, seus sucessores ou representante(s) legal(s) receberão os honorários na proporção do trabalho realizado.', TERMOS_DESTAQUE)),
       D.blank(),
-      D.paragraph(D.comDestaques('4. O OUTORGANTE expressamente confirma que tem ciência de que o presente contrato é de prestação de serviços advocatícios e que os honorários serão adimplidos somente em caso de êxito da demanda, descrito no item 2.', TERMOS_DESTAQUE)),
+      D.paragraph(D.comDestaques('Cláusula 8ª. Havendo acordo entre a CONTRATANTE e a parte contrária ou desistência pela CONTRATANTE, este fato não prejudicará o recebimento de todos os honorários CONTRATADOS e da sucumbência, se houver, pelo CONTRATADO.', TERMOS_DESTAQUE)),
+      D.blank(),
+      D.paragraph(D.run('DA VIGÊNCIA E DA RESCISÃO', { bold: true }), { center: true, justify: false }),
+      D.blank(),
+      D.paragraph(D.run('Cláusula 9ª. O presente contrato terá a duração até o final do processo e o adimplemento das obrigações ajustadas, podendo ser rescindido a qualquer tempo por qualquer das partes, mediante aviso prévio de 30 (trinta) dias, por escrito e com comprovante de entrega.')),
+      D.blank(),
+      D.paragraph(D.run('DA RESPONSABILIDADE', { bold: true }), { center: true, justify: false }),
+      D.blank(),
+      D.paragraph(D.comDestaques('Cláusula 10ª. o CONTRATADO não será responsabilizada por quaisquer danos que sobrevierem das demandas que patrocinar, cabendo-lhe tão somente o emprego diligente de seus conhecimentos, meios e técnicas para a defesa dos interesses da CONTRATANTE, inexistente qualquer garantia de resultado.', TERMOS_DESTAQUE)),
+      D.paragraph(D.comDestaques('Cláusula 11ª. O CONTRATADO não será responsabilizada acaso resultem danos por não tomar conhecimento de informações e documentos substanciais para a sua atividade ou em decorrência da impossibilidade de contato com a CONTRATANTE, que deverá manter atualizadas quaisquer informações relevantes para a demanda, bem como as informações cadastrais fornecidas por aquele.', TERMOS_DESTAQUE)),
+      D.paragraph(D.comDestaques('Cláusula 12ª. É obrigação da CONTRATANTE, sempre que solicitada, entregar, fornecer ou disponibilizar ao CONTRATADO todos os documentos necessários, provas, informações e subsídios, em tempo hábil, para que este possa cumprir o objeto do presente contrato. Qualquer omissão ou negligência por parte da CONTRATANTE será de sua inteira responsabilidade, caso advenha algum prejuízo a seus interesses.', TERMOS_DESTAQUE)),
+      D.blank(),
+      D.paragraph(D.run('DO FORO', { bold: true }), { center: true, justify: false }),
       D.blank(),
       D.paragraph([
-        D.run('Fica eleito o foro da '),
-        D.run('Comarca de JEQUIÉ/BA', { bold: true }),
-        D.run(' para dirimir qualquer dúvida referente a este contrato. E, por estarem as partes assim contratadas, firmam o presente contrato particular.'),
+        D.run('Cláusula 13ª. Para dirimir quaisquer controvérsias oriundas deste contrato, as partes elegem o foro da '),
+        D.run('comarca de Jequié/BA', { bold: true }),
+        D.run('.'),
       ]),
-      D.blank(), D.blank(),
+      D.blank(),
+      D.paragraph(D.run('Por estarem assim justos e contratados, firmam o presente instrumento, em duas vias de igual teor.')),
+      D.blank(),
       D.paragraph(D.run(`Jequié/BA, ${T.fmtDateExtenso(todayISO())}.`), { indentCm: 2, justify: false }),
       D.blank(), D.blank(),
-      D.paragraph(D.run('_____________________________________________________________'), { center: true, justify: false }),
-      D.paragraph(D.run('CONTRATANTE', { bold: true }), { center: true, justify: false }),
-      D.blank(),
-      D.paragraph(D.run('_____________________________________________________________'), { center: true, justify: false }),
-      D.paragraph(D.run('CONTRATADO', { bold: true }), { center: true, justify: false }),
+      ...contratantes.map((p) => [
+        D.paragraph(D.run('_____________________________________________________________'), { center: true, justify: false }),
+        D.paragraph(D.run(p.nome, { bold: true }), { center: true, justify: false }),
+        D.paragraph(D.run('(CONTRATANTE)', { bold: true }), { center: true, justify: false }),
+        D.blank(),
+      ]).flat(),
+      ...contratados.map((p, i) => [
+        D.paragraph(D.run('_____________________________________________________________'), { center: true, justify: false }),
+        D.paragraph(D.run(p.nome, { bold: true }), { center: true, justify: false }),
+        D.paragraph(D.run(`(OAB/BA - ${advogados[i].oab || '—'})`), { center: true, justify: false }),
+        D.paragraph(D.run('(CONTRATADO)', { bold: true }), { center: true, justify: false }),
+        D.blank(),
+      ]).flat(),
     ].join('');
 
-    const buffer = gerarDocxComCorpo(corpo);
+    const buffer = gerarDocxComCorpo(corpo, { margemInferiorTwips: 1843 }); // +0,5cm na margem inferior (texto estava grudando no rodapé)
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     res.setHeader('Content-Disposition', `attachment; filename="Contrato - ${cliente.nome.replace(/[^\w\- ]/g, '')}.docx"`);
     res.send(buffer);

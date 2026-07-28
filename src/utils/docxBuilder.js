@@ -53,8 +53,8 @@ function blank() { return '<w:p/>'; }
  * pessoa — aparece uma única vez ao final do parágrafo.
  * pessoas: [{ nome (já em caixa alta), qualificacaoSemEndereco, endereco }]
  */
-function montarBlocoPessoas(pessoas) {
-  if (!pessoas || !pessoas.length) return [run('—')];
+function montarBlocoPessoas(pessoas, sizeHalfPt) {
+  if (!pessoas || !pessoas.length) return [run('—', { sizeHalfPt })];
   const enderecos = pessoas.map((p) => (p.endereco || '').trim()).filter(Boolean);
   const enderecoComum = pessoas.length > 1 && enderecos.length === pessoas.length && enderecos.every((e) => e === enderecos[0]);
 
@@ -62,19 +62,19 @@ function montarBlocoPessoas(pessoas) {
   pessoas.forEach((p, i) => {
     if (i > 0) {
       const isLast = i === pessoas.length - 1;
-      runs.push(run(isLast && pessoas.length > 1 ? ' e ' : ', '));
+      runs.push(run(isLast && pessoas.length > 1 ? ' e ' : ', ', { sizeHalfPt }));
     }
-    runs.push(run(p.nome, { bold: true }));
+    runs.push(run(p.nome, { bold: true, sizeHalfPt }));
     let qualif = ', ' + (p.qualificacaoSemEndereco || '');
     if (!enderecoComum && p.endereco) {
       qualif += ', residente e domiciliado(a) em ' + p.endereco;
     }
-    runs.push(run(qualif));
+    runs.push(run(qualif, { sizeHalfPt }));
   });
   if (enderecoComum) {
-    runs.push(run(`, residentes e domiciliados em ${enderecos[0]}`));
+    runs.push(run(`, residentes e domiciliados em ${enderecos[0]}`, { sizeHalfPt }));
   }
-  runs.push(run('.'));
+  runs.push(run('.', { sizeHalfPt }));
   return runs;
 }
 

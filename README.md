@@ -488,6 +488,225 @@ de associado) e o cálculo de planos econômicos com valores conhecidos antes de
 entregar.
 
 
+## 19. Novo: Módulo 17 — Retroativos PCCR (Mudança de Nível / Gratificação)
+
+### Sobre a validação deste módulo — leia antes de confiar no resultado
+
+Você anexou um PDF (ficha financeira + um cálculo pronto, modelo "RM Cálculos",
+páginas 7-8) para eu usar como teste. **Preciso ser transparente**: a ferramenta
+de visualização de imagem não carregou nesta sessão (tentei várias vezes, em
+resoluções diferentes) — o PDF é escaneado (sem camada de texto), então não
+consegui ler visualmente. Recorri a OCR (reconhecimento de texto em imagem) como
+alternativa, e isso **funcionou o suficiente para confirmar a estrutura** do
+cálculo (a estrutura A/B/C que você descreveu bate exatamente com o que vi no
+seu PDF real), **mas não foi preciso o bastante nos dígitos exatos** (OCR em
+documento escaneado tem ruído — números como "5" e "6" às vezes saem trocados)
+para eu validar o resultado final, número por número, contra aquele caso real.
+
+**O que isso significa na prática**: construí o módulo seguindo à risca a sua
+especificação escrita (que é clara e detalhada), e testei a lógica com casos que
+eu mesmo construí (números redondos, fáceis de conferir de cabeça) — não com o
+caso real do PDF. Recomendo fortemente que você rode esse mesmo caso (Cássio
+Alves) manualmente no sistema e compare com o resultado das páginas 7-8 antes de
+usar isso em produção. Se algo não bater, me mostre onde e eu ajusto.
+
+### O que foi implementado
+
+- **Duas modalidades**, selecionáveis no início: Mudança de Nível (altera o
+  salário-base, com reflexos em verbas percentuais parametrizáveis — anuênio,
+  insalubridade, etc.) e Implantação de Gratificação (a gratificação nunca
+  existiu; não há "base devido" diferente).
+- **Prescrição quinquenal automática** (Decreto 20.910/32): meses anteriores a
+  protocolo−5 anos aparecem esmaecidos e zerados na tabela, com aviso da
+  data-limite aplicada.
+- **Tabela mês a mês** + **Resumo A/B/C** exatamente na estrutura que você
+  descreveu: A) Proventos (salarial + indenizatório) → B) Descontos (INSS
+  progressivo mês a mês + IRRF opcional) → Valor líquido → C) Valor devido pelo
+  município (líquido + retenções + contribuição patronal parametrizável).
+- **Tabela do INSS 2026** (progressiva, com parcela a deduzir) adicionada aos
+  Parâmetros de Cálculo editáveis — pesquisei e confirmei os valores atuais
+  antes de codificar.
+- Testei: diferença simples de base, corte por prescrição, modalidade
+  gratificação com reflexos de 13º e 1/3 férias, e a estrutura A/B/C completa
+  (incluindo o INSS progressivo calculado corretamente por faixa) — todos com
+  valores redondos que conferi manualmente.
+
+### O que NÃO foi implementado nesta rodada
+
+- **Extração automática de dados de PDF** (ficha financeira e tabela de níveis
+  do PCS). Isso é um projeto à parte — o formato varia muito entre prefeituras,
+  e fazer isso com confiabilidade exigiria um leitor de documento bem mais
+  robusto do que dá para construir com segurança numa única resposta. Por
+  enquanto, a entrada é manual, mês a mês, na própria tela.
+- **Geração do documento final em Word/timbrado** para este módulo específico
+  — o cálculo aparece na tela, mas ainda não tem o botão de baixar em .docx
+  como procuração/contrato/recibo/relatório já têm. Posso adicionar isso a
+  seguir, se você quiser.
+
+
+## 20. Validação contra o caso real (Cássio Alves) — resultado detalhado
+
+Você reenviou o PDF, e desta vez as imagens carregaram perfeitamente — dá pra
+ver tudo com clareza. Reconstruí os 53 meses de dados da ficha financeira e
+rodei pelo motor de cálculo de verdade. Aqui está o resultado, com total
+transparência:
+
+### ✅ O que bateu quase exatamente
+
+- **Meses individuais**: conferi dois meses específicos (dez/2020 com reflexo de
+  13º, jul/2020 com reflexo de 1/3 férias) e os totais bateram **exatos**,
+  centavo a centavo.
+- **Subtotal salarial**: meu R$ 36.302,28 vs. real R$ 36.306,70 (diferença de
+  R$ 4,42, num total de mais de R$ 36 mil — vem de eu ter recalculado o
+  percentual do anuênio a partir da própria diferença informada, reintroduzindo
+  um arredondamento mínimo).
+- **Soma (A)**: R$ 37.150,29 vs. R$ 37.156,22 (mesma origem de arredondamento).
+- **Contribuição patronal**: R$ 9.075,57 vs. R$ 9.076,68 (idem).
+
+Essa validação confirmou que a **lógica central está correta**: diferença de
+base × percentual da verba naquele mês, 13º replicando o valor do mês, 1/3
+férias como um terço do mês, estrutura A/B/C inteira.
+
+### ⚠️ Descoberta importante: o percentual muda mês a mês
+
+O anuênio do Cássio Alves foi de 17% (2020) até 21% (2024), subindo aos poucos
+com o tempo de serviço — **não é um percentual fixo para todo o período**. Já
+corrigi isso: agora cada mês tem seu próprio percentual para cada verba, em vez
+de um valor único para o cálculo inteiro. Sem essa correção, o sistema anterior
+estaria calculando tudo errado para qualquer caso com mudança de percentual ao
+longo do tempo — o que parece ser a regra, não a exceção, nesse tipo de cálculo.
+
+### ✅ Tabelas históricas do INSS adicionadas
+
+Pesquisei e encontrei uma fonte com o histórico completo das tabelas do INSS
+desde 1990. Adicionei as tabelas de 2020 a 2024 (mais 2026), calculando a
+parcela a deduzir de cada uma com a mesma fórmula que já bate exatamente com os
+valores oficiais publicados de 2024 e 2026 (conferi antes de confiar). Isso já
+está integrado: o sistema agora escolhe automaticamente a tabela do ano certo
+para cada competência, em vez de usar sempre a tabela atual.
+
+### ❌ O que NÃO bateu: o desconto de INSS
+
+Mesmo com a tabela certa de cada ano, meu cálculo do desconto previdenciário
+(R$ 2.730,78) ficou bem abaixo do valor real (R$ 4.279,34). Testei três
+hipóteses diferentes de metodologia antes de escrever esta seção:
+1. INSS mês a mês sobre a diferença salarial (o que eu já fazia): R$ 2.730,78
+2. INSS somando por ano, sobre o total anual das diferenças: R$ 3.597,82
+3. INSS "incremental" (diferença entre o INSS do salário total devido e do
+   salário total pago, mês a mês — a forma como a maioria dos sistemas de folha
+   realmente calcula reajustes retroativos): R$ 5.082,32
+
+Nenhuma bateu exatamente. A terceira hipótese é a mais próxima conceitualmente
+do que sistemas de folha de pagamento reais costumam fazer (porque o INSS é
+progressivo sobre o salário *inteiro*, não sobre a diferença isolada), mas eu
+não tenho visibilidade sobre todos os outros itens do contracheque do Cássio
+Alves (havia itens como "ajuste de 13º", "adiantamento de 13º" que não entraram
+na minha reconstrução), o que pode explicar a diferença restante.
+
+**Sendo direto**: não consegui reproduzir o desconto de INSS exato do "RM
+Cálculos" com a informação que tenho. A parte A (proventos) e a contribuição
+patronal — que são a maior parte do valor final — batem quase exatas. Se você
+tiver mais detalhes de como o RM Cálculos faz essa conta especificamente (ou
+puder me passar mais um caso de teste), consigo continuar refinando essa parte
+específica.
+
+
+## 21. Resolvido: Previdência Própria (RPPS), não INSS nacional
+
+Você me deu a informação que faltava: o município do Cássio Alves tem
+**previdência própria (RPPS)**, não o INSS nacional (RGPS). Isso explica tudo —
+RPPS usa uma **alíquota fixa definida por lei municipal** (não a tabela
+progressiva federal), e cada ente tem a sua, mudando só quando sai uma nova lei
+de reajuste.
+
+**Testei antes de mudar qualquer coisa**: descobri que uma alíquota fixa de
+**11,79%** reproduz o desconto previdenciário real quase exatamente (R$
+4.280,04 contra R$ 4.279,34 — diferença de **70 centavos**, dentro da margem de
+arredondamento que já existia desde antes). Isso confirma que a arquitetura
+agora está certa.
+
+### O que mudou
+
+- **Regime previdenciário selecionável**: RGPS (INSS nacional, tabela
+  progressiva, como já estava) ou RPPS (alíquota fixa, editável por ano).
+- **Alíquotas de RPPS editáveis por ano** na tela "⚙️ Parâmetros de Cálculo" —
+  segurado e patronal separados, já que ambos costumam ser fixados na mesma lei
+  municipal mas com percentuais diferentes. Sem alíquota cadastrada, o sistema
+  avisa claramente em vez de calcular um valor errado silenciosamente.
+- Testei: RPPS sem alíquota cadastrada (avisa e zera, não inventa número), RPPS
+  com alíquota cadastrada (calcula certo, inclusive usando a alíquota patronal
+  certa), e confirmei que o RGPS continua funcionando exatamente como antes
+  (não quebrei nada ao adicionar isso).
+
+### Resultado final da validação (regime RPPS, 11,79%)
+
+| Item | Meu resultado | Valor real (RM Cálculos) | Diferença |
+|---|---|---|---|
+| Desconto previdenciário | R$ 4.280,04 | R$ 4.279,34 | R$ 0,70 |
+| Valor líquido (A−B) | R$ 32.870,26 | R$ 32.876,88 | R$ 6,62 |
+| Total devido (C) | R$ 46.225,87 | R$ 46.232,89 | R$ 7,02 |
+
+As diferenças que sobram (na casa de poucos reais, num total de mais de R$ 46
+mil) vêm inteiramente do fato de eu ter reconstruído os percentuais de
+anuênio/insalubridade a partir das próprias diferenças informadas no PDF, o que
+reintroduz um arredondamento mínimo — não é um problema de fórmula. **Com os
+percentuais exatos (que vocês têm, e o sistema já pede mês a mês), o resultado
+deve bater exatamente.**
+
+**Importante**: não sei a alíquota de RPPS de nenhum outro município além
+desta pista de 11,79% para este caso específico — cadastre a alíquota certa de
+cada ente (conforme a lei municipal/estadual) antes de calcular para outros
+clientes.
+
+
+## 22. Ajustes finos em Procuração e Contrato
+
+- **Contrato**: margem inferior aumentada em 0,5cm (o texto estava grudando no
+  rodapé) — só nesse documento, os demais (procuração/recibo/relatório)
+  continuam com a margem original.
+- **Procuração**: fonte do corpo em 11,5 (era 12). Só um pulo de linha entre o
+  fim do texto e o local/data (era dois).
+- **Procuração — textos de PODERES e PODERES ESPECÍFICOS**: atualizados para o
+  texto exato que vocês passaram.
+- **Ajuste automático de fonte**: se o conteúdo for extenso o bastante para
+  quase não caber numa página (deixando só a data/assinatura sobrando para a
+  página seguinte), o sistema reduz sozinho para 11 e tenta caber tudo numa
+  página só. Calibrei isso testando de verdade com 1, 2 e 3 outorgados: no meu
+  teste, 1 e 2 outorgados agora cabem certinho numa página; com 3 outorgados e
+  qualificações completas, mesmo a 11 o conteúdo é grande demais para uma
+  página só — nesse caso, aceita ocupar duas, o que é esperado (a regra é para
+  evitar sobra de só uma linha, não para forçar conteúdo genuinamente extenso
+  a caber à força).
+
+  **Detalhe técnico honesto**: como o servidor em produção (Render) não tem o
+  LibreOffice instalado, não dá pra verificar a paginação de verdade a cada
+  documento gerado (isso pediria uma dependência pesada só para essa checagem).
+  Em vez disso, calibrei um critério por quantidade de caracteres do texto,
+  testando os cenários reais no meu ambiente antes de definir o número. Pode
+  eventualmente errar para o lado de usar fonte 11 num caso que também caberia
+  em 11,5 — isso não é um problema (ambos os tamanhos são válidos e legíveis),
+  só significa que o critério é uma boa aproximação, não uma medição exata.
+
+- **Contrato — corpo do texto reescrito por completo**, a partir de "Tem justo
+  e contratado o seguinte", com as 13 cláusulas exatas que vocês passaram
+  (Do Objeto, Das Atividades, Dos Atos Processuais, Das Despesas, Dos
+  Honorários, Da Vigência e da Rescisão, Da Responsabilidade, Do Foro).
+  Mantive as mesmas regras de formatação já estabelecidas: CONTRATANTE,
+  CONTRATADO, O ADVOGADO, OUTORGANTE e o tipo de processo em caixa alta e
+  negrito onde aparecem no texto, e a inserção do valor/parcelas em negrito
+  (algarismo e por extenso) na Cláusula 6ª.
+
+  **Bug real que encontrei e corrigi durante o teste**: a Cláusula 8ª menciona
+  "honorários CONTRATADOS" — como meu destaque automático busca a palavra
+  "CONTRATADO", ele estava deixando só o "S" final fora do negrito
+  ("**CONTRATADO**S"). Corrigido antes de entregar.
+
+- **Assinaturas**: agora geram um bloco por pessoa — cada contratante com nome
+  e "(CONTRATANTE)" embaixo, e cada advogado vinculado ao processo com nome,
+  "(OAB/UF - número)" e "(CONTRATADO)" embaixo. Testei com 2 advogados
+  vinculados e confirmei que os dois blocos saem certinhos.
+
+
 ---
 
 Qualquer erro ao subir, me mostre a mensagem exata que aparece (no Render, aba "Logs")

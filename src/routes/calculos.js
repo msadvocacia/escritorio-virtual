@@ -3,6 +3,7 @@ const { requireAuth, requireRole } = require('../middleware/auth');
 const { calcularCorrecao, mesesEntre } = require('../utils/correcaoMonetaria');
 const { calcularSalarioBeneficio, calcularRMIRegraPermanente } = require('../utils/calculoPrevidenciario');
 const { obterParametrosCalculo, salvarParametrosCalculo } = require('../utils/parametrosCalculo');
+const { calcularRetroativoPccr } = require('../utils/calculoRetroativoPccr');
 const { calcularRescisao } = require('../utils/calculoTrabalhista');
 
 const router = express.Router();
@@ -323,6 +324,16 @@ router.post('/administrativo/planos-economicos', async (req, res) => {
   selecionados.forEach((p) => { fator *= (1 + p.percentual / 100); });
   const valorComDiferenca = parseFloat(valorBase) * fator;
   res.json({ valorBase: parseFloat(valorBase), planosAplicados: selecionados, fator, diferenca: valorComDiferenca - parseFloat(valorBase), valorFinal: valorComDiferenca });
+});
+
+// Retroativos PCCR (mudança de nível / implantação de gratificação)
+router.post('/retroativo-pccr', async (req, res) => {
+  try {
+    const resultado = await calcularRetroativoPccr(req.body || {});
+    res.json(resultado);
+  } catch (e) {
+    res.status(400).json({ erro: e.message || 'Não foi possível calcular.' });
+  }
 });
 
 module.exports = router;

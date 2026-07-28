@@ -2152,6 +2152,8 @@ const CALCULO_CATEGORIAS = [
     itens:['DPVAT/SPVAT (morte, invalidez, DAMS)','Seguros de vida/acidentes (indenizações tabeladas)'] },
   { id:'fgts', titulo:'16. FGTS (bloco próprio)', implementado:'fgts-diferencas',
     itens:['Correção de expurgos inflacionários (Verão, Collor I e II)','Diferenças de FGTS não recolhido'] },
+  { id:'retroativo-pccr', titulo:'17. Retroativos PCCR (Nível / Gratificação)', implementado:'retroativo-pccr',
+    itens:['Retroativo por mudança de nível (reflexos em verbas percentuais)','Retroativo por implantação de gratificação','Prescrição quinquenal automática','Resumo A/B/C (proventos, descontos, valor devido pelo município)'] },
 ];
 let CALCULO_ATIVO = null;
 function renderCalculoJuridico(){
@@ -2183,6 +2185,7 @@ async function selecionarCategoriaCalculo(id){
   if(cat.implementado==='empresarial-lucros'){ box.innerHTML = formularioDistribuicaoLucros(cat); return; }
   if(cat.implementado==='consumidor-amortizacao'){ box.innerHTML = formularioAmortizacao(cat); return; }
   if(cat.implementado==='administrativo'){ box.innerHTML = formularioAdministrativo(cat); setAdministrativoTab('reposicao'); return; }
+  if(cat.implementado==='retroativo-pccr'){ box.innerHTML = formularioRetroativoPccr(cat); renderMesCamposPccr(); renderListaNomesVerbasPccr(); renderListaMesesPccr(); return; }
   box.innerHTML = `<h3>${escapeHtml(cat.titulo)}</h3>
     <div class="hint" style="margin:8px 0;">Módulo ainda em construção. Itens previstos:</div>
     <ul style="margin:0 0 0 18px; font-size:13px; color:var(--ink-soft); line-height:1.8;">${cat.itens.map(i=>`<li>${escapeHtml(i)}</li>`).join('')}</ul>
@@ -2773,15 +2776,73 @@ async function calcularAmortizacao(){
 async function formularioParametrosCalculo(){
   let p;
   try{ p = await apiFetch('/api/calculos/parametros'); }catch(e){ return `<div class="empty">${escapeHtml(e.message)}</div>`; }
+  const linhasRpps = Object.keys(p.aliquotasRpppsPorAno||{}).sort().map(ano=>`<div class="list-row">
+      <div>${ano}</div>
+      <div class="rmeta">
+        Segurado: <input type="number" step="0.01" style="width:70px;" id="pc-rpps-seg-${ano}" value="${p.aliquotasRpppsPorAno[ano]}">% ·
+        Patronal: <input type="number" step="0.01" style="width:70px;" id="pc-rpps-pat-${ano}" value="${(p.aliquotaPatronalRpppsPorAno||{})[ano]||''}">%
+        <button class="icon-btn danger" onclick="removerAnoRpps(${ano})">🗑</button>
+      </div>
+    </div>`).join('');
   return `<h3>⚙️ Parâmetros de Cálculo</h3>
-    <div class="hint" style="margin-bottom:10px;">Valores que mudam por portaria/lei (não por índice econômico, que já é buscado ao vivo). Edite aqui quando sair uma nova portaria — não precisa mexer no código nem reimplantar o servidor. ${p.atualizadoEm? 'Última atualização: '+new Date(p.atualizadoEm).toLocaleString('pt-BR') : 'Ainda usando os valores padrão de 2026.'}</div>
+    <div class="hint" style="margin-bottom:10px;">Valores que mudam por portaria/lei (não por índice econômico, que já é buscado ao vivo). Edite aqui quando sair uma nova portaria/lei — não precisa mexer no código nem reimplantar o servidor. ${p.atualizadoEm? 'Última atualização: '+new Date(p.atualizadoEm).toLocaleString('pt-BR') : 'Ainda usando os valores padrão de 2026.'}</div>
     <div class="field-row">
       <div class="field"><label>Teto do INSS (R$)</label><input type="number" step="0.01" id="pc-teto" value="${p.tetoInss}"></div>
       <div class="field"><label>Piso do INSS / salário mínimo (R$)</label><input type="number" step="0.01" id="pc-piso" value="${p.pisoInss}"></div>
     </div>
-    <button class="btn btn-gold" onclick="salvarParametrosCalculoUI()">Salvar</button>
-    <div class="hint" style="margin-top:14px;">Percentuais de planos econômicos (fatos históricos já consolidados em jurisprudência — normalmente não precisam de edição, mas ficam aqui caso surja necessidade de ajuste).</div>
+    <button class="btn btn-gold" onclick="salvarParametrosCalculoUI()">Salvar teto/piso</button>
+
+    <fieldset style="margin-top:16px;"><legend>RPPS — Previdência Própria (alíquota fixa por ano, definida por lei do ente)</legend>
+      <div class="hint" style="margin-bottom:8px;">Cada município/estado com previdência própria tem sua própria alíquota, fixada por lei local — diferente do INSS nacional. Cadastre aqui a alíquota do segurado e a patronal para cada ano que você for calcular retroativos, conforme a lei do ente do seu cliente.</div>
+      <div id="pc-rpps-lista">${linhasRpps || '<div class="empty">Nenhum ano cadastrado ainda.</div>'}</div>
+      <div class="field-row" style="margin-top:10px;">
+        <div class="field"><label>Ano</label><input type="number" step="1" id="pc-rpps-novo-ano" placeholder="Ex: 2024"></div>
+        <div class="field"><label>Alíquota do segurado (%)</label><input type="number" step="0.01" id="pc-rpps-novo-seg" placeholder="Ex: 11.79"></div>
+        <div class="field"><label>Alíquota patronal (%)</label><input type="number" step="0.01" id="pc-rpps-novo-pat" placeholder="Ex: 25"></div>
+      </div>
+      <button class="btn btn-ghost" onclick="adicionarAnoRpps()">+ Adicionar ano</button>
+      <button class="btn btn-gold" style="margin-left:8px;" onclick="salvarAnosRppsExistentesUI()">Salvar edições acima</button>
+    </fieldset>
+
+    <div class="hint" style="margin-top:16px;">Percentuais de planos econômicos (fatos históricos já consolidados em jurisprudência — normalmente não precisam de edição).</div>
     <div style="font-size:12.5px; color:var(--ink-soft); margin-top:6px;">${p.planosEconomicos.map(pl=>`${escapeHtml(pl.label)}: ${pl.percentual}%`).join('<br>')}</div>`;
+}
+async function adicionarAnoRpps(){
+  const ano = parseInt(document.getElementById('pc-rpps-novo-ano').value, 10);
+  const seg = parseFloat(document.getElementById('pc-rpps-novo-seg').value);
+  const pat = parseFloat(document.getElementById('pc-rpps-novo-pat').value)||25;
+  if(!ano || !seg){ showToast('Preencha o ano e a alíquota do segurado.'); return; }
+  try{
+    const atual = await apiFetch('/api/calculos/parametros');
+    const aliquotasRpppsPorAno = { ...(atual.aliquotasRpppsPorAno||{}), [ano]: seg };
+    const aliquotaPatronalRpppsPorAno = { ...(atual.aliquotaPatronalRpppsPorAno||{}), [ano]: pat };
+    await apiFetch('/api/calculos/parametros', { method:'PUT', body: JSON.stringify({ aliquotasRpppsPorAno, aliquotaPatronalRpppsPorAno }) });
+    showToast('Ano cadastrado.');
+    selecionarCategoriaCalculo('parametros');
+  }catch(e){ showToast(e.message || 'Não foi possível salvar.'); }
+}
+async function removerAnoRpps(ano){
+  try{
+    const atual = await apiFetch('/api/calculos/parametros');
+    const aliquotasRpppsPorAno = { ...(atual.aliquotasRpppsPorAno||{}) }; delete aliquotasRpppsPorAno[ano];
+    const aliquotaPatronalRpppsPorAno = { ...(atual.aliquotaPatronalRpppsPorAno||{}) }; delete aliquotaPatronalRpppsPorAno[ano];
+    await apiFetch('/api/calculos/parametros', { method:'PUT', body: JSON.stringify({ aliquotasRpppsPorAno, aliquotaPatronalRpppsPorAno }) });
+    showToast('Ano removido.');
+    selecionarCategoriaCalculo('parametros');
+  }catch(e){ showToast(e.message || 'Não foi possível remover.'); }
+}
+async function salvarAnosRppsExistentesUI(){
+  try{
+    const atual = await apiFetch('/api/calculos/parametros');
+    const aliquotasRpppsPorAno = {}; const aliquotaPatronalRpppsPorAno = {};
+    Object.keys(atual.aliquotasRpppsPorAno||{}).forEach(ano=>{
+      const seg = document.getElementById('pc-rpps-seg-'+ano); const pat = document.getElementById('pc-rpps-pat-'+ano);
+      if(seg) aliquotasRpppsPorAno[ano] = parseFloat(seg.value)||0;
+      if(pat) aliquotaPatronalRpppsPorAno[ano] = parseFloat(pat.value)||0;
+    });
+    await apiFetch('/api/calculos/parametros', { method:'PUT', body: JSON.stringify({ aliquotasRpppsPorAno, aliquotaPatronalRpppsPorAno }) });
+    showToast('Alterações salvas.');
+  }catch(e){ showToast(e.message || 'Não foi possível salvar.'); }
 }
 async function salvarParametrosCalculoUI(){
   const tetoInss = parseFloat(document.getElementById('pc-teto').value);
@@ -2855,6 +2916,181 @@ async function calcularPlanosEconomicos(){
       <div class="irow"><span>Diferença</span><strong>${fmtMoney(r.diferenca)}</strong></div>
       <div class="irow" style="border-top:1px solid var(--line); padding-top:8px; margin-top:4px;"><span>Valor final</span><strong style="color:var(--gold-dark); font-size:16px;">${fmtMoney(r.valorFinal)}</strong></div>
     </div>`;
+  }catch(e){ box.innerHTML = `<div class="empty">${escapeHtml(e.message||'Não foi possível calcular.')}</div>`; }
+}
+
+let PCCR_MODALIDADE = 'nivel';
+let PCCR_VERBAS_NOMES = []; // nomes das verbas percentuais (ex: "Anuênio", "Insalubridade") — só os NOMES, definidos uma vez
+let PCCR_MESES = []; // [{competencia, basePago, baseDevido/percentualGratificacao, verbasPercentuais:[{nome,percentual}], incluir13, incluirFerias}]
+function formularioRetroativoPccr(cat){
+  PCCR_MODALIDADE = 'nivel'; PCCR_VERBAS_NOMES = []; PCCR_MESES = [];
+  return `<h3>${escapeHtml(cat.titulo)}</h3>
+    <div class="hint" style="background:#fff3cd; border:1px solid #ffe08a; padding:10px; border-radius:8px; margin-bottom:12px; color:#7a5c00;">
+      ⚠️ A entrada de dados aqui é <strong>manual</strong> — a extração automática a partir do PDF da ficha financeira e da tabela de níveis do PCS ainda não está implementada. Prescrição quinquenal é aplicada automaticamente sobre a data de protocolo informada. <strong>Importante</strong>: o percentual de cada verba (ex: anuênio) é informado <strong>mês a mês</strong>, porque costuma mudar ao longo do tempo (o servidor acumula anuênios, por exemplo) — não é um percentual fixo para todo o período.
+    </div>
+    <div class="field"><label>Modalidade</label><select id="pccr-modalidade" onchange="mudarModalidadePccr()">
+      <option value="nivel">Mudança de nível</option>
+      <option value="gratificacao">Implantação de gratificação</option>
+    </select></div>
+    <fieldset><legend>Cabeçalho</legend>
+      <div class="field-row">
+        <div class="field"><label>Nome</label><input id="pccr-nome"></div>
+        <div class="field"><label>Matrícula</label><input id="pccr-matricula"></div>
+        <div class="field"><label>Processo</label><input id="pccr-processo"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Data de admissão</label><input type="date" id="pccr-admissao"></div>
+        <div class="field"><label>Data de protocolo</label><input type="date" id="pccr-protocolo"></div>
+        <div class="field"><label>Data de implantação</label><input type="date" id="pccr-implantacao"></div>
+      </div>
+    </fieldset>
+    <fieldset id="pccr-verbas-box" style="margin-top:10px;"><legend>Nomes das verbas percentuais incidentes sobre o base (ex: Anuênio, Insalubridade)</legend>
+      <div class="hint" style="margin-bottom:6px;">Defina aqui só os NOMES — o percentual de cada uma é informado mês a mês, logo abaixo.</div>
+      <div class="field-row">
+        <div class="field"><label>Nome da verba</label><input id="pccr-verba-nome" placeholder="Ex: Anuênio"></div>
+        <button class="btn btn-ghost" style="align-self:flex-end;" onclick="adicionarNomeVerbaPccr()">+ Adicionar</button>
+      </div>
+      <div id="pccr-verbas-lista" style="margin-top:8px;"></div>
+    </fieldset>
+    <fieldset style="margin-top:10px;"><legend>Meses do período</legend>
+      <div id="pccr-mes-campos"></div>
+      <button class="btn btn-ghost" onclick="adicionarMesPccr()">+ Adicionar mês</button>
+      <div id="pccr-meses-lista" style="margin-top:8px;"></div>
+    </fieldset>
+    <fieldset style="margin-top:10px;"><legend>Parâmetros de desconto</legend>
+      <div class="field-row">
+        <div class="field"><label>Regime previdenciário</label><select id="pccr-regime">
+          <option value="rgps">RGPS — INSS nacional (tabela progressiva)</option>
+          <option value="rpps">RPPS — Previdência própria do ente (alíquota fixa por lei municipal/estadual)</option>
+        </select></div>
+        <div class="field"><label>Contribuição patronal (%, deixe vazio para usar a cadastrada por ano no RPPS)</label><input type="number" step="0.01" id="pccr-patronal" placeholder="Ex: 25"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label><input type="checkbox" id="pccr-irrf-ativo" style="width:auto; margin-right:6px;"> Aplicar IRRF</label></div>
+        <div class="field"><label>Percentual IRRF (%)</label><input type="number" step="0.01" id="pccr-irrf-percentual" placeholder="se aplicável"></div>
+      </div>
+      <div class="hint">Lembrete legal: retroativos recebidos acumuladamente (RRA) têm tratamento especial de IRRF (Art. 12-A da Lei 7.713/88) — em muitos casos o cálculo mês a mês resulta em isenção. Este campo aplica só um percentual simples; confirme a incidência correta com um contador antes de usar em petição.</div>
+      <div class="hint" style="margin-top:6px;">Se o cliente for de previdência própria (RPPS), cadastre a alíquota do ano certo em "⚙️ Parâmetros de Cálculo" antes de calcular — cada município tem a sua, fixada por lei local, e muda a cada reajuste.</div>
+    </fieldset>
+    <button class="btn btn-gold" style="margin-top:10px;" onclick="calcularRetroativoPccrUI()">Calcular</button>
+    <div id="pccr-resultado" style="margin-top:14px;"></div>`;
+}
+function mudarModalidadePccr(){
+  PCCR_MODALIDADE = document.getElementById('pccr-modalidade').value;
+  document.getElementById('pccr-verbas-box').style.display = PCCR_MODALIDADE==='nivel' ? 'block' : 'none';
+  renderMesCamposPccr();
+  renderListaMesesPccr();
+}
+function adicionarNomeVerbaPccr(){
+  const nome = document.getElementById('pccr-verba-nome').value.trim();
+  if(!nome){ showToast('Informe o nome da verba.'); return; }
+  if(PCCR_VERBAS_NOMES.includes(nome)){ showToast('Essa verba já foi adicionada.'); return; }
+  PCCR_VERBAS_NOMES.push(nome);
+  document.getElementById('pccr-verba-nome').value='';
+  renderListaNomesVerbasPccr();
+  renderMesCamposPccr();
+}
+function removerNomeVerbaPccr(i){ PCCR_VERBAS_NOMES.splice(i,1); renderListaNomesVerbasPccr(); renderMesCamposPccr(); }
+function renderListaNomesVerbasPccr(){
+  document.getElementById('pccr-verbas-lista').innerHTML = PCCR_VERBAS_NOMES.length? PCCR_VERBAS_NOMES.map((n,i)=>`<span class="tag" style="margin:2px;">${escapeHtml(n)} <span style="cursor:pointer;" onclick="removerNomeVerbaPccr(${i})">✕</span></span>`).join('') : '<div class="empty">Nenhuma verba adicionada (ok se não houver nenhuma).</div>';
+}
+function renderMesCamposPccr(){
+  const box = document.getElementById('pccr-mes-campos');
+  const camposVerbas = PCCR_MODALIDADE==='nivel' ? PCCR_VERBAS_NOMES.map((nome,i)=>`<div class="field"><label>${escapeHtml(nome)} — % neste mês</label><input type="number" step="0.0001" id="pccr-mes-verba-${i}"></div>`).join('') : '';
+  if(PCCR_MODALIDADE==='nivel'){
+    box.innerHTML = `<div class="field-row">
+        <div class="field"><label>Competência</label><input type="month" id="pccr-mes-competencia"></div>
+        <div class="field"><label>Base pago (R$)</label><input type="number" step="0.01" id="pccr-mes-basepago"></div>
+        <div class="field"><label>Base devido (R$)</label><input type="number" step="0.01" id="pccr-mes-basedevido"></div>
+      </div>
+      ${camposVerbas? `<div class="field-row">${camposVerbas}</div>` : ''}
+      <div class="field-row">
+        <div class="field"><label><input type="checkbox" id="pccr-mes-13" style="width:auto; margin-right:6px;"> Reflexo em 13º neste mês</label></div>
+        <div class="field"><label><input type="checkbox" id="pccr-mes-ferias" style="width:auto; margin-right:6px;"> Reflexo em 1/3 férias neste mês</label></div>
+      </div>`;
+  } else {
+    box.innerHTML = `<div class="field-row">
+        <div class="field"><label>Competência</label><input type="month" id="pccr-mes-competencia"></div>
+        <div class="field"><label>Base pago (R$)</label><input type="number" step="0.01" id="pccr-mes-basepago"></div>
+        <div class="field"><label>Percentual da gratificação (%)</label><input type="number" step="0.01" id="pccr-mes-percentualgrat"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label><input type="checkbox" id="pccr-mes-13" style="width:auto; margin-right:6px;"> Reflexo em 13º neste mês</label></div>
+        <div class="field"><label><input type="checkbox" id="pccr-mes-ferias" style="width:auto; margin-right:6px;"> Reflexo em 1/3 férias neste mês</label></div>
+      </div>`;
+  }
+}
+function adicionarMesPccr(){
+  const competencia = document.getElementById('pccr-mes-competencia').value; // 'aaaa-mm'
+  const basePago = parseFloat(document.getElementById('pccr-mes-basepago').value);
+  const incluir13 = document.getElementById('pccr-mes-13').checked;
+  const incluirFerias = document.getElementById('pccr-mes-ferias').checked;
+  if(!competencia || !basePago){ showToast('Preencha a competência e o base pago.'); return; }
+  if(PCCR_MODALIDADE==='nivel'){
+    const baseDevido = parseFloat(document.getElementById('pccr-mes-basedevido').value);
+    if(!baseDevido){ showToast('Preencha o base devido.'); return; }
+    const verbasPercentuais = PCCR_VERBAS_NOMES.map((nome,i)=>({nome, percentual: parseFloat(document.getElementById('pccr-mes-verba-'+i).value)||0}));
+    PCCR_MESES.push({competencia, basePago, baseDevido, verbasPercentuais, incluir13, incluirFerias});
+  } else {
+    const percentualGratificacao = parseFloat(document.getElementById('pccr-mes-percentualgrat').value);
+    if(!percentualGratificacao){ showToast('Preencha o percentual da gratificação.'); return; }
+    PCCR_MESES.push({competencia, basePago, percentualGratificacao, incluir13, incluirFerias});
+  }
+  PCCR_MESES.sort((a,b)=>a.competencia.localeCompare(b.competencia));
+  document.getElementById('pccr-mes-competencia').value='';
+  renderListaMesesPccr();
+}
+function removerMesPccr(i){ PCCR_MESES.splice(i,1); renderListaMesesPccr(); }
+function renderListaMesesPccr(){
+  document.getElementById('pccr-meses-lista').innerHTML = PCCR_MESES.length? PCCR_MESES.map((m,i)=>{
+    const detalhe = PCCR_MODALIDADE==='nivel'? `pago ${fmtMoney(m.basePago)} → devido ${fmtMoney(m.baseDevido)}${(m.verbasPercentuais||[]).length? ' · '+m.verbasPercentuais.map(v=>v.nome+' '+v.percentual+'%').join(', '):''}` : `pago ${fmtMoney(m.basePago)}, gratificação ${m.percentualGratificacao}%`;
+    return `<div class="list-row"><div>${m.competencia} — ${detalhe} ${m.incluir13?'· 13º':''} ${m.incluirFerias?'· 1/3 férias':''}</div><div class="rmeta"><button class="icon-btn danger" onclick="removerMesPccr(${i})">🗑</button></div></div>`;
+  }).join('') : '<div class="empty">Nenhum mês adicionado ainda.</div>';
+}
+async function calcularRetroativoPccrUI(){
+  if(!PCCR_MESES.length){ showToast('Adicione ao menos um mês.'); return; }
+  const dataProtocolo = document.getElementById('pccr-protocolo').value;
+  if(!dataProtocolo){ showToast('Informe a data de protocolo.'); return; }
+  const irrfAtivo = document.getElementById('pccr-irrf-ativo').checked;
+  const irrfPercentual = parseFloat(document.getElementById('pccr-irrf-percentual').value)||0;
+  const patronalInput = document.getElementById('pccr-patronal').value;
+  const contribuicaoPatronalPercentual = patronalInput? parseFloat(patronalInput) : null;
+  const regimePrevidenciario = document.getElementById('pccr-regime').value;
+  const box = document.getElementById('pccr-resultado');
+  box.innerHTML = '<div class="empty">Calculando...</div>';
+  try{
+    const r = await apiFetch('/api/calculos/retroativo-pccr', { method:'POST', body: JSON.stringify({
+      modalidade: PCCR_MODALIDADE, dataProtocolo, meses: PCCR_MESES, irrfAtivo, irrfPercentual, contribuicaoPatronalPercentual, regimePrevidenciario
+    })});
+    const linhasHtml = r.linhas.map(l=>`<tr ${l.cortadoPorPrescricao?'style="opacity:.5;"':''}>
+      <td>${l.competencia}${l.cortadoPorPrescricao?' (prescrito)':''}</td>
+      <td>${fmtMoney(l.basePago)}</td>
+      <td>${l.baseDevido!=null? fmtMoney(l.baseDevido) : (l.valorGratificacao!=null? fmtMoney(l.valorGratificacao)+' (grat.)' : '—')}</td>
+      <td>${l.reflexo13? fmtMoney(l.reflexo13):'—'}</td>
+      <td>${l.reflexoFerias? fmtMoney(l.reflexoFerias):'—'}</td>
+      <td><strong>${fmtMoney(l.totalMes)}</strong></td>
+    </tr>`).join('');
+    box.innerHTML = `
+      <div class="hint" style="margin-bottom:8px;">Data-limite de prescrição quinquenal: ${fmtDate(r.competenciaLimitePrescricao+'-01')}. Meses antes dessa data aparecem esmaecidos e zerados. Regime previdenciário usado: ${r.regimePrevidenciario==='rpps'?'RPPS (previdência própria)':'RGPS (INSS nacional)'}.</div>
+      ${(r.avisos||[]).map(a=>`<div class="hint" style="background:#fff3cd; border:1px solid #ffe08a; padding:8px; border-radius:6px; margin-bottom:8px; color:#7a5c00;">⚠️ ${escapeHtml(a)}</div>`).join('')}
+      <table><thead><tr><th>Competência</th><th>Base pago</th><th>Base devido / Gratificação</th><th>Reflexo 13º</th><th>Reflexo 1/3 férias</th><th>Total do mês</th></tr></thead><tbody>${linhasHtml}</tbody></table>
+      <div class="panel" style="margin-top:14px;">
+        <h4>A — Proventos</h4>
+        <div class="irow"><span>Subtotal salarial</span><strong>${fmtMoney(r.resumo.subtotalSalarial)}</strong></div>
+        <div class="irow"><span>Subtotal indenizatório (1/3 férias)</span><strong>${fmtMoney(r.resumo.subtotalIndenizatorio)}</strong></div>
+        <div class="irow" style="border-top:1px solid var(--line); padding-top:6px;"><span>Soma (A)</span><strong>${fmtMoney(r.resumo.somaA)}</strong></div>
+        <h4 style="margin-top:12px;">B — Descontos</h4>
+        <div class="irow"><span>Desconto previdenciário (${r.regimePrevidenciario==='rpps'?'RPPS, alíquota fixa':'INSS, progressivo'} mês a mês)</span><strong>${fmtMoney(r.resumo.somaInss)}</strong></div>
+        <div class="irow"><span>Desconto IRRF</span><strong>${r.resumo.irrfAtivo? fmtMoney(r.resumo.somaIrrf) : 'Sem incidência'}</strong></div>
+        <div class="irow" style="border-top:1px solid var(--line); padding-top:6px;"><span>Soma (B)</span><strong>${fmtMoney(r.resumo.somaB)}</strong></div>
+        <div class="irow" style="margin-top:6px;"><span>Valor líquido devido à parte autora (A − B)</span><strong style="color:var(--gold-dark); font-size:16px;">${fmtMoney(r.resumo.valorLiquido)}</strong></div>
+        <h4 style="margin-top:12px;">C — Valores devidos pelo município</h4>
+        <div class="irow"><span>Valor líquido devido à parte autora</span><strong>${fmtMoney(r.resumo.valorLiquido)}</strong></div>
+        <div class="irow"><span>+ Previdência retida</span><strong>${fmtMoney(r.resumo.somaInss)}</strong></div>
+        <div class="irow"><span>+ IRRF retido</span><strong>${r.resumo.irrfAtivo? fmtMoney(r.resumo.somaIrrf) : 'R$ 0,00'}</strong></div>
+        <div class="irow"><span>+ Contribuição previdenciária patronal (${r.resumo.percentualPatronal}%)</span><strong>${fmtMoney(r.resumo.contribuicaoPatronal)}</strong></div>
+        <div class="irow" style="border-top:1px solid var(--line); padding-top:6px; margin-top:6px;"><span>Valor total devido (C)</span><strong style="color:var(--gold-dark); font-size:18px;">${fmtMoney(r.resumo.totalC)}</strong></div>
+      </div>`;
   }catch(e){ box.innerHTML = `<div class="empty">${escapeHtml(e.message||'Não foi possível calcular.')}</div>`; }
 }
 
