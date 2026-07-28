@@ -79,7 +79,7 @@ router.post('/procuracao', requireAuth, requireRole('master', 'socio', 'associad
     }];
     const outorgados = advogados.map((a) => ({
       nome: (a.nome || '').toUpperCase(),
-      qualificacaoSemEndereco: T.qualificacaoAdvogadoSemEndereco(a, config.telefone),
+      qualificacaoSemEndereco: T.qualificacaoAdvogadoSemEndereco(a),
       endereco: T.enderecoAdvogado(),
     }));
 
@@ -98,7 +98,7 @@ router.post('/procuracao', requireAuth, requireRole('master', 'socio', 'associad
       D.blank(),
       D.paragraph([D.run('OUTORGANTE: ', { bold: true, sizeHalfPt: PROC_SZ }), ...D.montarBlocoPessoas(outorgantes, PROC_SZ)]),
       D.blank(),
-      D.paragraph([D.run('OUTORGADO: ', { bold: true, sizeHalfPt: PROC_SZ }), ...D.montarBlocoPessoas(outorgados, PROC_SZ)]),
+      D.paragraph([D.run('OUTORGADO: ', { bold: true, sizeHalfPt: PROC_SZ }), ...D.montarBlocoPessoas(outorgados, PROC_SZ, 'com endereço profissional em')]),
       D.blank(),
       D.paragraph([
         D.run('PODERES: ', { bold: true, sizeHalfPt: PROC_SZ }),
@@ -140,7 +140,7 @@ router.post('/contrato', requireAuth, requireRole('master', 'socio', 'associado'
   }];
   const contratados = advogados.map((a) => ({
     nome: (a.nome || '').toUpperCase(),
-    qualificacaoSemEndereco: T.qualificacaoAdvogadoSemEndereco(a, config.telefone),
+    qualificacaoSemEndereco: T.qualificacaoAdvogadoSemEndereco(a),
     endereco: T.enderecoAdvogado(),
   }));
 
@@ -178,7 +178,7 @@ router.post('/contrato', requireAuth, requireRole('master', 'socio', 'associado'
       D.blank(),
       D.paragraph([D.run('CONTRATANTE: ', { bold: true }), ...D.montarBlocoPessoas(contratantes)]),
       D.blank(),
-      D.paragraph([D.run('CONTRATADO: ', { bold: true }), ...D.montarBlocoPessoas(contratados)]),
+      D.paragraph([D.run('CONTRATADO: ', { bold: true }), ...D.montarBlocoPessoas(contratados, undefined, 'com endereço profissional em')]),
       D.blank(),
       D.paragraph(D.run('As partes acima identificadas têm, entre si, justo e acertado o presente Contrato de Honorários Advocatícios, que se regerá pelas cláusulas e pelas condições a seguir descritas.')),
       D.blank(),

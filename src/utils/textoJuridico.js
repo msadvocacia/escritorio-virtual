@@ -64,11 +64,11 @@ function qualificacaoCliente(c) {
 function enderecoAdvogado() {
   return 'Rua Frederico Costa, nº 124, Centro, CEP: 45.200-225, Jequié-BA';
 }
-function qualificacaoAdvogadoSemEndereco(a, telefoneEscritorio) {
-  return `${a.nacionalidade || 'brasileiro(a)'}, ${a.estadoCivil || ''}, advogado(a), OAB/BA ${a.oab || '—'}, portador(a) da cédula de identidade sob nº ${a.rg || '—'}, inscrito(a) no CPF nº ${formatCPF(a.cpf)}, telefone ${telefoneEscritorio || '(73) 99194-3622'}`;
+function qualificacaoAdvogadoSemEndereco(a) {
+  return `${a.nacionalidade || 'brasileiro(a)'}, ${a.estadoCivil || ''}, advogado(a), OAB/BA ${a.oab || '—'}, portador(a) da cédula de identidade sob nº ${a.rg || '—'}, inscrito(a) no CPF nº ${formatCPF(a.cpf)}, telefone ${a.telefone || '—'}`;
 }
-function qualificacaoAdvogado(a, telefoneEscritorio) {
-  return `${a.nacionalidade || 'brasileiro(a)'}, ${a.estadoCivil || ''}, advogado(a), OAB/BA ${a.oab || '—'}, portador(a) da cédula de identidade sob nº ${a.rg || '—'}, inscrito(a) no CPF nº ${formatCPF(a.cpf)}, com endereço profissional na ${enderecoAdvogado()}, telefone ${telefoneEscritorio || '(73) 99194-3622'}`;
+function qualificacaoAdvogado(a) {
+  return `${a.nacionalidade || 'brasileiro(a)'}, ${a.estadoCivil || ''}, advogado(a), OAB/BA ${a.oab || '—'}, portador(a) da cédula de identidade sob nº ${a.rg || '—'}, inscrito(a) no CPF nº ${formatCPF(a.cpf)}, com endereço profissional na ${enderecoAdvogado()}, telefone ${a.telefone || '—'}`;
 }
 
 function fmtMoney(v) {

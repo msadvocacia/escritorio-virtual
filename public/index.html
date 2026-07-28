@@ -594,7 +594,19 @@ async function apiFetch(path, options={}){
   return body;
 }
 
-function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+async function apiFetchUpload(path, formData){
+  const headers = {};
+  if(AUTH_TOKEN) headers['Authorization'] = 'Bearer '+AUTH_TOKEN;
+  const resp = await fetch(path, { method:'POST', headers, body: formData });
+  let body = null;
+  try{ body = await resp.json(); }catch(e){ /* resposta sem corpo JSON */ }
+  if(!resp.ok){
+    if(resp.status===401){ logout(); }
+    const msg = (body && body.erro) || 'Erro de comunicação com o servidor.';
+    throw new Error(msg);
+  }
+  return body;
+}
 function fmtMoney(v){ v = Number(v)||0; return v.toLocaleString('pt-BR', {style:'currency', currency:'BRL'}); }
 let VALORES_OCULTOS = true; // padrão: oculto ao entrar, para ninguém "de lado" ver os valores
 function vmoney(v){ return VALORES_OCULTOS ? '••••••' : fmtMoney(v); }
@@ -2923,7 +2935,7 @@ let PCCR_MODALIDADE = 'nivel';
 let PCCR_VERBAS_NOMES = []; // nomes das verbas percentuais (ex: "Anuênio", "Insalubridade") — só os NOMES, definidos uma vez
 let PCCR_MESES = []; // [{competencia, basePago, baseDevido/percentualGratificacao, verbasPercentuais:[{nome,percentual}], incluir13, incluirFerias}]
 function formularioRetroativoPccr(cat){
-  PCCR_MODALIDADE = 'nivel'; PCCR_VERBAS_NOMES = []; PCCR_MESES = [];
+  PCCR_MODALIDADE = 'nivel'; PCCR_VERBAS_NOMES = []; PCCR_MESES = []; PCCR_NIVEIS_IMPORTADOS = [];
   return `<h3>${escapeHtml(cat.titulo)}</h3>
     <div class="hint" style="background:#fff3cd; border:1px solid #ffe08a; padding:10px; border-radius:8px; margin-bottom:12px; color:#7a5c00;">
       ⚠️ A entrada de dados aqui é <strong>manual</strong> — a extração automática a partir do PDF da ficha financeira e da tabela de níveis do PCS ainda não está implementada. Prescrição quinquenal é aplicada automaticamente sobre a data de protocolo informada. <strong>Importante</strong>: o percentual de cada verba (ex: anuênio) é informado <strong>mês a mês</strong>, porque costuma mudar ao longo do tempo (o servidor acumula anuênios, por exemplo) — não é um percentual fixo para todo o período.
@@ -2951,6 +2963,23 @@ function formularioRetroativoPccr(cat){
         <button class="btn btn-ghost" style="align-self:flex-end;" onclick="adicionarNomeVerbaPccr()">+ Adicionar</button>
       </div>
       <div id="pccr-verbas-lista" style="margin-top:8px;"></div>
+    </fieldset>
+    <fieldset style="margin-top:10px;"><legend>📎 Importar da ficha financeira (PDF) — opcional</legend>
+      <div class="hint" style="margin-bottom:8px;">Envia o PDF, o sistema tenta ler o salário-base e os percentuais de cada verba, mês a mês, e <strong>pré-preenche a lista abaixo para você conferir e corrigir</strong> — nunca calcula direto do arquivo. O arquivo não é salvo em nenhum lugar, só é lido nesta hora. Só funciona com PDF que tenha texto de verdade (não escaneado/foto).</div>
+      <div class="field-row">
+        <div class="field"><label>PDF da ficha financeira</label><input type="file" id="pccr-upload-ficha" accept="application/pdf"></div>
+        <button class="btn btn-ghost" style="align-self:flex-end;" onclick="importarFichaFinanceira()">Ler PDF e pré-preencher meses</button>
+      </div>
+      <div id="pccr-upload-ficha-status"></div>
+    </fieldset>
+    <fieldset style="margin-top:10px;"><legend>📎 Importar tabela de níveis/categorias do PCS (PDF) — opcional</legend>
+      <div class="hint" style="margin-bottom:8px;">Só para a modalidade "Mudança de nível" — envia a tabela de níveis vigente (a que muda a cada reajuste anual) para consultar rapidamente o valor do "base devido" de cada nível, sem digitar de cabeça. Mesmo aviso: o arquivo não é salvo, e os valores lidos aparecem para conferência antes de usar.</div>
+      <div class="field-row">
+        <div class="field"><label>PDF da tabela de níveis</label><input type="file" id="pccr-upload-niveis" accept="application/pdf"></div>
+        <button class="btn btn-ghost" style="align-self:flex-end;" onclick="importarTabelaNiveis()">Ler PDF</button>
+      </div>
+      <div id="pccr-upload-niveis-status"></div>
+      <div id="pccr-niveis-lista" style="margin-top:8px;"></div>
     </fieldset>
     <fieldset style="margin-top:10px;"><legend>Meses do período</legend>
       <div id="pccr-mes-campos"></div>
@@ -3041,6 +3070,46 @@ function adicionarMesPccr(){
   renderListaMesesPccr();
 }
 function removerMesPccr(i){ PCCR_MESES.splice(i,1); renderListaMesesPccr(); }
+async function importarFichaFinanceira(){
+  const input = document.getElementById('pccr-upload-ficha');
+  if(!input.files.length){ showToast('Escolha um arquivo PDF primeiro.'); return; }
+  const status = document.getElementById('pccr-upload-ficha-status');
+  status.innerHTML = '<div class="empty">Lendo o PDF...</div>';
+  const form = new FormData();
+  form.append('arquivo', input.files[0]);
+  try{
+    const r = await apiFetchUpload('/api/calculos/retroativo-pccr/importar-ficha', form);
+    r.meses.forEach(m=>{
+      if(PCCR_MODALIDADE==='nivel'){
+        PCCR_MESES.push({competencia:m.competencia, basePago:m.basePago, baseDevido:m.basePago, verbasPercentuais:m.verbasPercentuais||[], incluir13:false, incluirFerias:false});
+      } else {
+        PCCR_MESES.push({competencia:m.competencia, basePago:m.basePago, percentualGratificacao:0, incluir13:false, incluirFerias:false});
+      }
+    });
+    PCCR_MESES.sort((a,b)=>a.competencia.localeCompare(b.competencia));
+    if(PCCR_MODALIDADE==='nivel'){
+      r.meses.forEach(m=>(m.verbasPercentuais||[]).forEach(v=>{ if(!PCCR_VERBAS_NOMES.includes(v.nome)) PCCR_VERBAS_NOMES.push(v.nome); }));
+      renderListaNomesVerbasPccr(); renderMesCamposPccr();
+    }
+    renderListaMesesPccr();
+    status.innerHTML = `<div class="hint">${escapeHtml(r.aviso)} — <strong>${r.meses.length} mês(es) importado(s)</strong>. Confira "Base devido" e os reflexos de 13º/férias na lista abaixo (a leitura não sabe disso, só o salário pago e os percentuais).</div>`;
+  }catch(e){ status.innerHTML = `<div class="empty">${escapeHtml(e.message||'Não foi possível ler o PDF.')}</div>`; }
+}
+let PCCR_NIVEIS_IMPORTADOS = [];
+async function importarTabelaNiveis(){
+  const input = document.getElementById('pccr-upload-niveis');
+  if(!input.files.length){ showToast('Escolha um arquivo PDF primeiro.'); return; }
+  const status = document.getElementById('pccr-upload-niveis-status');
+  status.innerHTML = '<div class="empty">Lendo o PDF...</div>';
+  const form = new FormData();
+  form.append('arquivo', input.files[0]);
+  try{
+    const r = await apiFetchUpload('/api/calculos/retroativo-pccr/importar-tabela-niveis', form);
+    PCCR_NIVEIS_IMPORTADOS = r.niveis;
+    status.innerHTML = `<div class="hint">${escapeHtml(r.aviso)}</div>`;
+    document.getElementById('pccr-niveis-lista').innerHTML = `<table><thead><tr><th>Nível</th><th>Valor</th></tr></thead><tbody>${r.niveis.map(n=>`<tr><td>${escapeHtml(n.nivel)}</td><td>${fmtMoney(n.valor)}</td></tr>`).join('')}</tbody></table>`;
+  }catch(e){ status.innerHTML = `<div class="empty">${escapeHtml(e.message||'Não foi possível ler o PDF.')}</div>`; }
+}
 function renderListaMesesPccr(){
   document.getElementById('pccr-meses-lista').innerHTML = PCCR_MESES.length? PCCR_MESES.map((m,i)=>{
     const detalhe = PCCR_MODALIDADE==='nivel'? `pago ${fmtMoney(m.basePago)} → devido ${fmtMoney(m.baseDevido)}${(m.verbasPercentuais||[]).length? ' · '+m.verbasPercentuais.map(v=>v.nome+' '+v.percentual+'%').join(', '):''}` : `pago ${fmtMoney(m.basePago)}, gratificação ${m.percentualGratificacao}%`;

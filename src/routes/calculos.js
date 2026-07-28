@@ -4,6 +4,12 @@ const { calcularCorrecao, mesesEntre } = require('../utils/correcaoMonetaria');
 const { calcularSalarioBeneficio, calcularRMIRegraPermanente } = require('../utils/calculoPrevidenciario');
 const { obterParametrosCalculo, salvarParametrosCalculo } = require('../utils/parametrosCalculo');
 const { calcularRetroativoPccr } = require('../utils/calculoRetroativoPccr');
+const multer = require('multer');
+const { extrairTextoPdf, extrairTabelasPdf, pdfPareceEscaneado, parseFichaFinanceiraDeTabelas, parseTabelaNiveis } = require('../utils/leituraFichaFinanceira');
+
+// Upload em memória — o arquivo nunca toca o disco nem o banco de dados;
+// existe só durante o processamento desta requisição.
+const uploadPdf = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
 const { calcularRescisao } = require('../utils/calculoTrabalhista');
 
 const router = express.Router();
@@ -333,6 +339,49 @@ router.post('/retroativo-pccr', async (req, res) => {
     res.json(resultado);
   } catch (e) {
     res.status(400).json({ erro: e.message || 'Não foi possível calcular.' });
+  }
+});
+
+// Importação de PDF da ficha financeira — processado só em memória, nunca
+// salvo em disco ou no banco. Devolve uma lista de meses PRÉ-PREENCHIDA, para
+// revisão manual antes de calcular (nunca calcula direto do PDF).
+router.post('/retroativo-pccr/importar-ficha', uploadPdf.single('arquivo'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ erro: 'Envie um arquivo PDF.' });
+  try {
+    const texto = await extrairTextoPdf(req.file.buffer);
+    if (pdfPareceEscaneado(texto)) {
+      return res.status(422).json({
+        erro: 'Este PDF parece ser escaneado (imagem, sem texto por trás) — não é possível ler automaticamente neste servidor. Use uma exportação em PDF gerada direto pelo sistema de folha (com texto selecionável), ou preencha os meses manualmente.',
+      });
+    }
+    const meses = parseFichaFinanceiraDeTabelas(await extrairTabelasPdf(req.file.buffer));
+    if (!meses.length) {
+      return res.status(422).json({ erro: 'Não consegui reconhecer o formato desta ficha financeira. Preencha os meses manualmente, ou peça para eu ajustar a leitura para o formato do seu sistema.' });
+    }
+    res.json({ meses, aviso: 'Confira e corrija os valores abaixo antes de calcular — a leitura automática é um ponto de partida, não um resultado final.' });
+  } catch (e) {
+    res.status(400).json({ erro: 'Não foi possível ler este PDF: ' + (e.message || 'erro desconhecido.') });
+  }
+});
+
+// Importação de PDF da tabela de níveis/categorias do PCS — mesma lógica de
+// só-em-memória, com revisão manual antes de usar.
+router.post('/retroativo-pccr/importar-tabela-niveis', uploadPdf.single('arquivo'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ erro: 'Envie um arquivo PDF.' });
+  try {
+    const texto = await extrairTextoPdf(req.file.buffer);
+    if (pdfPareceEscaneado(texto)) {
+      return res.status(422).json({
+        erro: 'Este PDF parece ser escaneado (imagem, sem texto por trás) — não é possível ler automaticamente neste servidor. Use uma exportação em PDF com texto selecionável, ou preencha os níveis manualmente.',
+      });
+    }
+    const niveis = parseTabelaNiveis(texto);
+    if (!niveis.length) {
+      return res.status(422).json({ erro: 'Não consegui reconhecer níveis e valores neste PDF. Preencha manualmente, ou peça para eu ajustar a leitura para o formato da sua tabela.' });
+    }
+    res.json({ niveis, aviso: 'Confira os valores de cada nível antes de usar no cálculo.' });
+  } catch (e) {
+    res.status(400).json({ erro: 'Não foi possível ler este PDF: ' + (e.message || 'erro desconhecido.') });
   }
 });
 

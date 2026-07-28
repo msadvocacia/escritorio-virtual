@@ -707,6 +707,67 @@ clientes.
   vinculados e confirmei que os dois blocos saem certinhos.
 
 
+## 23. Upload de PDF no módulo 17 (ficha financeira + tabela de níveis)
+
+Adicionei os dois uploads que faltavam, exatamente onde você não estava
+encontrando: dentro do módulo "Retroativos PCCR", logo acima da lista de
+meses. O arquivo **nunca é salvo** — é lido só na hora, em memória, e
+descartado depois de processado.
+
+### Como funciona, com toda a transparência
+
+1. **Extração de texto de verdade** (não é OCR): uso uma biblioteca que lê o
+   texto e as tabelas que já existem dentro do PDF, se ele tiver sido gerado
+   diretamente por um sistema (com texto selecionável) — não funciona com
+   PDF escaneado/fotografado.
+2. **Testei com o seu PDF real** (o do Cássio Alves) e confirmei: ele é
+   **totalmente escaneado**, sem nenhum texto por trás — só imagem. Por isso,
+   com PDFs desse tipo, o sistema recusa educadamente, com um aviso claro,
+   em vez de tentar adivinhar (evitei OCR de propósito: além de exigir
+   programas que não estão instalados no servidor de produção, o Render, já
+   vimos neste mesmo sistema que OCR erra dígitos — arriscado demais para
+   dado financeiro).
+3. **Construí e testei o leitor de tabelas** com um PDF sintético (com texto
+   de verdade) no formato que vi na ficha financeira do Cássio Alves. Nesse
+   processo, **encontrei e corrigi um bug real**: os percentuais das verbas
+   (tipo "17.00" para 17%) usam ponto decimal, mas os valores em reais (tipo
+   "508,65") usam vírgula — formatos diferentes na mesma tabela. Meu código
+   inicial tratava tudo como um formato só, e "17.00" virava "1700" por
+   engano. Corrigido e testado: confirmei que agora extrai o salário-base e
+   os percentuais de cada verba corretamente, mês a mês.
+4. **Nunca calcula direto do PDF**: os dados lidos pré-preenchem a mesma lista
+   de meses que já existia para preenchimento manual — você vê, confere e
+   corrige antes de calcular. Isso é proposital: mesmo com texto de verdade
+   (sem risco de OCR), o formato de ficha financeira varia entre prefeituras,
+   e "base devido" e os reflexos de 13º/férias não vêm do PDF (isso depende
+   da tabela de níveis e de qual mês teve gozo de férias/13º, que só você
+   sabe) — então sempre sobra pelo menos uma revisão manual.
+5. **Tabela de níveis**: mesmo princípio — upload, leitura, lista para
+   conferência, nunca salva.
+
+### O que ainda pode não funcionar
+
+O leitor foi construído e testado no formato específico que vi na ficha do
+Cássio Alves ("Sistema de Gestão de Pessoas", com códigos de evento tipo "1 -
+SALARIO BASE", "16 - ANUENIO"). Se o sistema de folha do seu cliente usar um
+formato bem diferente, a leitura pode não reconhecer nada — nesse caso, o
+sistema avisa claramente ("não consegui reconhecer o formato") e você pode
+preencher manualmente, ou me mandar um exemplo desse outro formato (com PDF
+de texto real, não escaneado) para eu ajustar o leitor.
+
+
+## 24. Procuração e Contrato: endereço profissional e telefone individual do advogado
+
+- Na qualificação do **Outorgado/Contratado** (o advogado), a frase mudou de
+  "residente e domiciliado(a) em" para **"com endereço profissional em"** —
+  o cliente (Outorgante/Contratante) continua "residente e domiciliado(a)",
+  sem mudança.
+- O **telefone agora é o telefone individual cadastrado de cada profissional**
+  (o campo "telefone" do próprio usuário), não mais o telefone geral do
+  escritório. Testei com um advogado com telefone diferente do escritório e
+  confirmei que o número certo aparece tanto na procuração quanto no contrato.
+
+
 ---
 
 Qualquer erro ao subir, me mostre a mensagem exata que aparece (no Render, aba "Logs")
