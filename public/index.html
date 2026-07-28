@@ -632,6 +632,21 @@ function todayISO(){ const d = new Date(); return d.toISOString().slice(0,10); }
 function daysDiff(iso){ const a = new Date(iso+'T00:00:00'); const b = new Date(todayISO()+'T00:00:00'); return Math.round((a-b)/86400000); }
 function showToast(msg){ const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(window._toastTimer); window._toastTimer = setTimeout(()=>t.classList.remove('show'), 2800); }
 function escapeHtml(s){ return (s||'').toString().replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+let AJUDA_CONTADOR = 0;
+function ajuda(texto){
+  const id = 'ajuda-bal-'+(AJUDA_CONTADOR++);
+  return `<span style="position:relative; display:inline-block; margin-left:5px; vertical-align:middle;">
+    <span onclick="toggleAjuda('${id}', event)" style="display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:50%; background:var(--gold-dark); color:#fff; font-size:10.5px; font-weight:700; cursor:pointer; user-select:none; line-height:1;">?</span>
+    <div id="${id}" class="ajuda-balao" style="display:none; position:absolute; z-index:80; top:22px; left:0; width:250px; background:#fff; border:1px solid var(--line); border-radius:8px; padding:10px 12px; font-size:12px; font-weight:400; color:var(--ink); box-shadow:0 6px 20px rgba(0,0,0,.18); line-height:1.5;">${escapeHtml(texto)}</div>
+  </span>`;
+}
+function toggleAjuda(id, event){
+  if(event){ event.stopPropagation(); event.preventDefault(); }
+  document.querySelectorAll('.ajuda-balao').forEach(el=>{ if(el.id!==id) el.style.display='none'; });
+  const el = document.getElementById(id);
+  if(el) el.style.display = (el.style.display==='none'||!el.style.display) ? 'block' : 'none';
+}
+document.addEventListener('click', ()=>{ document.querySelectorAll('.ajuda-balao').forEach(el=>el.style.display='none'); });
 function onlyDigits(s){ return (s||'').replace(/\D/g,''); }
 function addDaysISO(iso, n){ const d = new Date(iso+'T00:00:00'); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
 
@@ -2211,19 +2226,19 @@ function formularioNucleoCorrecao(){
   return `<h3>Núcleo: Correção Monetária + Juros</h3>
     <div class="hint" style="margin-bottom:10px;">Busca os índices ao vivo direto do Banco Central (SGS). Convenção: a correção incide do mês seguinte ao inicial até o mês final — confira se a decisão do seu caso determina outra convenção.</div>
     <div class="field-row">
-      <div class="field"><label>Valor base (R$)</label><input type="number" step="0.01" id="nc-valor" placeholder="0,00"></div>
-      <div class="field"><label>Índice</label><select id="nc-indice">${INDICES_DISPONIVEIS.map(i=>`<option value="${i.v}">${i.l}</option>`).join('')}</select></div>
+      <div class="field"><label>Valor base (R$)${ajuda('O valor original que você quer corrigir — por exemplo, o valor de uma dívida, indenização ou honorário na data em que era devido, antes de aplicar qualquer atualização.')}</label><input type="number" step="0.01" id="nc-valor" placeholder="0,00"></div>
+      <div class="field"><label>Índice${ajuda('Qual índice usar para atualizar o valor pela inflação. Se não souber qual usar, confira a decisão judicial ou o contrato do seu caso — cada um pode determinar um índice diferente.')}</label><select id="nc-indice">${INDICES_DISPONIVEIS.map(i=>`<option value="${i.v}">${i.l}</option>`).join('')}</select></div>
     </div>
     <div class="field-row">
-      <div class="field"><label>Data inicial</label><input type="date" id="nc-data-inicial"></div>
-      <div class="field"><label>Data final</label><input type="date" id="nc-data-final" value="${todayISO()}"></div>
+      <div class="field"><label>Data inicial${ajuda('A partir de quando o valor deve começar a ser corrigido — geralmente a data do fato gerador (quando a dívida nasceu, ou quando o pagamento deveria ter sido feito).')}</label><input type="date" id="nc-data-inicial"></div>
+      <div class="field"><label>Data final${ajuda('Até quando corrigir — geralmente a data de hoje, ou a data em que o pagamento será efetivamente feito.')}</label><input type="date" id="nc-data-final" value="${todayISO()}"></div>
     </div>
     <fieldset><legend>Juros de mora (opcional)</legend>
       <div class="field-row">
-        <div class="field"><label>Tipo</label><select id="nc-juros-tipo"><option value="nenhum">Sem juros</option><option value="simples">Simples</option><option value="composto">Composto</option></select></div>
-        <div class="field"><label>Taxa ao mês (%)</label><input type="number" step="0.01" id="nc-juros-taxa" placeholder="Ex: 1"></div>
+        <div class="field"><label>Tipo${ajuda('Juros simples: calculados sempre sobre o valor original. Juros compostos: calculados sobre o valor já com juros acumulados do mês anterior (juros sobre juros). Se não tiver certeza, "sem juros" é a opção mais segura — você pode calcular só a correção monetária aqui, e tratar os juros à parte.')}</label><select id="nc-juros-tipo"><option value="nenhum">Sem juros</option><option value="simples">Simples</option><option value="composto">Composto</option></select></div>
+        <div class="field"><label>Taxa ao mês (%)${ajuda('O percentual de juros cobrado por mês. O mais comum é 1% ao mês (equivalente a 12% ao ano), mas confira o que está determinado no seu caso.')}</label><input type="number" step="0.01" id="nc-juros-taxa" placeholder="Ex: 1"></div>
       </div>
-      <div class="field"><label>Juros a partir de (padrão: mesma data inicial)</label><input type="date" id="nc-juros-data"></div>
+      <div class="field"><label>Juros a partir de (padrão: mesma data inicial)${ajuda('Às vezes os juros começam a contar numa data diferente da correção monetária (por exemplo, juros só a partir da citação). Deixe em branco se começarem juntos.')}</label><input type="date" id="nc-juros-data"></div>
     </fieldset>
     <button class="btn btn-gold" onclick="calcularNucleoCorrecao()">Calcular</button>
     <div id="nc-resultado" style="margin-top:14px;"></div>`;
@@ -2257,14 +2272,14 @@ function formularioRescisaoTrabalhista(){
   return `<h3>Trabalhista — Verbas Rescisórias (dispensa sem justa causa)</h3>
     <div class="hint" style="margin-bottom:10px;">Fórmulas padronizadas da CLT. Não considera adicionais, médias variáveis, convenção coletiva ou hora extra habitual — confira com atenção antes de usar em petição.</div>
     <div class="field-row">
-      <div class="field"><label>Salário (R$)</label><input type="number" step="0.01" id="rt-salario" placeholder="0,00"></div>
-      <div class="field"><label>Saldo de FGTS já depositado (opcional — se vazio, estima 8% ao mês)</label><input type="number" step="0.01" id="rt-fgts" placeholder="Deixe vazio para estimar"></div>
+      <div class="field"><label>Salário (R$)${ajuda('O último salário mensal do trabalhador, sem descontos (salário bruto), usado como base para calcular todas as verbas.')}</label><input type="number" step="0.01" id="rt-salario" placeholder="0,00"></div>
+      <div class="field"><label>Saldo de FGTS já depositado (opcional — se vazio, estima 8% ao mês)${ajuda('Se você tiver o extrato do FGTS com o saldo real, informe aqui para um cálculo mais preciso. Se não tiver, deixe em branco — o sistema estima 8% do salário por mês trabalhado.')}</label><input type="number" step="0.01" id="rt-fgts" placeholder="Deixe vazio para estimar"></div>
     </div>
     <div class="field-row">
-      <div class="field"><label>Data de admissão</label><input type="date" id="rt-admissao"></div>
-      <div class="field"><label>Data de demissão</label><input type="date" id="rt-demissao"></div>
+      <div class="field"><label>Data de admissão${ajuda('A data em que o trabalhador começou a trabalhar (consta na carteira de trabalho ou no contrato).')}</label><input type="date" id="rt-admissao"></div>
+      <div class="field"><label>Data de demissão${ajuda('A data em que o trabalhador foi dispensado (o último dia efetivamente trabalhado, salvo aviso prévio).')}</label><input type="date" id="rt-demissao"></div>
     </div>
-    <div class="field"><label><input type="checkbox" id="rt-aviso" checked style="width:auto; margin-right:6px;"> Aviso prévio indenizado (desmarque se foi trabalhado)</label></div>
+    <div class="field"><label><input type="checkbox" id="rt-aviso" checked style="width:auto; margin-right:6px;"> Aviso prévio indenizado (desmarque se foi trabalhado)${ajuda('Marque se a empresa pagou o aviso prévio em dinheiro, sem o trabalhador precisar cumprir esse período trabalhando. Desmarque se o trabalhador continuou trabalhando durante o aviso prévio (nesse caso, não há indenização extra por ele).')}</label></div>
     <button class="btn btn-gold" onclick="calcularRescisaoTrabalhista()">Calcular</button>
     <div id="rt-resultado" style="margin-top:14px;"></div>`;
 }
@@ -2293,8 +2308,8 @@ function formularioIndebitoCivel(cat){
   return `<h3>${escapeHtml(cat.titulo)} — Repetição de Indébito</h3>
     <div class="hint" style="margin-bottom:10px;">Simples ou em dobro (art. 42, parágrafo único, CDC), com correção monetária opcional via o núcleo. Os demais itens desta categoria (liquidação de sentença, danos materiais, pensão alimentícia, honorários) ainda estão em construção.</div>
     <div class="field-row">
-      <div class="field"><label>Valor pago indevidamente (R$)</label><input type="number" step="0.01" id="ci-valor" placeholder="0,00"></div>
-      <div class="field"><label>Restituição</label><select id="ci-dobro"><option value="false">Simples</option><option value="true">Em dobro (art. 42 CDC)</option></select></div>
+      <div class="field"><label>Valor pago indevidamente (R$)${ajuda('Quanto o consumidor efetivamente pagou a mais, ou pagou sem dever. Não inclui juros/correção ainda — isso é calculado separadamente abaixo.')}</label><input type="number" step="0.01" id="ci-valor" placeholder="0,00"></div>
+      <div class="field"><label>Restituição${ajuda('"Simples" devolve o mesmo valor pago. "Em dobro" (art. 42 CDC) devolve o dobro — use quando a cobrança indevida não teve justificativa razoável por parte do cobrador (engano justificável não gera cobrança em dobro).')}</label><select id="ci-dobro"><option value="false">Simples</option><option value="true">Em dobro (art. 42 CDC)</option></select></div>
     </div>
     <div class="field"><label><input type="checkbox" id="ci-corrigir" style="width:auto; margin-right:6px;" onchange="document.getElementById('ci-datas-box').style.display=this.checked?'block':'none'"> Aplicar correção monetária</label></div>
     <div id="ci-datas-box" style="display:none;">
@@ -2329,12 +2344,12 @@ function formularioTributario(cat){
   return `<h3>${escapeHtml(cat.titulo)} — Multa + Juros Selic</h3>
     <div class="hint" style="margin-bottom:10px;">Aplica a multa percentual sobre o tributo e depois corrige pela Selic acumulada (que já embute juros) entre o vencimento e o pagamento.</div>
     <div class="field-row">
-      <div class="field"><label>Valor do tributo (R$)</label><input type="number" step="0.01" id="tr-valor" placeholder="0,00"></div>
-      <div class="field"><label>Multa (%)</label><input type="number" step="0.01" id="tr-multa" value="20"></div>
+      <div class="field"><label>Valor do tributo (R$)${ajuda('O valor original do imposto/tributo devido, sem multa nem juros — o valor que constava na guia de cobrança.')}</label><input type="number" step="0.01" id="tr-valor" placeholder="0,00"></div>
+      <div class="field"><label>Multa (%)${ajuda('O percentual de multa por atraso. 20% é comum para tributos federais em atraso, mas confira a legislação específica do seu caso (municipal, estadual ou federal podem variar).')}</label><input type="number" step="0.01" id="tr-multa" value="20"></div>
     </div>
     <div class="field-row">
-      <div class="field"><label>Data de vencimento</label><input type="date" id="tr-vencimento"></div>
-      <div class="field"><label>Data de pagamento</label><input type="date" id="tr-pagamento" value="${todayISO()}"></div>
+      <div class="field"><label>Data de vencimento${ajuda('A data em que o tributo deveria ter sido pago originalmente.')}</label><input type="date" id="tr-vencimento"></div>
+      <div class="field"><label>Data de pagamento${ajuda('A data em que o tributo será (ou foi) efetivamente pago.')}</label><input type="date" id="tr-pagamento" value="${todayISO()}"></div>
     </div>
     <button class="btn btn-gold" onclick="calcularTributario()">Calcular</button>
     <div id="tr-resultado" style="margin-top:14px;"></div>`;
@@ -2362,8 +2377,8 @@ function formularioExecucaoFiscal(cat){
     <div class="hint" style="margin-bottom:10px;">Corrige o valor inscrito pela Selic acumulada (padrão para débitos com a Fazenda Pública).</div>
     <div class="field-row">
       <div class="field"><label>Valor inscrito (R$)</label><input type="number" step="0.01" id="ef-valor" placeholder="0,00"></div>
-      <div class="field"><label>Data da inscrição</label><input type="date" id="ef-data-inicial"></div>
-      <div class="field"><label>Data da atualização</label><input type="date" id="ef-data-final" value="${todayISO()}"></div>
+      <div class="field"><label>Data da inscrição${ajuda('A data em que a dívida foi inscrita em dívida ativa (consta na Certidão de Dívida Ativa - CDA).')}</label><input type="date" id="ef-data-inicial"></div>
+      <div class="field"><label>Data da atualização${ajuda('Até quando você quer atualizar o valor — geralmente a data de hoje, ou a data de um pagamento/acordo.')}</label><input type="date" id="ef-data-final" value="${todayISO()}"></div>
     </div>
     <button class="btn btn-gold" onclick="calcularExecucaoFiscal()">Calcular</button>
     <div id="ef-resultado" style="margin-top:14px;"></div>`;
@@ -2397,19 +2412,19 @@ function setLocacaoTab(tab){
   const box = document.getElementById('loc-conteudo');
   if(tab==='reajuste'){
     box.innerHTML = `<div class="field-row">
-        <div class="field"><label>Valor atual do aluguel (R$)</label><input type="number" step="0.01" id="loc-valor"></div>
-        <div class="field"><label>Índice</label><select id="loc-indice">${INDICES_DISPONIVEIS.map(i=>`<option value="${i.v}">${i.l}</option>`).join('')}</select></div>
+        <div class="field"><label>Valor atual do aluguel (R$)${ajuda('O valor do aluguel que está sendo pago agora, antes do reajuste.')}</label><input type="number" step="0.01" id="loc-valor"></div>
+        <div class="field"><label>Índice${ajuda('O índice de reajuste combinado no contrato de locação (geralmente IGP-M, mas confira a cláusula do seu contrato).')}</label><select id="loc-indice">${INDICES_DISPONIVEIS.map(i=>`<option value="${i.v}">${i.l}</option>`).join('')}</select></div>
       </div>
       <div class="field-row">
-        <div class="field"><label>Data do último reajuste</label><input type="date" id="loc-data-inicial"></div>
-        <div class="field"><label>Data do novo reajuste</label><input type="date" id="loc-data-final" value="${todayISO()}"></div>
+        <div class="field"><label>Data do último reajuste${ajuda('Quando o aluguel foi reajustado pela última vez (ou a data de início do contrato, se nunca foi reajustado).')}</label><input type="date" id="loc-data-inicial"></div>
+        <div class="field"><label>Data do novo reajuste${ajuda('A data em que o novo reajuste deve entrar em vigor — geralmente 12 meses depois do último.')}</label><input type="date" id="loc-data-final" value="${todayISO()}"></div>
       </div>
       <button class="btn btn-gold" onclick="calcularReajusteLocacao()">Calcular</button>
       <div id="loc-resultado" style="margin-top:14px;"></div>`;
   } else {
     box.innerHTML = `<div class="field-row">
-        <div class="field"><label>Valor do débito (R$)</label><input type="number" step="0.01" id="locd-valor"></div>
-        <div class="field"><label>Multa contratual (%)</label><input type="number" step="0.01" id="locd-multa" value="10"></div>
+        <div class="field"><label>Valor do débito (R$)${ajuda('O valor do aluguel (ou encargos) que o locatário deixou de pagar.')}</label><input type="number" step="0.01" id="locd-valor"></div>
+        <div class="field"><label>Multa contratual (%)${ajuda('O percentual de multa por atraso previsto no contrato de locação — 10% é comum, mas confira a cláusula específica.')}</label><input type="number" step="0.01" id="locd-multa" value="10"></div>
         <div class="field"><label>Índice</label><select id="locd-indice">${INDICES_DISPONIVEIS.map(i=>`<option value="${i.v}">${i.l}</option>`).join('')}</select></div>
       </div>
       <div class="field-row">
@@ -2459,12 +2474,12 @@ async function calcularDebitosLocacao(){
 function formularioDpvat(cat){
   return `<h3>${escapeHtml(cat.titulo)} — DPVAT/SPVAT</h3>
     <div class="hint" style="margin-bottom:10px;">Valores fixos por lei (Lei nº 11.945/2009), mantidos no SPVAT (sucessor do DPVAT a partir de 2026). <strong>Atenção ao prazo</strong>: acidentes dentro do período de cobertura do antigo DPVAT só podem ser reclamados até 14/11/2026.</div>
-    <div class="field"><label>Tipo de indenização</label><select id="dp-tipo" onchange="document.getElementById('dp-invalidez-box').style.display=this.value==='invalidez'?'block':'none'">
+    <div class="field"><label>Tipo de indenização${ajuda('Escolha conforme o que aconteceu com a vítima do acidente de trânsito: morte (valor fixo), invalidez permanente (proporcional ao grau apurado em perícia médica) ou reembolso de despesas médicas.')}</label><select id="dp-tipo" onchange="document.getElementById('dp-invalidez-box').style.display=this.value==='invalidez'?'block':'none'">
       <option value="morte">Morte (R$ 13.500,00 fixo)</option>
       <option value="invalidez">Invalidez permanente (proporcional ao grau, até R$ 13.500,00)</option>
       <option value="dams">Despesas médicas — DAMS (até R$ 2.700,00)</option>
     </select></div>
-    <div class="field" id="dp-invalidez-box" style="display:none;"><label>Grau de invalidez (% do laudo pericial)</label><input type="number" step="0.01" id="dp-percentual" placeholder="Ex: 50"></div>
+    <div class="field" id="dp-invalidez-box" style="display:none;"><label>Grau de invalidez (% do laudo pericial)${ajuda('O percentual de invalidez definido no laudo médico pericial (ex: 50% para perda parcial de um membro). Não é você quem decide esse número — ele vem do laudo.')}</label><input type="number" step="0.01" id="dp-percentual" placeholder="Ex: 50"></div>
     <button class="btn btn-gold" onclick="calcularDpvat()">Calcular</button>
     <div id="dp-resultado" style="margin-top:14px;"></div>`;
 }
@@ -2483,10 +2498,10 @@ function formularioPartilha(cat){
   return `<h3>${escapeHtml(cat.titulo)} — Partilha de Bens</h3>
     <div class="hint" style="margin-bottom:10px;">Some os bens (e marque dívidas/bens não partilháveis) para calcular a meação (50/50). Para partilha em proporção diferente do acordo, ajuste manualmente sobre o total.</div>
     <div class="field-row">
-      <div class="field"><label>Descrição do bem</label><input id="pt-desc" placeholder="Ex: Imóvel, veículo, conta..."></div>
-      <div class="field"><label>Valor (R$)</label><input type="number" step="0.01" id="pt-valor"></div>
+      <div class="field"><label>Descrição do bem${ajuda('O que é esse bem — ex: "Casa na Rua X", "Carro Honda Civic 2020", "Conta poupança Banco Y".')}</label><input id="pt-desc" placeholder="Ex: Imóvel, veículo, conta..."></div>
+      <div class="field"><label>Valor (R$)${ajuda('O valor de mercado atual do bem (não o valor de compra) — se não souber o valor exato, use uma estimativa e ajuste depois.')}</label><input type="number" step="0.01" id="pt-valor"></div>
     </div>
-    <div class="field"><label><input type="checkbox" id="pt-partilhavel" checked style="width:auto; margin-right:6px;"> Bem partilhável (desmarque para dívida pessoal/bem excluído da partilha)</label></div>
+    <div class="field"><label><input type="checkbox" id="pt-partilhavel" checked style="width:auto; margin-right:6px;"> Bem partilhável (desmarque para dívida pessoal/bem excluído da partilha)${ajuda('Deixe marcado para bens do casal que entram na partilha. Desmarque para bens que são só de uma pessoa (herança, bem anterior ao casamento em regime de separação, etc.) ou dívidas pessoais que não devem ser divididas.')}</label></div>
     <button class="btn btn-ghost" onclick="adicionarBemPartilha()">+ Adicionar à lista</button>
     <div id="pt-lista" style="margin:14px 0;"></div>
     <button class="btn btn-gold" onclick="calcularPartilha()">Calcular meação</button>
@@ -2521,22 +2536,22 @@ function formularioDosimetria(cat){
   return `<h3>${escapeHtml(cat.titulo)} — Dosimetria da Pena (art. 68 CP)</h3>
     <div class="hint" style="margin-bottom:10px;">Calcula as 3 fases sobre o intervalo pena mínima–máxima do tipo penal. Informe as frações em % que você já decidiu aplicar em cada fase — este cálculo não substitui a fundamentação da sentença/peça, só a aritmética.</div>
     <div class="field-row">
-      <div class="field"><label>Pena mínima (meses)</label><input type="number" step="0.01" id="ds-min"></div>
-      <div class="field"><label>Pena máxima (meses)</label><input type="number" step="0.01" id="ds-max"></div>
+      <div class="field"><label>Pena mínima (meses)${ajuda('A pena mínima prevista em lei para o crime, em meses (ex: furto simples = 1 ano = 12 meses). Converta anos para meses multiplicando por 12.')}</label><input type="number" step="0.01" id="ds-min"></div>
+      <div class="field"><label>Pena máxima (meses)${ajuda('A pena máxima prevista em lei para o crime, em meses.')}</label><input type="number" step="0.01" id="ds-max"></div>
     </div>
     <fieldset><legend>1ª fase — circunstâncias judiciais (art. 59)</legend>
-      <div class="field"><label>% do intervalo mínimo-máximo a somar à pena mínima</label><input type="number" step="0.01" id="ds-circunstancias" value="0" placeholder="0 a 100"></div>
+      <div class="field"><label>% do intervalo mínimo-máximo a somar à pena mínima${ajuda('Quanto, em percentual do intervalo entre a pena mínima e máxima, deve ser somado à pena mínima por causa das circunstâncias judiciais desfavoráveis (culpabilidade, antecedentes, etc.). 0% = fica na pena mínima. 100% = vai direto para a pena máxima.')}</label><input type="number" step="0.01" id="ds-circunstancias" value="0" placeholder="0 a 100"></div>
     </fieldset>
     <fieldset><legend>2ª fase — agravantes e atenuantes</legend>
       <div class="field-row">
-        <div class="field"><label>Agravantes (% de aumento)</label><input type="number" step="0.01" id="ds-agravantes" value="0"></div>
-        <div class="field"><label>Atenuantes (% de redução)</label><input type="number" step="0.01" id="ds-atenuantes" value="0"></div>
+        <div class="field"><label>Agravantes (% de aumento)${ajuda('O percentual de aumento pela presença de agravantes (art. 61/62 CP) — normalmente 1/6 (16,66%) por agravante, mas o juiz define a fração.')}</label><input type="number" step="0.01" id="ds-agravantes" value="0"></div>
+        <div class="field"><label>Atenuantes (% de redução)${ajuda('O percentual de redução pela presença de atenuantes (art. 65/66 CP) — normalmente 1/6 (16,66%) por atenuante.')}</label><input type="number" step="0.01" id="ds-atenuantes" value="0"></div>
       </div>
     </fieldset>
     <fieldset><legend>3ª fase — causas de aumento e diminuição</legend>
       <div class="field-row">
-        <div class="field"><label>Aumento (%, ex: 33.33 para 1/3)</label><input type="number" step="0.01" id="ds-aumento" value="0"></div>
-        <div class="field"><label>Diminuição (%, ex: 16.66 para 1/6)</label><input type="number" step="0.01" id="ds-diminuicao" value="0"></div>
+        <div class="field"><label>Aumento (%, ex: 33.33 para 1/3)${ajuda('Causas de aumento específicas do tipo penal (ex: crime continuado, concurso de pessoas) — cada uma tem sua fração prevista em lei. Some todas se houver mais de uma.')}</label><input type="number" step="0.01" id="ds-aumento" value="0"></div>
+        <div class="field"><label>Diminuição (%, ex: 16.66 para 1/6)${ajuda('Causas de diminuição específicas (ex: tentativa, participação de menor importância) — cada uma tem sua fração prevista em lei.')}</label><input type="number" step="0.01" id="ds-diminuicao" value="0"></div>
       </div>
     </fieldset>
     <button class="btn btn-gold" onclick="calcularDosimetria()">Calcular</button>
@@ -2569,16 +2584,16 @@ function formularioDesapropriacao(cat){
   return `<h3>${escapeHtml(cat.titulo)}</h3>
     <div class="hint" style="margin-bottom:10px;">Juros compensatórios de 12% ao ano (Súmula 618 STF) sobre o valor corrigido, mais juros moratórios opcionais (se houver atraso no pagamento após decisão).</div>
     <div class="field-row">
-      <div class="field"><label>Valor justo (R$)</label><input type="number" step="0.01" id="dsp-valor"></div>
+      <div class="field"><label>Valor justo (R$)${ajuda('O valor da indenização fixado pela perícia/acordo judicial como "justo valor" do bem desapropriado, na data-base do laudo.')}</label><input type="number" step="0.01" id="dsp-valor"></div>
       <div class="field"><label>Índice de correção</label><select id="dsp-indice">${INDICES_DISPONIVEIS.map(i=>`<option value="${i.v}">${i.l}</option>`).join('')}</select></div>
     </div>
     <div class="field-row">
-      <div class="field"><label>Data da imissão na posse</label><input type="date" id="dsp-data-inicial"></div>
+      <div class="field"><label>Data da imissão na posse${ajuda('A data em que o poder público tomou posse do imóvel/bem desapropriado — é a partir dela que os juros compensatórios começam a contar.')}</label><input type="date" id="dsp-data-inicial"></div>
       <div class="field"><label>Data do pagamento</label><input type="date" id="dsp-data-final" value="${todayISO()}"></div>
     </div>
     <div class="field-row">
-      <div class="field"><label>Juros compensatórios (% ao ano)</label><input type="number" step="0.01" id="dsp-comp" value="12"></div>
-      <div class="field"><label>Juros moratórios (% ao mês, opcional)</label><input type="number" step="0.01" id="dsp-mora" placeholder="deixe vazio se não houver"></div>
+      <div class="field"><label>Juros compensatórios (% ao ano)${ajuda('Compensam o proprietário por ter perdido o uso do bem antes de receber o pagamento — 12% ao ano é o percentual fixado pela Súmula 618 do STF.')}</label><input type="number" step="0.01" id="dsp-comp" value="12"></div>
+      <div class="field"><label>Juros moratórios (% ao mês, opcional)${ajuda('Só se aplicam se o pagamento atrasou depois de uma decisão determinando o pagamento — deixe em branco se não for o caso.')}</label><input type="number" step="0.01" id="dsp-mora" placeholder="deixe vazio se não houver"></div>
     </div>
     <button class="btn btn-gold" onclick="calcularDesapropriacao()">Calcular</button>
     <div id="dsp-resultado" style="margin-top:14px;"></div>`;
@@ -2607,8 +2622,8 @@ function formularioFgtsDiferencas(cat){
   return `<h3>${escapeHtml(cat.titulo)} — Diferenças de FGTS não recolhido</h3>
     <div class="hint" style="margin-bottom:10px;">Estima 8% da remuneração por mês não recolhido, corrigido pelo índice escolhido. Não cobre a correção de expurgos inflacionários específicos (Planos Verão/Collor) — esse cálculo é mais específico e ainda não está implementado.</div>
     <div class="field-row">
-      <div class="field"><label>Remuneração mensal (R$)</label><input type="number" step="0.01" id="fg-remuneracao"></div>
-      <div class="field"><label>Meses não recolhidos</label><input type="number" step="1" id="fg-meses"></div>
+      <div class="field"><label>Remuneração mensal (R$)${ajuda('O salário mensal do trabalhador no período em que o FGTS não foi recolhido corretamente.')}</label><input type="number" step="0.01" id="fg-remuneracao"></div>
+      <div class="field"><label>Meses não recolhidos${ajuda('Quantos meses o empregador deixou de recolher (ou recolheu a menos) o FGTS — confira no extrato do FGTS quais competências estão faltando ou zeradas.')}</label><input type="number" step="1" id="fg-meses"></div>
     </div>
     <div class="field-row">
       <div class="field"><label>Índice</label><select id="fg-indice">${INDICES_DISPONIVEIS.map(i=>`<option value="${i.v}">${i.l}</option>`).join('')}</select></div>
@@ -2649,20 +2664,20 @@ function formularioPrevidenciario(cat){
     </div>
     <fieldset><legend>1. Salário de Benefício (média dos salários de contribuição, corrigidos pelo INPC)</legend>
       <div class="field-row">
-        <div class="field"><label>Competência (mês/ano)</label><input type="month" id="pv-competencia"></div>
-        <div class="field"><label>Salário de contribuição (R$)</label><input type="number" step="0.01" id="pv-salario-mes"></div>
+        <div class="field"><label>Competência (mês/ano)${ajuda('O mês e ano daquele salário de contribuição — precisa adicionar um por mês, desde julho/1994 (ou desde o início das contribuições, se depois disso).')}</label><input type="month" id="pv-competencia"></div>
+        <div class="field"><label>Salário de contribuição (R$)${ajuda('O valor sobre o qual o segurado contribuiu ao INSS naquele mês — consta no CNIS (extrato de contribuições). Não é necessariamente o salário recebido, é a base de cálculo do INSS daquele mês.')}</label><input type="number" step="0.01" id="pv-salario-mes"></div>
       </div>
       <button class="btn btn-ghost" onclick="adicionarSalarioPrev()">+ Adicionar à lista</button>
       <div id="pv-lista" style="margin:10px 0;"></div>
-      <div class="field"><label>Data de início do benefício (DIB)</label><input type="date" id="pv-dib" value="${todayISO()}"></div>
+      <div class="field"><label>Data de início do benefício (DIB)${ajuda('A data em que o benefício deve começar a ser pago — geralmente a data do requerimento administrativo. Usada para corrigir todos os salários de contribuição até essa data.')}</label><input type="date" id="pv-dib" value="${todayISO()}"></div>
       <button class="btn btn-gold" onclick="calcularSalarioBeneficioPrev()">Calcular salário de benefício</button>
       <div id="pv-sb-resultado" style="margin-top:14px;"></div>
     </fieldset>
     <fieldset style="margin-top:14px;"><legend>2. RMI — Renda Mensal Inicial</legend>
       <div class="field-row">
         <div class="field"><label>Salário de benefício (R$)</label><input type="number" step="0.01" id="pv-sb-final" placeholder="Preenchido automaticamente, ou digite manualmente"></div>
-        <div class="field"><label>Tempo de contribuição (anos)</label><input type="number" step="0.01" id="pv-anos-contrib"></div>
-        <div class="field"><label>Tempo mínimo exigido (anos)</label><input type="number" step="0.01" id="pv-anos-minimo" placeholder="Ex: 20 (H) ou 15 (M)"></div>
+        <div class="field"><label>Tempo de contribuição (anos)${ajuda('Quantos anos o segurado contribuiu ao todo, até a data do benefício (some todos os períodos, mesmo com lacunas).')}</label><input type="number" step="0.01" id="pv-anos-contrib"></div>
+        <div class="field"><label>Tempo mínimo exigido (anos)${ajuda('O tempo mínimo de contribuição exigido para esse tipo de aposentadoria: geralmente 20 anos para homem e 15 para mulher (aposentadoria por idade), ou 35/30 anos (tempo de contribuição). Confira a regra aplicável ao caso.')}</label><input type="number" step="0.01" id="pv-anos-minimo" placeholder="Ex: 20 (H) ou 15 (M)"></div>
       </div>
       <button class="btn btn-gold" onclick="calcularRmiPrev()">Calcular RMI</button>
       <div id="pv-rmi-resultado" style="margin-top:14px;"></div>
@@ -2716,10 +2731,10 @@ function formularioDistribuicaoLucros(cat){
   LUCROS_SOCIOS = [];
   return `<h3>${escapeHtml(cat.titulo)} — Distribuição de Lucros</h3>
     <div class="hint" style="margin-bottom:10px;">Apuração de haveres (dissolução de sociedade) ainda está em construção — depende muito de perícia contábil específica do caso.</div>
-    <div class="field"><label>Lucro total a distribuir (R$)</label><input type="number" step="0.01" id="dl-total"></div>
+    <div class="field"><label>Lucro total a distribuir (R$)${ajuda('O lucro líquido apurado da empresa, já descontados custos, despesas e impostos, no período que será distribuído aos sócios.')}</label><input type="number" step="0.01" id="dl-total"></div>
     <div class="field-row">
       <div class="field"><label>Nome do sócio</label><input id="dl-nome"></div>
-      <div class="field"><label>Percentual de participação (%)</label><input type="number" step="0.01" id="dl-percentual"></div>
+      <div class="field"><label>Percentual de participação (%)${ajuda('O percentual de participação societária desse sócio, conforme o contrato social — a soma de todos os sócios precisa dar 100%.')}</label><input type="number" step="0.01" id="dl-percentual"></div>
     </div>
     <button class="btn btn-ghost" onclick="adicionarSocioLucro()">+ Adicionar sócio</button>
     <div id="dl-lista" style="margin:10px 0;"></div>
@@ -2752,9 +2767,9 @@ function formularioAmortizacao(cat){
   return `<h3>${escapeHtml(cat.titulo)} — Price x SAC</h3>
     <div class="hint" style="margin-bottom:10px;">Compara os dois sistemas de amortização mais comuns em financiamentos. Análise de juros abusivos, capitalização indevida ou comissão de permanência exige perícia específica do contrato — ainda em construção.</div>
     <div class="field-row">
-      <div class="field"><label>Valor financiado (R$)</label><input type="number" step="0.01" id="am-valor"></div>
-      <div class="field"><label>Taxa de juros ao mês (%)</label><input type="number" step="0.01" id="am-taxa"></div>
-      <div class="field"><label>Número de parcelas</label><input type="number" step="1" id="am-parcelas"></div>
+      <div class="field"><label>Valor financiado (R$)${ajuda('O valor total que foi (ou será) financiado — o preço do bem menos qualquer entrada já paga.')}</label><input type="number" step="0.01" id="am-valor"></div>
+      <div class="field"><label>Taxa de juros ao mês (%)${ajuda('A taxa de juros mensal cobrada pelo banco/financeira, informada no contrato (procure "taxa de juros efetiva mensal" no CET do contrato).')}</label><input type="number" step="0.01" id="am-taxa"></div>
+      <div class="field"><label>Número de parcelas${ajuda('Em quantas parcelas mensais o financiamento é (ou seria) pago.')}</label><input type="number" step="1" id="am-parcelas"></div>
     </div>
     <button class="btn btn-gold" onclick="calcularAmortizacao()">Comparar</button>
     <div id="am-resultado" style="margin-top:14px;"></div>`;
@@ -2877,8 +2892,8 @@ async function setAdministrativoTab(tab){
   const box = document.getElementById('adm-conteudo');
   if(tab==='reposicao'){
     box.innerHTML = `<div class="field-row">
-        <div class="field"><label>Valor base (R$)</label><input type="number" step="0.01" id="adm-valor"></div>
-        <div class="field"><label>Índice</label><select id="adm-indice">${INDICES_DISPONIVEIS.map(i=>`<option value="${i.v}">${i.l}</option>`).join('')}</select></div>
+        <div class="field"><label>Valor base (R$)${ajuda('O valor do vencimento/salário que deveria ter sido reajustado, ou a diferença que se busca atualizar.')}</label><input type="number" step="0.01" id="adm-valor"></div>
+        <div class="field"><label>Índice${ajuda('O índice usado para calcular a reposição — geralmente o mesmo índice inflacionário que deveria ter sido usado no reajuste anual do servidor.')}</label><select id="adm-indice">${INDICES_DISPONIVEIS.map(i=>`<option value="${i.v}">${i.l}</option>`).join('')}</select></div>
       </div>
       <div class="field-row">
         <div class="field"><label>Data inicial</label><input type="date" id="adm-data-inicial"></div>
@@ -2890,8 +2905,8 @@ async function setAdministrativoTab(tab){
     let p;
     try{ p = await apiFetch('/api/calculos/parametros'); }catch(e){ box.innerHTML = `<div class="empty">${escapeHtml(e.message)}</div>`; return; }
     box.innerHTML = `<div class="hint" style="margin-bottom:8px;">Percentuais fixados em jurisprudência consolidada (STJ, recursos repetitivos — Temas 264/284/285 STF). Selecione um ou mais meses aplicáveis ao seu caso; se mais de um, eles são compostos (multiplicados) sequencialmente.</div>
-      <div class="field"><label>Valor base (R$)</label><input type="number" step="0.01" id="admp-valor"></div>
-      <div class="field"><label>Planos aplicáveis</label>
+      <div class="field"><label>Valor base (R$)${ajuda('O valor do salário/vencimento na época do plano econômico, sobre o qual se aplica o percentual de expurgo.')}</label><input type="number" step="0.01" id="admp-valor"></div>
+      <div class="field"><label>Planos aplicáveis${ajuda('Marque o(s) mês(es) do plano econômico que se aplicam ao seu caso. Se marcar mais de um, os percentuais são compostos (multiplicados), não somados.')}</label>
         <div class="pill-select">${p.planosEconomicos.map(pl=>`<label class="radio-opt" style="border:1px solid var(--line); border-radius:20px; padding:4px 10px;"><input type="checkbox" class="admp-chk" value="${pl.chave}"> ${escapeHtml(pl.label)} (${pl.percentual}%)</label>`).join('')}</div>
       </div>
       <button class="btn btn-gold" onclick="calcularPlanosEconomicos()">Calcular</button>
@@ -2946,25 +2961,28 @@ function formularioRetroativoPccr(cat){
     </select></div>
     <fieldset><legend>Cabeçalho</legend>
       <div class="field-row">
-        <div class="field"><label>Nome</label><input id="pccr-nome"></div>
-        <div class="field"><label>Matrícula</label><input id="pccr-matricula"></div>
-        <div class="field"><label>Processo</label><input id="pccr-processo"></div>
+        <div class="field"><label>Nome${ajuda('O nome completo do servidor, para aparecer no relatório final.')}</label><input id="pccr-nome"></div>
+        <div class="field"><label>Matrícula${ajuda('O número de matrícula do servidor no município/órgão (consta na ficha financeira).')}</label><input id="pccr-matricula"></div>
+        <div class="field"><label>Função${ajuda('O cargo do servidor — ex: Enfermeiro, Oficial Administrativo, Motorista. Aparece no relatório final.')}</label><input id="pccr-funcao" placeholder="Ex: Oficial Administrativo"></div>
       </div>
       <div class="field-row">
-        <div class="field"><label>Data de admissão</label><input type="date" id="pccr-admissao"></div>
-        <div class="field"><label>Data de protocolo</label><input type="date" id="pccr-protocolo"></div>
-        <div class="field"><label>Data de implantação</label><input type="date" id="pccr-implantacao"></div>
+        <div class="field"><label>Processo${ajuda('O número do processo administrativo ou judicial, se já existir.')}</label><input id="pccr-processo"></div>
+        <div class="field"><label>Data de admissão${ajuda('Quando o servidor começou a trabalhar no cargo.')}</label><input type="date" id="pccr-admissao"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Data de protocolo${ajuda('A data em que o pedido administrativo (ou a ação judicial) foi protocolado. É a partir dela que o sistema calcula o corte de 5 anos (prescrição quinquenal) — tudo antes desse corte não entra no cálculo.')}</label><input type="date" id="pccr-protocolo"></div>
+        <div class="field"><label>Data de implantação${ajuda('A data em que o benefício (novo nível ou gratificação) passou a ser efetivamente pago no contracheque. Marca o fim do período retroativo.')}</label><input type="date" id="pccr-implantacao"></div>
       </div>
     </fieldset>
-    <fieldset id="pccr-verbas-box" style="margin-top:10px;"><legend>Nomes das verbas percentuais incidentes sobre o base (ex: Anuênio, Insalubridade)</legend>
-      <div class="hint" style="margin-bottom:6px;">Defina aqui só os NOMES — o percentual de cada uma é informado mês a mês, logo abaixo.</div>
+    <fieldset id="pccr-verbas-box" style="margin-top:10px;"><legend>Nomes das verbas percentuais incidentes sobre o base (ex: Anuênio, Insalubridade)${ajuda('Verbas que são calculadas como um percentual do salário-base (ex: anuênio 17%, insalubridade 20%). Quando o base muda (mudança de nível), essas verbas mudam junto, na mesma proporção — por isso o sistema calcula a diferença de cada uma automaticamente.')}</legend>
+      <div class="hint" style="margin-bottom:6px;">Defina aqui só os NOMES — o percentual de cada uma é informado por período, logo abaixo.</div>
       <div class="field-row">
         <div class="field"><label>Nome da verba</label><input id="pccr-verba-nome" placeholder="Ex: Anuênio"></div>
         <button class="btn btn-ghost" style="align-self:flex-end;" onclick="adicionarNomeVerbaPccr()">+ Adicionar</button>
       </div>
       <div id="pccr-verbas-lista" style="margin-top:8px;"></div>
     </fieldset>
-    <fieldset style="margin-top:10px;"><legend>📎 Importar da ficha financeira (PDF) — opcional</legend>
+    <fieldset style="margin-top:10px;"><legend>📎 Importar da ficha financeira (PDF) — opcional${ajuda('Envia o PDF da ficha financeira do servidor. O sistema tenta identificar salário-base, anuênio, insalubridade, 13º, 1/3 férias, descontos e totais de cada mês, e pré-preenche os campos abaixo para você conferir.')}</legend>
       <div class="hint" style="margin-bottom:8px;">Envia o PDF, o sistema tenta ler o salário-base e os percentuais de cada verba, mês a mês, e <strong>pré-preenche a lista abaixo para você conferir e corrigir</strong> — nunca calcula direto do arquivo. O arquivo não é salvo em nenhum lugar, só é lido nesta hora. Só funciona com PDF que tenha texto de verdade (não escaneado/foto).</div>
       <div class="field-row">
         <div class="field"><label>PDF da ficha financeira</label><input type="file" id="pccr-upload-ficha" accept="application/pdf"></div>
@@ -2972,8 +2990,8 @@ function formularioRetroativoPccr(cat){
       </div>
       <div id="pccr-upload-ficha-status"></div>
     </fieldset>
-    <fieldset style="margin-top:10px;"><legend>📎 Importar tabela de níveis/categorias do PCS (PDF) — opcional</legend>
-      <div class="hint" style="margin-bottom:8px;">Só para a modalidade "Mudança de nível" — envia a tabela de níveis vigente (a que muda a cada reajuste anual) para consultar rapidamente o valor do "base devido" de cada nível, sem digitar de cabeça. Mesmo aviso: o arquivo não é salvo, e os valores lidos aparecem para conferência antes de usar.</div>
+    <fieldset style="margin-top:10px;"><legend>📎 Importar tabela de níveis/categorias do PCS (PDF) — opcional${ajuda('A tabela oficial que mostra o salário de cada combinação de subgrupo, nível e classe (ex: LM-A-12). Depois de importar, clique no valor certo na tabela abaixo para preencher automaticamente o "base devido" do período.')}</legend>
+      <div class="hint" style="margin-bottom:8px;">Só para a modalidade "Mudança de nível" — envia a tabela de níveis vigente (a que muda a cada reajuste anual). Depois de importar, <strong>clique no valor certo</strong> na tabela que aparece abaixo para preencher automaticamente o período — não precisa digitar nada.</div>
       <div class="field-row">
         <div class="field"><label>PDF da tabela de níveis</label><input type="file" id="pccr-upload-niveis" accept="application/pdf"></div>
         <button class="btn btn-ghost" style="align-self:flex-end;" onclick="importarTabelaNiveis()">Ler PDF</button>
@@ -2981,10 +2999,23 @@ function formularioRetroativoPccr(cat){
       <div id="pccr-upload-niveis-status"></div>
       <div id="pccr-niveis-lista" style="margin-top:8px;"></div>
     </fieldset>
-    <fieldset style="margin-top:10px;"><legend>Meses do período</legend>
-      <div id="pccr-mes-campos"></div>
-      <button class="btn btn-ghost" onclick="adicionarMesPccr()">+ Adicionar mês</button>
-      <div id="pccr-meses-lista" style="margin-top:8px;"></div>
+    <fieldset style="margin-top:10px;"><legend>Períodos do cálculo${ajuda('Em vez de digitar mês a mês, informe um período inteiro de uma vez (ex: "de março/2020 até junho/2021", com o mesmo base pago/devido e os mesmos percentuais). O sistema gera os meses sozinho. Se algum valor mudar no meio do tempo (por exemplo, o anuênio subiu), feche este período e adicione um novo a partir do mês da mudança.')}</legend>
+      <div class="field-row">
+        <div class="field"><label>De (mês/ano)${ajuda('O primeiro mês deste período, com os valores abaixo.')}</label><input type="month" id="pccr-periodo-de"></div>
+        <div class="field"><label>Até (mês/ano)${ajuda('O último mês deste período, ainda com os mesmos valores. Se algo mudou antes do fim do período retroativo todo, pare aqui e comece um novo período no próximo passo.')}</label><input type="month" id="pccr-periodo-ate"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Base pago (R$)${ajuda('O salário-base que o servidor efetivamente recebeu nesses meses (o valor errado/antigo, que está na ficha financeira).')}</label><input type="number" step="0.01" id="pccr-periodo-basepago"></div>
+        <div class="field" id="pccr-periodo-basedevido-box"><label>Base devido (R$)${ajuda('O salário-base que o servidor deveria ter recebido (o valor correto, do nível/gratificação que deveria ter sido aplicado). Se você já importou a tabela de níveis acima, clique no valor certo nela para preencher este campo sozinho.')}</label><input type="number" step="0.01" id="pccr-periodo-basedevido"></div>
+      </div>
+      <div class="hint" id="pccr-periodo-nivel-selecionado" style="margin-bottom:8px;"></div>
+      <div id="pccr-periodo-verbas-campos"></div>
+      <div class="field"><label>Mês de gozo de férias neste período (opcional)${ajuda('Se o servidor tirou férias em algum mês dentro deste período, selecione aqui — o sistema calcula o reflexo de 1/3 de férias automaticamente nesse mês. Deixe em branco se não houve férias neste período.')}</label><input type="month" id="pccr-periodo-mes-ferias"></div>
+      <div class="hint">O reflexo de 13º salário é aplicado automaticamente em todo mês de dezembro dentro do período (e no mês da rescisão, se houver, mas isso ainda não é automático — adicione manualmente se for o caso).</div>
+      <button class="btn btn-gold" style="margin-top:8px;" onclick="adicionarPeriodoPccr()">+ Adicionar período (gera os meses automaticamente)</button>
+    </fieldset>
+    <fieldset style="margin-top:10px;"><legend>Meses gerados${ajuda('A lista final de meses que entrará no cálculo, já expandida a partir dos períodos acima. Você pode remover um mês individual se precisar de algum ajuste fino.')}</legend>
+      <div id="pccr-meses-lista"></div>
     </fieldset>
     <fieldset style="margin-top:10px;"><legend>Parâmetros de desconto</legend>
       <div class="field-row">
@@ -3007,7 +3038,8 @@ function formularioRetroativoPccr(cat){
 function mudarModalidadePccr(){
   PCCR_MODALIDADE = document.getElementById('pccr-modalidade').value;
   document.getElementById('pccr-verbas-box').style.display = PCCR_MODALIDADE==='nivel' ? 'block' : 'none';
-  renderMesCamposPccr();
+  document.getElementById('pccr-periodo-basedevido-box').style.display = PCCR_MODALIDADE==='nivel' ? 'block' : 'none';
+  renderPeriodoVerbasCampos();
   renderListaMesesPccr();
 }
 function adicionarNomeVerbaPccr(){
@@ -3017,57 +3049,80 @@ function adicionarNomeVerbaPccr(){
   PCCR_VERBAS_NOMES.push(nome);
   document.getElementById('pccr-verba-nome').value='';
   renderListaNomesVerbasPccr();
-  renderMesCamposPccr();
+  renderPeriodoVerbasCampos();
 }
-function removerNomeVerbaPccr(i){ PCCR_VERBAS_NOMES.splice(i,1); renderListaNomesVerbasPccr(); renderMesCamposPccr(); }
+function removerNomeVerbaPccr(i){ PCCR_VERBAS_NOMES.splice(i,1); renderListaNomesVerbasPccr(); renderPeriodoVerbasCampos(); }
 function renderListaNomesVerbasPccr(){
   document.getElementById('pccr-verbas-lista').innerHTML = PCCR_VERBAS_NOMES.length? PCCR_VERBAS_NOMES.map((n,i)=>`<span class="tag" style="margin:2px;">${escapeHtml(n)} <span style="cursor:pointer;" onclick="removerNomeVerbaPccr(${i})">✕</span></span>`).join('') : '<div class="empty">Nenhuma verba adicionada (ok se não houver nenhuma).</div>';
 }
-function renderMesCamposPccr(){
-  const box = document.getElementById('pccr-mes-campos');
-  const camposVerbas = PCCR_MODALIDADE==='nivel' ? PCCR_VERBAS_NOMES.map((nome,i)=>`<div class="field"><label>${escapeHtml(nome)} — % neste mês</label><input type="number" step="0.0001" id="pccr-mes-verba-${i}"></div>`).join('') : '';
+// Compat: mantém o nome antigo funcionando (chamado ao abrir a página)
+function renderMesCamposPccr(){ renderPeriodoVerbasCampos(); }
+function renderPeriodoVerbasCampos(){
+  const box = document.getElementById('pccr-periodo-verbas-campos');
+  if(!box) return;
   if(PCCR_MODALIDADE==='nivel'){
-    box.innerHTML = `<div class="field-row">
-        <div class="field"><label>Competência</label><input type="month" id="pccr-mes-competencia"></div>
-        <div class="field"><label>Base pago (R$)</label><input type="number" step="0.01" id="pccr-mes-basepago"></div>
-        <div class="field"><label>Base devido (R$)</label><input type="number" step="0.01" id="pccr-mes-basedevido"></div>
-      </div>
-      ${camposVerbas? `<div class="field-row">${camposVerbas}</div>` : ''}
-      <div class="field-row">
-        <div class="field"><label><input type="checkbox" id="pccr-mes-13" style="width:auto; margin-right:6px;"> Reflexo em 13º neste mês</label></div>
-        <div class="field"><label><input type="checkbox" id="pccr-mes-ferias" style="width:auto; margin-right:6px;"> Reflexo em 1/3 férias neste mês</label></div>
-      </div>`;
+    box.innerHTML = PCCR_VERBAS_NOMES.length? `<div class="field-row">${PCCR_VERBAS_NOMES.map((nome,i)=>`<div class="field"><label>${escapeHtml(nome)} — % neste período</label><input type="number" step="0.0001" id="pccr-periodo-verba-${i}"></div>`).join('')}</div>` : '';
   } else {
-    box.innerHTML = `<div class="field-row">
-        <div class="field"><label>Competência</label><input type="month" id="pccr-mes-competencia"></div>
-        <div class="field"><label>Base pago (R$)</label><input type="number" step="0.01" id="pccr-mes-basepago"></div>
-        <div class="field"><label>Percentual da gratificação (%)</label><input type="number" step="0.01" id="pccr-mes-percentualgrat"></div>
-      </div>
-      <div class="field-row">
-        <div class="field"><label><input type="checkbox" id="pccr-mes-13" style="width:auto; margin-right:6px;"> Reflexo em 13º neste mês</label></div>
-        <div class="field"><label><input type="checkbox" id="pccr-mes-ferias" style="width:auto; margin-right:6px;"> Reflexo em 1/3 férias neste mês</label></div>
-      </div>`;
+    box.innerHTML = `<div class="field"><label>Percentual da gratificação (%)${ajuda('O percentual da gratificação que deveria ter sido pago sobre o salário-base neste período (ex: 10% para a gratificação de incentivo).')}</label><input type="number" step="0.01" id="pccr-periodo-percentualgrat"></div>`;
   }
 }
-function adicionarMesPccr(){
-  const competencia = document.getElementById('pccr-mes-competencia').value; // 'aaaa-mm'
-  const basePago = parseFloat(document.getElementById('pccr-mes-basepago').value);
-  const incluir13 = document.getElementById('pccr-mes-13').checked;
-  const incluirFerias = document.getElementById('pccr-mes-ferias').checked;
-  if(!competencia || !basePago){ showToast('Preencha a competência e o base pago.'); return; }
-  if(PCCR_MODALIDADE==='nivel'){
-    const baseDevido = parseFloat(document.getElementById('pccr-mes-basedevido').value);
-    if(!baseDevido){ showToast('Preencha o base devido.'); return; }
-    const verbasPercentuais = PCCR_VERBAS_NOMES.map((nome,i)=>({nome, percentual: parseFloat(document.getElementById('pccr-mes-verba-'+i).value)||0}));
-    PCCR_MESES.push({competencia, basePago, baseDevido, verbasPercentuais, incluir13, incluirFerias});
-  } else {
-    const percentualGratificacao = parseFloat(document.getElementById('pccr-mes-percentualgrat').value);
-    if(!percentualGratificacao){ showToast('Preencha o percentual da gratificação.'); return; }
-    PCCR_MESES.push({competencia, basePago, percentualGratificacao, incluir13, incluirFerias});
+// Gera a lista de competências 'aaaa-mm' entre duas competências 'aaaa-mm', inclusive.
+function gerarSequenciaCompetencias(de, ate){
+  const [a1,m1] = de.split('-').map(Number);
+  const [a2,m2] = ate.split('-').map(Number);
+  const lista = [];
+  let ano=a1, mes=m1;
+  while(ano<a2 || (ano===a2 && mes<=m2)){
+    lista.push(`${ano}-${String(mes).padStart(2,'0')}`);
+    mes++; if(mes>12){ mes=1; ano++; }
   }
+  return lista;
+}
+function adicionarPeriodoPccr(){
+  const de = document.getElementById('pccr-periodo-de').value; // 'aaaa-mm'
+  const ate = document.getElementById('pccr-periodo-ate').value;
+  const basePago = parseFloat(document.getElementById('pccr-periodo-basepago').value);
+  const mesFerias = document.getElementById('pccr-periodo-mes-ferias').value;
+  if(!de || !ate || !basePago){ showToast('Preencha "de", "até" e o base pago.'); return; }
+  if(de>ate){ showToast('A data final precisa ser depois da inicial.'); return; }
+  const competencias = gerarSequenciaCompetencias(de, ate);
+
+  let baseDevido, verbasPercentuais, percentualGratificacao;
+  if(PCCR_MODALIDADE==='nivel'){
+    baseDevido = parseFloat(document.getElementById('pccr-periodo-basedevido').value);
+    if(!baseDevido){ showToast('Preencha o base devido (ou clique num valor da tabela de níveis importada).'); return; }
+    verbasPercentuais = PCCR_VERBAS_NOMES.map((nome,i)=>({nome, percentual: parseFloat(document.getElementById('pccr-periodo-verba-'+i).value)||0}));
+  } else {
+    percentualGratificacao = parseFloat(document.getElementById('pccr-periodo-percentualgrat').value);
+    if(!percentualGratificacao){ showToast('Preencha o percentual da gratificação.'); return; }
+  }
+
+  competencias.forEach(competencia=>{
+    const mes = competencia.slice(5,7);
+    const incluir13 = mes==='12';
+    const incluirFerias = competencia===mesFerias;
+    // remove um mês já existente com a mesma competência (evita duplicar se períodos se sobrepuserem)
+    PCCR_MESES = PCCR_MESES.filter(m=>m.competencia!==competencia);
+    if(PCCR_MODALIDADE==='nivel'){
+      PCCR_MESES.push({competencia, basePago, baseDevido, verbasPercentuais, incluir13, incluirFerias});
+    } else {
+      PCCR_MESES.push({competencia, basePago, percentualGratificacao, incluir13, incluirFerias});
+    }
+  });
   PCCR_MESES.sort((a,b)=>a.competencia.localeCompare(b.competencia));
-  document.getElementById('pccr-mes-competencia').value='';
+  showToast(`${competencias.length} mês(es) adicionado(s) (${competencias[0]} a ${competencias[competencias.length-1]}).`);
   renderListaMesesPccr();
+  // limpa o formulário de período para o próximo, mas mantém os percentuais de verba (costumam repetir)
+  document.getElementById('pccr-periodo-de').value=''; document.getElementById('pccr-periodo-ate').value='';
+  document.getElementById('pccr-periodo-basepago').value=''; document.getElementById('pccr-periodo-basedevido').value='';
+  document.getElementById('pccr-periodo-mes-ferias').value='';
+  document.getElementById('pccr-periodo-nivel-selecionado').innerHTML='';
+}
+function selecionarNivelPccr(subgrupo, nivel, classe, valor){
+  document.getElementById('pccr-periodo-basedevido').value = valor;
+  const rotulo = `${subgrupo||''}${subgrupo?'-':''}${nivel||''}${classe||''}`;
+  document.getElementById('pccr-periodo-nivel-selecionado').innerHTML = `<strong>Nível selecionado: ${escapeHtml(rotulo)}</strong> — ${fmtMoney(valor)} (preenchido no "Base devido" acima)`;
+  showToast('Base devido preenchido: '+rotulo);
 }
 function removerMesPccr(i){ PCCR_MESES.splice(i,1); renderListaMesesPccr(); }
 async function importarFichaFinanceira(){
@@ -3107,8 +3162,40 @@ async function importarTabelaNiveis(){
     const r = await apiFetchUpload('/api/calculos/retroativo-pccr/importar-tabela-niveis', form);
     PCCR_NIVEIS_IMPORTADOS = r.niveis;
     status.innerHTML = `<div class="hint">${escapeHtml(r.aviso)}</div>`;
-    document.getElementById('pccr-niveis-lista').innerHTML = `<table><thead><tr><th>Nível</th><th>Valor</th></tr></thead><tbody>${r.niveis.map(n=>`<tr><td>${escapeHtml(n.nivel)}</td><td>${fmtMoney(n.valor)}</td></tr>`).join('')}</tbody></table>`;
+    document.getElementById('pccr-niveis-lista').innerHTML = renderTabelasNiveisAgrupadas(r.niveis);
   }catch(e){ status.innerHTML = `<div class="empty">${escapeHtml(e.message||'Não foi possível ler o PDF.')}</div>`; }
+}
+function renderTabelasNiveisAgrupadas(niveis){
+  const reconhecidos = niveis.filter(n=>n.subgrupo && n.nivel && n.classe!=null);
+  const naoReconhecidos = niveis.filter(n=>!(n.subgrupo && n.nivel && n.classe!=null));
+  if(!reconhecidos.length){
+    // Não deu para separar subgrupo/nível/classe — mostra lista simples clicável mesmo assim
+    return `<div class="hint" style="margin-bottom:6px;">Não consegui separar subgrupo/nível/classe automaticamente — aqui está a lista lida, clique no valor certo para preenchê-lo no "Base devido" (o rótulo do nível não será preenchido, preencha à mão se precisar).</div>
+      <table><thead><tr><th>Referência lida</th><th>Valor</th></tr></thead><tbody>${niveis.map(n=>`<tr style="cursor:pointer;" onclick="selecionarNivelPccr(null,null,null,${n.valor})"><td>${escapeHtml(n.rotulo)}</td><td>${fmtMoney(n.valor)}</td></tr>`).join('')}</tbody></table>`;
+  }
+  // Agrupa por subgrupo -> nível -> classe
+  const subgrupos = {};
+  reconhecidos.forEach(n=>{
+    subgrupos[n.subgrupo] = subgrupos[n.subgrupo] || {};
+    subgrupos[n.subgrupo][n.nivel] = subgrupos[n.subgrupo][n.nivel] || {};
+    subgrupos[n.subgrupo][n.nivel][n.classe] = n.valor;
+  });
+  const todasClasses = [...new Set(reconhecidos.map(n=>n.classe))].sort((a,b)=>a-b);
+  let html = '';
+  Object.keys(subgrupos).sort().forEach(subgrupo=>{
+    const niveisDoSubgrupo = Object.keys(subgrupos[subgrupo]).sort();
+    html += `<div style="margin-bottom:14px;"><strong>Subgrupo ${escapeHtml(subgrupo)}</strong>
+      <table style="margin-top:4px;"><thead><tr><th>Nível</th>${todasClasses.map(c=>`<th>Classe ${c}</th>`).join('')}</tr></thead><tbody>
+      ${niveisDoSubgrupo.map(nivel=>`<tr><td><strong>${escapeHtml(nivel)}</strong></td>${todasClasses.map(c=>{
+        const valor = subgrupos[subgrupo][nivel][c];
+        return valor!=null? `<td style="cursor:pointer; color:var(--gold-dark);" onclick="selecionarNivelPccr('${subgrupo}','${nivel}',${c},${valor})" title="Clique para usar ${subgrupo}-${nivel}${c}">${fmtMoney(valor)}</td>` : '<td>—</td>';
+      }).join('')}</tr>`).join('')}
+      </tbody></table></div>`;
+  });
+  if(naoReconhecidos.length){
+    html += `<div class="hint">${naoReconhecidos.length} linha(s) lida(s) sem separação de subgrupo/nível/classe: ${naoReconhecidos.map(n=>`<span style="cursor:pointer; text-decoration:underline;" onclick="selecionarNivelPccr(null,null,null,${n.valor})">${escapeHtml(n.rotulo)} (${fmtMoney(n.valor)})</span>`).join(', ')}</div>`;
+  }
+  return html;
 }
 function renderListaMesesPccr(){
   document.getElementById('pccr-meses-lista').innerHTML = PCCR_MESES.length? PCCR_MESES.map((m,i)=>{

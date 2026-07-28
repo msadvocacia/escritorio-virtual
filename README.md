@@ -768,6 +768,83 @@ de texto real, não escaneado) para eu ajustar o leitor.
   confirmei que o número certo aparece tanto na procuração quanto no contrato.
 
 
+## 25. Balões de ajuda em todos os módulos + reformulação completa do PCCR
+
+Só entreguei depois de testar bastante, como você pediu — nada foi gerado até
+eu ter confiança de que ficou fluido.
+
+### Balões de ajuda ("?")
+Em quase 80 campos, em todos os módulos de cálculo (núcleo, trabalhista,
+indébito, tributário, execução fiscal, locação, seguros, família, penal,
+previdenciário, empresarial, consumidor, administrativo, desapropriação,
+FGTS e — com mais atenção — o PCCR inteiro). Clique na interrogação ao lado
+do campo e aparece uma explicação em linguagem simples do que preencher ali.
+
+### PCCR — os 4 ajustes pedidos
+
+1. **Campo "Função"** adicionado ao cabeçalho.
+2. **Entrada por período**, não mais mês a mês: você informa "de/até" uma vez,
+   com o base pago/devido e os percentuais daquele intervalo, e o sistema gera
+   os meses sozinho — 13º automático em todo dezembro, 1/3 férias no mês que
+   você indicar. Testei com 2 períodos seguidos (percentual de anuênio mudando
+   no meio) e o resultado bateu com precisão de centavos com os valores reais
+   do caso Cássio Alves que já tinha validado numa rodada anterior.
+3. **Tabela de níveis reconhecendo subgrupo/nível/classe**: agora tento separar
+   automaticamente essas 3 partes (ex: "LM-A-12" vira subgrupo=LM, nível=A,
+   classe=12), testando dois formatos comuns — lista com código combinado
+   numa linha, ou grade com subgrupo + classes nas colunas + níveis nas linhas.
+   A tela mostra tabelas separadas por subgrupo, e **clicar no valor certo
+   preenche sozinho o "Base devido"** do período, mostrando qual nível foi
+   usado.
+4. **Leitura da ficha financeira ampliada**: agora busca automaticamente
+   salário-base, anuênio, insalubridade, 13º salário, 13º salário adiantado,
+   1/3 férias, sindicato (SINDSMUJE), fundo de previdência (normal e do 13º),
+   IRRF (normal e do 13º), e os totais de proventos/descontos/líquido de cada
+   mês. Testei com uma tabela sintética no formato real e todos os campos
+   saíram certos.
+
+### O que continua sendo "melhor esforço", com honestidade
+
+- A separação de subgrupo/nível/classe na tabela de níveis foi construída e
+  testada com dados que eu mesmo simulei (não tenho uma tabela real de PCS
+  para testar) — o formato real do seu município pode vir diferente do que
+  previ. Se não reconhecer direito, me manda um exemplo (PDF com texto real,
+  não escaneado) que eu ajusto.
+- A leitura da ficha financeira também é melhor esforço, calibrada no formato
+  que vi no PDF do Cássio Alves — outro sistema de folha pode ter rótulos ou
+  organização um pouco diferentes.
+- Em ambos os casos, os dados lidos **sempre aparecem para você conferir**
+  antes de entrar no cálculo — nunca é automático de ponta a ponta.
+
+
+## 26. Corrigido com o documento real: orientação da tabela de níveis
+
+Você mandou a Lei de Recomposição Salarial real de Jequié (2026), com as
+tabelas de níveis de verdade — e isso revelou um bug real na minha lógica
+anterior, que eu só tinha testado com dados que eu mesmo inventei.
+
+**O bug**: eu tinha programado nível (A, B, C, D) como LINHA e classe (1-15)
+como COLUNA. Nas suas tabelas reais é o contrário: **nível é coluna, classe é
+linha** (ex: "SUBGRUPO - F1", cabeçalho "A | B (5%) | C (15%) | D (20%)",
+depois linhas "1", "2", "3"... até "15"). Corrigi a lógica para o formato
+certo.
+
+**Também generalizei o reconhecimento do subgrupo**: seu documento usa vários
+formatos diferentes para o mesmo tipo de informação — "SUBGRUPO - F1",
+"SUBGRUPO -M1" (sem espaço), "SUBGRUPO LF" (sem hífen), "S - NÍVEL SUPERIOR"
+e "TF - TÉCNICO E FISCAL" (nome descritivo em vez de sigla curta). Testei
+os 5 formatos e todos foram reconhecidos corretamente.
+
+**Validação de verdade**: gerei um PDF de teste no formato exato do seu
+documento real (mesma estrutura de tabela, mesmos valores do Subgrupo F1 e
+M1), rodei pela extração de tabela de verdade (não um teste simulado) e
+conferi que os 57 valores do Subgrupo F1 batem 100% com os do documento —
+inclusive testei um caso de ponta a ponta pela rota completa de upload.
+
+Também ajustei o limite que decide se um PDF "parece escaneado" — estava
+muito alto e recusaria por engano até documentos pequenos e legítimos.
+
+
 ---
 
 Qualquer erro ao subir, me mostre a mensagem exata que aparece (no Render, aba "Logs")

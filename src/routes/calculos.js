@@ -5,7 +5,7 @@ const { calcularSalarioBeneficio, calcularRMIRegraPermanente } = require('../uti
 const { obterParametrosCalculo, salvarParametrosCalculo } = require('../utils/parametrosCalculo');
 const { calcularRetroativoPccr } = require('../utils/calculoRetroativoPccr');
 const multer = require('multer');
-const { extrairTextoPdf, extrairTabelasPdf, pdfPareceEscaneado, parseFichaFinanceiraDeTabelas, parseTabelaNiveis } = require('../utils/leituraFichaFinanceira');
+const { extrairTextoPdf, extrairTabelasPdf, pdfPareceEscaneado, parseFichaFinanceiraDeTabelas, parseTabelaNiveis, parseTabelaNiveisDeTabelas } = require('../utils/leituraFichaFinanceira');
 
 // Upload em memória — o arquivo nunca toca o disco nem o banco de dados;
 // existe só durante o processamento desta requisição.
@@ -375,11 +375,18 @@ router.post('/retroativo-pccr/importar-tabela-niveis', uploadPdf.single('arquivo
         erro: 'Este PDF parece ser escaneado (imagem, sem texto por trás) — não é possível ler automaticamente neste servidor. Use uma exportação em PDF com texto selecionável, ou preencha os níveis manualmente.',
       });
     }
-    const niveis = parseTabelaNiveis(texto);
+    let niveis = parseTabelaNiveisDeTabelas(await extrairTabelasPdf(req.file.buffer));
+    if (!niveis.length) niveis = parseTabelaNiveis(texto); // fallback: texto corrido, sem tabela estruturada
     if (!niveis.length) {
       return res.status(422).json({ erro: 'Não consegui reconhecer níveis e valores neste PDF. Preencha manualmente, ou peça para eu ajustar a leitura para o formato da sua tabela.' });
     }
-    res.json({ niveis, aviso: 'Confira os valores de cada nível antes de usar no cálculo.' });
+    const reconhecidos = niveis.filter((n) => n.subgrupo && n.nivel && n.classe).length;
+    res.json({
+      niveis,
+      aviso: reconhecidos === niveis.length
+        ? 'Confira os valores antes de usar no cálculo.'
+        : `Consegui identificar subgrupo/nível/classe em ${reconhecidos} de ${niveis.length} linha(s) — as demais aparecem só com o valor, sem essa separação. Confira tudo antes de usar.`,
+    });
   } catch (e) {
     res.status(400).json({ erro: 'Não foi possível ler este PDF: ' + (e.message || 'erro desconhecido.') });
   }

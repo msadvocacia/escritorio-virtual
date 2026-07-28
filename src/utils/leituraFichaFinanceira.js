@@ -49,9 +49,11 @@ async function extrairTabelasPdf(buffer) {
 }
 
 function pdfPareceEscaneado(texto) {
-  // Um PDF com texto de verdade tem muitos caracteres por página; um PDF
-  // escaneado (só imagem) devolve pouquíssimo ou nenhum texto extraído.
-  return texto.replace(/\s/g, '').length < 200;
+  // Um PDF com texto de verdade tem algum texto extraído; um PDF escaneado (só
+  // imagem) devolve pouquíssimo ou nenhum. Limite propositalmente baixo (60
+  // caracteres) para não recusar por engano documentos pequenos e legítimos
+  // (ex: uma tabela de níveis com só 1-2 subgrupos).
+  return texto.replace(/\s/g, '').length < 60;
 }
 
 function paraNumero(str) {
@@ -74,13 +76,38 @@ function paraNumero(str) {
 // capturada genericamente, usando o próprio nome do evento como rótulo.
 const VERBAS_CONHECIDAS = ['ANUENIO', 'ANUÊNIO', 'INSALUBRIDADE', 'PERICULOSIDADE', 'GRATIFICA', 'ADICIONAL'];
 
+// Cada campo reconhecido: um "identificador" (regex do rótulo do evento, mais
+// específico primeiro para não confundir, por exemplo, "13º SALÁRIO" comum com
+// "AJUSTE 13º SALÁRIO"), e o "tipo": se a linha traz percentual+valor por mês
+// (comum em proventos) ou só um valor por mês (comum em descontos/totais).
+const CAMPOS_FICHA_FINANCEIRA = [
+  { chave: 'fundoPrevidencia13', label: 'Fundo de Previdência (13º salário)', regex: /FUNDO.*PREVID[EÊ]NCIA.*13/, tipo: 'percentual_valor' },
+  { chave: 'fundoPrevidencia', label: 'Fundo de Previdência', regex: /FUNDO.*PREVID[EÊ]NCIA/, tipo: 'percentual_valor' },
+  { chave: 'irrf13', label: 'IRRF (13º salário)', regex: /I\.?\s*R\.?\s*R\.?\s*F\..*13/, tipo: 'percentual_valor' },
+  { chave: 'irrf', label: 'IRRF', regex: /I\.?\s*R\.?\s*R\.?\s*F\./, tipo: 'percentual_valor' },
+  { chave: 'decimoTerceiroAdiantado', label: '13º salário adiantado', regex: /13.?\s*SAL[AÁ]RIO\s*ADIANTADO/, tipo: 'percentual_valor' },
+  { chave: 'decimoTerceiro', label: '13º salário', regex: /^25\s*-|^\d+\s*-\s*13.?\s*SAL[AÁ]RIO\s*$/, tipo: 'valor_unico' },
+  { chave: 'insalubridade13', label: 'Insalubridade (13º salário)', regex: /INSALUBRIDADE.*13/, tipo: 'valor_unico' },
+  { chave: 'insalubridade', label: 'Insalubridade', regex: /INSALUBRIDADE/, tipo: 'percentual_valor' },
+  { chave: 'anuenio13', label: 'Anuênio (13º salário)', regex: /ANU[EÊ]NIO.*13/, tipo: 'valor_unico' },
+  { chave: 'anuenio', label: 'Anuênio', regex: /ANU[EÊ]NIO|ANUENIO/, tipo: 'percentual_valor' },
+  { chave: 'tercoFerias', label: '1/3 de férias', regex: /1\/3\s*F[EÉ]RIAS/, tipo: 'percentual_valor' },
+  { chave: 'sindicato', label: 'Sindicato', regex: /SINDSMUJE|SINDICATO/, tipo: 'percentual_valor' },
+  { chave: 'salarioBase', label: 'Salário base', regex: /^1\s*-\s*SALARIO\s*BASE/, tipo: 'valor_unico' },
+  { chave: 'totalProventos', label: 'Total de proventos', regex: /TOTAL\s*PROVENTOS/, tipo: 'valor_unico' },
+  { chave: 'totalDescontos', label: 'Total de descontos', regex: /TOTAL\s*DESCONTOS/, tipo: 'valor_unico' },
+  { chave: 'totalLiquido', label: 'Total líquido', regex: /TOTAL\s*L[IÍ]QUIDO/, tipo: 'valor_unico' },
+  // Outras verbas percentuais não previstas acima ainda são capturadas
+  // genericamente (ver VERBAS_CONHECIDAS), para não perder informação.
+];
+
 /**
  * Extrai, de linhas de tabela (uma linha = array de células, como devolvido
- * por getTable()), uma lista de {competencia, basePago, verbasPercentuais}
+ * por getTable()), uma lista de {competencia, ...todosOsCamposReconhecidos}
  * por mês. Best-effort — sempre revisar antes de usar.
  */
 function parseFichaFinanceiraDeTabelas(linhasTabela) {
-  const resultado = new Map(); // 'aaaa-mm' -> { basePago, verbas: Map(nome->percentual) }
+  const resultado = new Map(); // 'aaaa-mm' -> { campos: {chave: valor}, verbasExtras: Map(nome->percentual) }
   let competenciasAtuais = []; // [{mm, aaaa}], na ordem das colunas desta tabela/bloco
 
   const regexCompetencia = /^(\d{2})\/(\d{4})-\d+$/;
@@ -89,7 +116,6 @@ function parseFichaFinanceiraDeTabelas(linhasTabela) {
     if (!Array.isArray(linha) || !linha.length) continue;
     const celulas = linha.map((c) => (c == null ? '' : String(c).trim()));
 
-    // Linha de cabeçalho de bloco: 2+ células no formato "mm/aaaa-n"
     const competenciasNaLinha = celulas
       .map((c) => c.match(regexCompetencia))
       .filter(Boolean)
@@ -98,54 +124,73 @@ function parseFichaFinanceiraDeTabelas(linhasTabela) {
       competenciasAtuais = competenciasNaLinha;
       competenciasAtuais.forEach(({ mm, aaaa }) => {
         const chave = `${aaaa}-${mm}`;
-        if (!resultado.has(chave)) resultado.set(chave, { basePago: null, verbas: new Map() });
+        if (!resultado.has(chave)) resultado.set(chave, { campos: {}, verbasExtras: new Map() });
       });
       continue;
     }
     if (!competenciasAtuais.length) continue;
 
     const rotulo = celulas[0].toUpperCase();
-    const isSalarioBase = /^1\s*-\s*SALARIO\s*BASE/.test(rotulo);
-    const verbaConhecida = VERBAS_CONHECIDAS.find((v) => rotulo.includes(v));
-    if (!isSalarioBase && !verbaConhecida) continue;
+    const campoReconhecido = CAMPOS_FICHA_FINANCEIRA.find((c) => c.regex.test(rotulo));
+    const verbaConhecida = !campoReconhecido && VERBAS_CONHECIDAS.find((v) => rotulo.includes(v));
+    if (!campoReconhecido && !verbaConhecida) continue;
 
-    // As demais células (depois do rótulo e do "Tipo") são números — percentual/valor por competência.
     const numeros = celulas.slice(1).map(paraNumero).filter((n) => n != null);
     if (!numeros.length) continue;
 
-    if (isSalarioBase) {
-      // 1 valor por competência (o próprio salário)
+    if (campoReconhecido?.tipo === 'valor_unico') {
       competenciasAtuais.forEach(({ mm, aaaa }, idx) => {
         const chave = `${aaaa}-${mm}`;
-        if (numeros[idx] != null) resultado.get(chave).basePago = numeros[idx];
+        if (numeros[idx] != null) resultado.get(chave).campos[campoReconhecido.chave] = numeros[idx];
       });
-    } else {
-      // 2 valores por competência (percentual, valor) — guardamos o percentual
+    } else if (campoReconhecido) {
+      // percentual_valor: 2 números por competência (percentual, valor) — guardamos os dois
       competenciasAtuais.forEach(({ mm, aaaa }, idx) => {
         const chave = `${aaaa}-${mm}`;
         const percentual = numeros[idx * 2];
-        if (percentual != null && percentual <= 100) {
-          resultado.get(chave).verbas.set(verbaConhecida, percentual);
-        }
+        const valor = numeros[idx * 2 + 1];
+        if (percentual != null && percentual <= 100) resultado.get(chave).campos[campoReconhecido.chave + 'Percentual'] = percentual;
+        if (valor != null) resultado.get(chave).campos[campoReconhecido.chave] = valor;
+      });
+    } else if (verbaConhecida) {
+      competenciasAtuais.forEach(({ mm, aaaa }, idx) => {
+        const chave = `${aaaa}-${mm}`;
+        const percentual = numeros[idx * 2];
+        if (percentual != null && percentual <= 100) resultado.get(chave).verbasExtras.set(verbaConhecida, percentual);
       });
     }
   }
 
   return [...resultado.entries()]
-    .filter(([, v]) => v.basePago != null)
+    .filter(([, v]) => v.campos.salarioBase != null)
     .map(([competencia, v]) => ({
       competencia,
-      basePago: v.basePago,
-      verbasPercentuais: [...v.verbas.entries()].map(([nome, percentual]) => ({ nome, percentual })),
+      basePago: v.campos.salarioBase,
+      ...v.campos,
+      verbasPercentuais: [...v.verbasExtras.entries()].map(([nome, percentual]) => ({ nome, percentual })),
     }))
     .sort((a, b) => a.competencia.localeCompare(b.competencia));
 }
 
 /**
- * Extrai uma tabela de níveis/categorias do PCS (nível + valor do salário-base
- * naquele nível). Espera linhas com um identificador de nível (letras/números)
- * seguido de um valor monetário. Best-effort — sempre revisar antes de usar.
+ * Extrai uma tabela de níveis/categorias do PCS, reconhecendo a estrutura de
+ * SUBGRUPO (ex: F1, F2, LM, LS, S) + NÍVEL (A, B, C, D) + CLASSE (1 a 15).
+ * Tenta dois formatos comuns:
+ *   1) Lista com um código combinado por linha (ex: "LM-A-12" ou "LM A12"),
+ *      seguido do valor — o mais comum em tabelas de referência salarial.
+ *   2) Grade (subgrupo + nível nas linhas, classe nas colunas) — se as linhas
+ *      de tabela vierem nesse formato.
+ * Best-effort — sempre revisar antes de usar.
  */
+const REGEX_CODIGO_COMPLETO = /^([A-Z]{1,3}\d{0,2})[\s\-\/]*([A-D])[\s\-\/]*(\d{1,2})$/;
+
+function extrairSubgrupoNivelClasse(rotulo) {
+  const limpo = rotulo.toUpperCase().replace(/\s+/g, ' ').trim();
+  const m = limpo.match(REGEX_CODIGO_COMPLETO);
+  if (!m) return null;
+  return { subgrupo: m[1], nivel: m[2], classe: parseInt(m[3], 10) };
+}
+
 function parseTabelaNiveis(texto) {
   const linhas = texto.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   const regexValor = /R?\$?\s*(-?\d{1,3}(?:\.\d{3})*,\d{2})/;
@@ -157,9 +202,87 @@ function parseTabelaNiveis(texto) {
     if (valor == null || valor < 100) continue; // descarta números pequenos (não parecem salário)
     const rotulo = linha.slice(0, matchValor.index).trim().replace(/[.\-\s]+$/, '').replace(/\s{2,}/g, ' ');
     if (!rotulo) continue;
-    niveis.push({ nivel: rotulo, valor });
+    const partes = extrairSubgrupoNivelClasse(rotulo);
+    niveis.push({ rotulo, valor, subgrupo: partes?.subgrupo || null, nivel: partes?.nivel || null, classe: partes?.classe || null });
   }
   return niveis;
 }
 
-module.exports = { extrairTextoPdf, extrairTabelasPdf, pdfPareceEscaneado, parseFichaFinanceiraDeTabelas, parseTabelaNiveis };
+/**
+ * Mesma extração, mas a partir de linhas de tabela estruturada (getTable()).
+ * Tenta reconhecer tanto "uma linha = um código completo + valor" quanto uma
+ * grade (subgrupo indicado antes do bloco, colunas = classe, linhas = nível).
+ */
+function parseTabelaNiveisDeTabelas(linhasTabela) {
+  const niveis = [];
+  let subgrupoAtual = null;
+  let niveisPorIndice = null; // { indiceDaColuna: 'A'|'B'|'C'|'D' }
+
+  // Reconhece "SUBGRUPO - F1", "SUBGRUPO -M1", "SUBGRUPO LF", "S - NÍVEL SUPERIOR",
+  // "TF - TÉCNICO E FISCAL" etc — sempre extraindo só o código curto do subgrupo.
+  const REGEX_SUBGRUPO = /^(?:SUBGRUPO)?\s*-?\s*([A-Z]{1,3}\d{0,2})\b/i;
+
+  for (const linha of linhasTabela) {
+    if (!Array.isArray(linha) || !linha.length) continue;
+    const celulas = linha.map((c) => (c == null ? '' : String(c).trim()));
+    const outrasVazias = celulas.slice(1).every((c) => !c);
+
+    // Linha de subgrupo: só a primeira célula preenchida, com um rótulo (não um número).
+    if (outrasVazias && celulas[0] && !/^\d/.test(celulas[0])) {
+      const m = celulas[0].toUpperCase().match(REGEX_SUBGRUPO);
+      if (m) { subgrupoAtual = m[1]; niveisPorIndice = null; continue; }
+    }
+
+    // Linha de cabeçalho de grade: 2+ células reconhecíveis como nível (A, B, C ou D),
+    // podendo vir com o percentual junto (ex: "B (5%)").
+    const niveisNaLinha = {};
+    celulas.forEach((c, idx) => {
+      const m = c.toUpperCase().match(/^([A-D])\s*(\(\d+%?\))?$/);
+      if (m) niveisNaLinha[idx] = m[1];
+    });
+    if (Object.keys(niveisNaLinha).length >= 2) {
+      niveisPorIndice = niveisNaLinha;
+      continue;
+    }
+
+    // Linha de classe dentro de uma grade já identificada: primeira célula é um
+    // número 1-15 (a classe); as colunas nos índices do cabeçalho são os valores por nível.
+    if (niveisPorIndice && /^\d{1,2}$/.test(celulas[0])) {
+      const classe = parseInt(celulas[0], 10);
+      // Se o cabeçalho não tinha uma célula em branco na posição da classe (ou
+      // seja, o índice 0 já foi lido como um nível), a primeira célula dos dados
+      // é só o rótulo da classe e precisa ser ignorada nessa leitura — desloca 1.
+      const semColunaDeClasseNoCabecalho = niveisPorIndice[0] != null;
+      celulas.forEach((valorStr, idx) => {
+        if (semColunaDeClasseNoCabecalho && idx === 0) return; // é o rótulo da classe, não um valor
+        const idxCabecalho = semColunaDeClasseNoCabecalho ? idx - 1 : idx;
+        const nivel = niveisPorIndice[idxCabecalho];
+        if (!nivel) return;
+        const valor = paraNumero(valorStr);
+        if (valor != null && valor >= 100) {
+          niveis.push({
+            rotulo: `${subgrupoAtual || ''}-${nivel}${classe}`.replace(/^-/, ''),
+            valor, subgrupo: subgrupoAtual, nivel, classe,
+          });
+        }
+      });
+      continue;
+    }
+
+    // Formato "lista": código completo numa célula + valor noutra (ex: "LM-A-12" | "3.440,89")
+    for (let i = 0; i < celulas.length - 1; i++) {
+      const partes = extrairSubgrupoNivelClasse(celulas[i]);
+      if (!partes) continue;
+      const valor = paraNumero(celulas[i + 1]);
+      if (valor != null && valor >= 100) {
+        niveis.push({ rotulo: celulas[i].toUpperCase(), valor, ...partes });
+      }
+    }
+  }
+  return niveis;
+}
+
+module.exports = {
+  extrairTextoPdf, extrairTabelasPdf, pdfPareceEscaneado,
+  parseFichaFinanceiraDeTabelas, parseTabelaNiveis, parseTabelaNiveisDeTabelas,
+};
