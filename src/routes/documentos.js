@@ -441,19 +441,22 @@ router.post('/retroativo-pccr', requireAuth, requireRole('master', 'socio', 'ass
     ? [...new Set(resultado.linhas.flatMap((l) => (l.detalheVerbas || []).map((v) => v.nome)))]
     : [];
 
-  const SZ = 16; // 8pt — fonte compacta para a tabela caber em retrato, como no modelo de referência
+  const SZ = 16; // 8pt — fonte compacta para os valores da tabela
+  const SZ_CABECALHO_TABELA = 13; // ~6,5pt — pequena o bastante para "Insalubridade" caber sem aumentar a coluna
+  const SZ_INFO = 20; // 10pt — bloco de cabeçalho (Nome, Matrícula etc.)
+  const SZ_RESUMO = 24; // 12pt — do "Resumo dos Cálculos" em diante
   const cab = cabecalho || {};
 
   try {
     const cabecalhoLinhas = [
-      cab.nome && `Nome: ${cab.nome}`,
-      cab.matricula && `Matrícula: ${cab.matricula}`,
-      cab.funcao && `Função: ${cab.funcao}`,
-      cab.processo && `Processo: ${cab.processo}`,
-      cab.admissao && `Admissão: ${cab.admissao.split('-').reverse().join('/')}`,
-      dadosCalculo.dataProtocolo && `Protocolo: ${dadosCalculo.dataProtocolo.split('-').reverse().join('/')}`,
-      cab.implantacao && `Implantação: ${cab.implantacao.split('-').reverse().join('/')}`,
-      `Emitido em: ${T.fmtDateExtenso(todayISO())}`,
+      cab.nome && ['Nome: ', cab.nome],
+      cab.matricula && ['Matrícula: ', cab.matricula],
+      cab.funcao && ['Função: ', cab.funcao],
+      cab.processo && ['Processo: ', cab.processo],
+      cab.admissao && ['Admissão: ', cab.admissao.split('-').reverse().join('/')],
+      dadosCalculo.dataProtocolo && ['Protocolo: ', dadosCalculo.dataProtocolo.split('-').reverse().join('/')],
+      cab.implantacao && ['Implantação: ', cab.implantacao.split('-').reverse().join('/')],
+      ['Emitido em: ', T.fmtDateExtenso(todayISO())],
     ].filter(Boolean);
 
     const cabecalhoTabela = ['Data', 'Base pago', dadosCalculo.modalidade === 'nivel' ? 'Base devido' : 'Gratificação', ...nomesVerbas, 'Vant. 13º', '1/3 Férias', 'Total'];
@@ -472,9 +475,9 @@ router.post('/retroativo-pccr', requireAuth, requireRole('master', 'socio', 'ass
         D.run(T.fmtNumero(l.totalMes), { bold: true, sizeHalfPt: SZ }),
       ];
     });
-    // larguras pensadas para caber em retrato (~17cm úteis), como no modelo de
-    // referência: cabeçalho na vertical (economiza largura) e valores sem "R$"
-    // dentro da tabela (só o número), para caber sem precisar de paisagem.
+    // larguras pensadas para caber em retrato (~17cm úteis): cabeçalho na
+    // horizontal (com quebra de linha quando precisar, ex: "Base"/"devido")
+    // e valores sem "R$" dentro da tabela (só o número).
     const larguraFixa = 1.8 + 1.7 + 1.7 + 1.7 + 1.7; // data, base pago, base devido, 13o, ferias
     const colunasVariaveis = nomesVerbas.length + 1; // + total
     const larguraVariavel = Math.max((17 - larguraFixa) / colunasVariaveis, 1.3);
@@ -483,37 +486,44 @@ router.post('/retroativo-pccr', requireAuth, requireRole('master', 'socio', 'ass
     const corpo = [
       D.paragraph(D.run('CÁLCULO DE RETROATIVO — PLANO DE CARGOS E SALÁRIOS', { bold: true, sizeHalfPt: 26 }), { center: true, justify: false }),
       D.blank(),
-      D.paragraph(D.run(dadosCalculo.modalidade === 'nivel' ? 'Modalidade: Mudança de Nível' : 'Modalidade: Implantação de Gratificação', { bold: true, sizeHalfPt: SZ + 2 }), { center: true, justify: false }),
+      D.paragraph(D.run(dadosCalculo.modalidade === 'nivel' ? 'Modalidade: Mudança de Nível' : 'Modalidade: Implantação de Gratificação', { bold: true, sizeHalfPt: SZ_INFO + 2 }), { center: true, justify: false }),
       D.blank(),
-      ...cabecalhoLinhas.map((linha) => D.paragraph(D.run(linha, { sizeHalfPt: SZ + 2 }))),
+      ...cabecalhoLinhas.map(([label, valor]) => D.paragraph([
+        D.run(label, { bold: true, sizeHalfPt: SZ_INFO }),
+        D.run(valor, { sizeHalfPt: SZ_INFO }),
+      ])),
       D.blank(),
-      D.paragraph(D.run(`Data-limite de prescrição quinquenal: ${resultado.competenciaLimitePrescricao}. Competências marcadas com "*" são anteriores a essa data e não entram no cálculo.`, { sizeHalfPt: SZ + 2, italic: true })),
+      D.paragraph(D.run(`Data-limite de prescrição quinquenal: ${resultado.competenciaLimitePrescricao}. Competências marcadas com "*" são anteriores a essa data e não entram no cálculo.`, { sizeHalfPt: SZ_INFO, italic: true })),
       D.blank(),
-      D.tabela(cabecalhoTabela, linhasTabelaCorpo, { largurasCm, sizeHalfPt: SZ, cabecalhoVertical: true }),
+      D.tabela(cabecalhoTabela, linhasTabelaCorpo, { largurasCm, sizeHalfPt: SZ, sizeHalfPtCabecalho: SZ_CABECALHO_TABELA }),
       D.blank(),
-      D.paragraph(D.run('RESUMO DOS CÁLCULOS', { bold: true, sizeHalfPt: SZ + 4 }), { center: true, justify: false }),
+      D.paragraph(D.run('RESUMO DOS CÁLCULOS', { bold: true, sizeHalfPt: SZ_RESUMO + 2 }), { center: true, justify: false }),
       D.blank(),
-      D.paragraph(D.run('A — PROVENTOS', { bold: true, sizeHalfPt: SZ + 2 })),
-      D.paragraph([D.run('Subtotal de natureza salarial: ', { sizeHalfPt: SZ + 2 }), D.run(T.fmtMoney(resultado.resumo.subtotalSalarial), { bold: true, sizeHalfPt: SZ + 2 })]),
-      D.paragraph([D.run('Subtotal de natureza indenizatória (1/3 férias): ', { sizeHalfPt: SZ + 2 }), D.run(T.fmtMoney(resultado.resumo.subtotalIndenizatorio), { bold: true, sizeHalfPt: SZ + 2 })]),
-      D.paragraph([D.run('Soma (A): ', { bold: true, sizeHalfPt: SZ + 2 }), D.run(T.fmtMoney(resultado.resumo.somaA), { bold: true, sizeHalfPt: SZ + 2 })]),
+      D.paragraph(D.run('A — PROVENTOS', { bold: true, sizeHalfPt: SZ_RESUMO })),
+      D.paragraph([D.run('Subtotal de natureza salarial: ', { sizeHalfPt: SZ_RESUMO }), D.run(T.fmtMoney(resultado.resumo.subtotalSalarial), { bold: true, sizeHalfPt: SZ_RESUMO })]),
+      D.paragraph([D.run('Subtotal de natureza indenizatória (1/3 férias): ', { sizeHalfPt: SZ_RESUMO }), D.run(T.fmtMoney(resultado.resumo.subtotalIndenizatorio), { bold: true, sizeHalfPt: SZ_RESUMO })]),
+      D.paragraph([D.run('Soma (A): ', { bold: true, sizeHalfPt: SZ_RESUMO }), D.run(T.fmtMoney(resultado.resumo.somaA), { bold: true, sizeHalfPt: SZ_RESUMO })]),
       D.blank(),
-      D.paragraph(D.run('B — DESCONTOS', { bold: true, sizeHalfPt: SZ + 2 })),
-      D.paragraph([D.run(`Desconto previdenciário (${resultado.regimePrevidenciario === 'rpps' ? 'RPPS' : 'RGPS'}): `, { sizeHalfPt: SZ + 2 }), D.run(T.fmtMoney(resultado.resumo.somaInss), { bold: true, sizeHalfPt: SZ + 2 })]),
-      D.paragraph([D.run('Desconto IRRF: ', { sizeHalfPt: SZ + 2 }), D.run(resultado.resumo.irrfAtivo ? T.fmtMoney(resultado.resumo.somaIrrf) : 'Sem incidência', { bold: true, sizeHalfPt: SZ + 2 })]),
-      D.paragraph([D.run('Soma (B): ', { bold: true, sizeHalfPt: SZ + 2 }), D.run(T.fmtMoney(resultado.resumo.somaB), { bold: true, sizeHalfPt: SZ + 2 })]),
+      D.paragraph(D.run('B — DESCONTOS', { bold: true, sizeHalfPt: SZ_RESUMO })),
+      D.paragraph([D.run(`Desconto previdenciário (${resultado.regimePrevidenciario === 'rpps' ? 'RPPS' : 'RGPS'}): `, { sizeHalfPt: SZ_RESUMO }), D.run(T.fmtMoney(resultado.resumo.somaInss), { bold: true, sizeHalfPt: SZ_RESUMO })]),
+      D.paragraph([
+        D.run('Desconto IRRF: ', { sizeHalfPt: SZ_RESUMO }),
+        D.run(resultado.resumo.irrfAtivo ? T.fmtMoney(resultado.resumo.somaIrrf) : 'Sem incidência', { bold: true, sizeHalfPt: SZ_RESUMO }),
+        ...(resultado.resumo.irrfAtivo ? [] : [D.run(' (OBS.: sem incidência de IRPF conforme Art. 12-A da Lei 7.713-88.)', { sizeHalfPt: SZ_RESUMO - 2, italic: true })]),
+      ]),
+      D.paragraph([D.run('Soma (B): ', { bold: true, sizeHalfPt: SZ_RESUMO }), D.run(T.fmtMoney(resultado.resumo.somaB), { bold: true, sizeHalfPt: SZ_RESUMO })]),
       D.blank(),
-      D.paragraph([D.run('VALOR LÍQUIDO DEVIDO À PARTE AUTORA (A − B): ', { bold: true, sizeHalfPt: SZ + 4 }), D.run(T.fmtMoney(resultado.resumo.valorLiquido), { bold: true, sizeHalfPt: SZ + 4 })]),
+      D.paragraph([D.run('VALOR LÍQUIDO DEVIDO À PARTE AUTORA (A − B): ', { bold: true, sizeHalfPt: SZ_RESUMO + 2 }), D.run(T.fmtMoney(resultado.resumo.valorLiquido), { bold: true, sizeHalfPt: SZ_RESUMO + 2 })]),
       D.blank(),
-      D.paragraph(D.run('C — VALORES DEVIDOS PELO MUNICÍPIO (EMPREGADOR)', { bold: true, sizeHalfPt: SZ + 2 })),
-      D.paragraph([D.run('Valor líquido devido à parte autora: ', { sizeHalfPt: SZ + 2 }), D.run(T.fmtMoney(resultado.resumo.valorLiquido), { sizeHalfPt: SZ + 2 })]),
-      D.paragraph([D.run('+ Previdência retida: ', { sizeHalfPt: SZ + 2 }), D.run(T.fmtMoney(resultado.resumo.somaInss), { sizeHalfPt: SZ + 2 })]),
-      D.paragraph([D.run('+ IRRF retido: ', { sizeHalfPt: SZ + 2 }), D.run(resultado.resumo.irrfAtivo ? T.fmtMoney(resultado.resumo.somaIrrf) : 'R$ 0,00', { sizeHalfPt: SZ + 2 })]),
-      D.paragraph([D.run(`+ Contribuição previdenciária patronal (${resultado.resumo.percentualPatronal}%): `, { sizeHalfPt: SZ + 2 }), D.run(T.fmtMoney(resultado.resumo.contribuicaoPatronal), { sizeHalfPt: SZ + 2 })]),
+      D.paragraph(D.run('C — VALORES DEVIDOS PELO MUNICÍPIO (EMPREGADOR)', { bold: true, sizeHalfPt: SZ_RESUMO })),
+      D.paragraph([D.run('Valor líquido devido à parte autora: ', { sizeHalfPt: SZ_RESUMO }), D.run(T.fmtMoney(resultado.resumo.valorLiquido), { sizeHalfPt: SZ_RESUMO })]),
+      D.paragraph([D.run('+ Previdência retida: ', { sizeHalfPt: SZ_RESUMO }), D.run(T.fmtMoney(resultado.resumo.somaInss), { sizeHalfPt: SZ_RESUMO })]),
+      D.paragraph([D.run('+ IRRF retido: ', { sizeHalfPt: SZ_RESUMO }), D.run(resultado.resumo.irrfAtivo ? T.fmtMoney(resultado.resumo.somaIrrf) : 'R$ 0,00', { sizeHalfPt: SZ_RESUMO })]),
+      D.paragraph([D.run(`+ Contribuição previdenciária patronal (${resultado.resumo.percentualPatronal}%): `, { sizeHalfPt: SZ_RESUMO }), D.run(T.fmtMoney(resultado.resumo.contribuicaoPatronal), { sizeHalfPt: SZ_RESUMO })]),
       D.blank(),
-      D.paragraph([D.run('VALOR TOTAL DEVIDO (C): ', { bold: true, sizeHalfPt: SZ + 6 }), D.run(T.fmtMoney(resultado.resumo.totalC), { bold: true, sizeHalfPt: SZ + 6 })]),
+      D.paragraph([D.run('VALOR TOTAL DEVIDO (C): ', { bold: true, sizeHalfPt: SZ_RESUMO + 4 }), D.run(T.fmtMoney(resultado.resumo.totalC), { bold: true, sizeHalfPt: SZ_RESUMO + 4 })]),
       D.blank(), D.blank(),
-      D.paragraph(D.run(`Jequié/BA, ${T.fmtDateExtenso(todayISO())}.`, { sizeHalfPt: SZ + 2 }), { indentCm: 2, justify: false }),
+      D.paragraph(D.run(`Jequié/BA, ${T.fmtDateExtenso(todayISO())}.`, { sizeHalfPt: SZ_RESUMO }), { indentCm: 2, justify: false }),
     ].join('');
 
     const buffer = gerarDocxComCorpo(corpo, { margemInferiorTwips: 1843 });

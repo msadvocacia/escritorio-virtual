@@ -988,6 +988,26 @@ quebrar, em página retrato normal** — confirmei pelo texto extraído do PDF
 gerado.
 
 
+## 31. Três ajustes finos no documento de retroativo — confirmados sem imagem
+
+A ferramenta que uso pra conferir visualmente os documentos não carregou
+nesta sessão (tentei de novo) — então confirmei os três ajustes direto no
+XML gerado e no texto extraído do PDF, em vez de ver com os olhos. Se algo
+estiver sutilmente errado visualmente (cores, espaçamento fino), me avisa.
+
+1. **Bloco de cabeçalho** (Nome, Matrícula, Função etc.): fonte 10pt, com os
+   rótulos em negrito e o valor normal — confirmei isso lendo o XML
+   diretamente (rótulo com `<w:b/>`, valor sem).
+2. **Do "Resumo dos Cálculos" em diante**: fonte 12pt — também confirmado no
+   XML.
+3. **Cabeçalhos da tabela voltaram para a horizontal** (não mais girados),
+   com fonte bem pequena (6,5pt) — testei e "Insalubridade" coube inteira
+   numa linha só, sem precisar quebrar em duas nem aumentar a coluna.
+4. **Nota do IRRF**: adicionei "(OBS.: sem incidência de IRPF conforme
+   Art. 12-A da Lei 7.713-88.)" logo depois de "Sem incidência", exatamente
+   como pedido — só aparece quando o IRRF realmente não incide.
+
+
 ---
 
 Qualquer erro ao subir, me mostre a mensagem exata que aparece (no Render, aba "Logs")
