@@ -845,6 +845,52 @@ Também ajustei o limite que decide se um PDF "parece escaneado" — estava
 muito alto e recusaria por engano até documentos pequenos e legítimos.
 
 
+## 27. Estimativa por 2 contracheques + descoberta real importante sobre o parser
+
+### Novo: estimar um período inteiro a partir de só 2 contracheques
+
+Em "Períodos do cálculo" (módulo 17), agora tem dois campos de upload: um
+logo abaixo de "De" (contracheque do último mês **sem** o benefício) e outro
+logo abaixo de "Até" (contracheque do primeiro mês **com** o benefício).
+Cada um lê o PDF (só em memória, nunca salvo) e preenche sozinho "Base
+pago"/"Base devido" — útil para uma estimativa rápida, em vez de importar a
+ficha financeira completa mês a mês.
+
+### Descoberta real ao testar com contracheques de verdade
+
+Vocês mandaram dois contracheques reais (Rosana, Enfermeira, jul e ago/2024),
+e isso revelou um problema real: o detector de tabelas que eu vinha usando
+**não reconheceu nenhuma tabela** nesse PDF — porque o documento não tem
+linhas de grade explícitas na estrutura interna do arquivo, mesmo parecendo
+uma tabela visualmente. Isso teria feito a leitura falhar silenciosamente
+para qualquer contracheque nesse formato (bem comum).
+
+Corrigido: o texto desse mesmo PDF vinha limpinho, separado por tabulações —
+adicionei um segundo caminho de leitura que entra em ação automaticamente
+sempre que a detecção de tabela não encontra nada. Também corrigi o nome de
+verbas genéricas (estava mostrando só "GRATIFICA" em vez do nome completo
+"GRATIFICACAO GCECC").
+
+**Conferi cada valor extraído contra os dois PDFs reais, um por um** — todos
+bateram exatamente (salário base, anuênio, insalubridade, gratificação,
+fundo de previdência, IRRF, total líquido). Testei inclusive gerando uma
+estimativa completa de um período de 67 meses (protocolo janeiro/2019 a
+implantação agosto/2024) a partir só desses 2 contracheques.
+
+### Importante: o que o sistema NÃO faz (decisão consciente, não pendência)
+
+Consideramos automatizar o cálculo de anuênio/mudança de classe a partir só
+da data de admissão (ex: "+1% ao ano, muda de classe a cada 2 anos"), mas
+**decidimos não implementar isso**. Ao comparar dois casos reais (Cássio
+Alves e Rosana), a mesma regra simples não bateu para os dois — a diferença
+veio de uma averbação de tempo de serviço da Rosana, que muda a classe dela
+de um jeito que não é dedutível só da data de admissão. Esse tipo de
+situação (averbação, licenças, etc.) varia caso a caso e não tem como ser
+automatizado com segurança. **O caminho recomendado continua sendo importar
+a ficha financeira completa** (ou os contracheques específicos de cada
+período), que já refletem a situação real de cada servidor.
+
+
 ---
 
 Qualquer erro ao subir, me mostre a mensagem exata que aparece (no Render, aba "Logs")

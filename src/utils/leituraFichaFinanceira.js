@@ -48,6 +48,20 @@ async function extrairTabelasPdf(buffer) {
   }
 }
 
+/**
+ * Nem todo PDF tem uma "tabela" reconhecível pelo detector de tabelas (ex:
+ * recibos de pagamento simples, sem linhas de grade explícitas) — mas o texto
+ * dele quase sempre vem separado por tabulações entre colunas. Esta função
+ * transforma esse texto em linhas de "células", no mesmo formato que as
+ * funções de parse já esperam, sem precisar de tabela detectada.
+ */
+function linhasDeTextoTabulado(texto) {
+  return texto
+    .split(/\r?\n/)
+    .map((linha) => linha.split('\t').map((c) => c.trim()).filter((c, i, arr) => !(c === '' && arr.length === 1)))
+    .filter((celulas) => celulas.length > 1 || (celulas.length === 1 && celulas[0]));
+}
+
 function pdfPareceEscaneado(texto) {
   // Um PDF com texto de verdade tem algum texto extraído; um PDF escaneado (só
   // imagem) devolve pouquíssimo ou nenhum. Limite propositalmente baixo (60
@@ -86,14 +100,14 @@ const CAMPOS_FICHA_FINANCEIRA = [
   { chave: 'irrf13', label: 'IRRF (13º salário)', regex: /I\.?\s*R\.?\s*R\.?\s*F\..*13/, tipo: 'percentual_valor' },
   { chave: 'irrf', label: 'IRRF', regex: /I\.?\s*R\.?\s*R\.?\s*F\./, tipo: 'percentual_valor' },
   { chave: 'decimoTerceiroAdiantado', label: '13º salário adiantado', regex: /13.?\s*SAL[AÁ]RIO\s*ADIANTADO/, tipo: 'percentual_valor' },
-  { chave: 'decimoTerceiro', label: '13º salário', regex: /^25\s*-|^\d+\s*-\s*13.?\s*SAL[AÁ]RIO\s*$/, tipo: 'valor_unico' },
+  { chave: 'decimoTerceiro', label: '13º salário', regex: /^25\s*-|^\d+\s*-\s*13.?\s*SAL[AÁ]RIO\s*$|^13.?\s*SAL[AÁ]RIO\b/, tipo: 'valor_unico' },
   { chave: 'insalubridade13', label: 'Insalubridade (13º salário)', regex: /INSALUBRIDADE.*13/, tipo: 'valor_unico' },
   { chave: 'insalubridade', label: 'Insalubridade', regex: /INSALUBRIDADE/, tipo: 'percentual_valor' },
   { chave: 'anuenio13', label: 'Anuênio (13º salário)', regex: /ANU[EÊ]NIO.*13/, tipo: 'valor_unico' },
   { chave: 'anuenio', label: 'Anuênio', regex: /ANU[EÊ]NIO|ANUENIO/, tipo: 'percentual_valor' },
   { chave: 'tercoFerias', label: '1/3 de férias', regex: /1\/3\s*F[EÉ]RIAS/, tipo: 'percentual_valor' },
   { chave: 'sindicato', label: 'Sindicato', regex: /SINDSMUJE|SINDICATO/, tipo: 'percentual_valor' },
-  { chave: 'salarioBase', label: 'Salário base', regex: /^1\s*-\s*SALARIO\s*BASE/, tipo: 'valor_unico' },
+  { chave: 'salarioBase', label: 'Salário base', regex: /SALARIO\s*BASE|VENCIMENTO\s*BASE/, tipo: 'valor_unico' },
   { chave: 'totalProventos', label: 'Total de proventos', regex: /TOTAL\s*PROVENTOS/, tipo: 'valor_unico' },
   { chave: 'totalDescontos', label: 'Total de descontos', regex: /TOTAL\s*DESCONTOS/, tipo: 'valor_unico' },
   { chave: 'totalLiquido', label: 'Total líquido', regex: /TOTAL\s*L[IÍ]QUIDO/, tipo: 'valor_unico' },
@@ -153,10 +167,11 @@ function parseFichaFinanceiraDeTabelas(linhasTabela) {
         if (valor != null) resultado.get(chave).campos[campoReconhecido.chave] = valor;
       });
     } else if (verbaConhecida) {
+      const nomeCompleto = celulas[0].replace(/^\d+\s*-\s*/, '').trim() || verbaConhecida;
       competenciasAtuais.forEach(({ mm, aaaa }, idx) => {
         const chave = `${aaaa}-${mm}`;
         const percentual = numeros[idx * 2];
-        if (percentual != null && percentual <= 100) resultado.get(chave).verbasExtras.set(verbaConhecida, percentual);
+        if (percentual != null && percentual <= 100) resultado.get(chave).verbasExtras.set(nomeCompleto, percentual);
       });
     }
   }
@@ -282,7 +297,71 @@ function parseTabelaNiveisDeTabelas(linhasTabela) {
   return niveis;
 }
 
+/**
+ * Extrai os dados de UM contracheque (um único mês), diferente da ficha
+ * financeira (que traz vários meses lado a lado). Formato esperado: uma
+ * linha por rubrica, geralmente "Código | Descrição | Referência(%) |
+ * Vencimento/Desconto (R$)" — mas aceita variações na ordem das colunas,
+ * testando cada linha por um rótulo conhecido + um percentual (opcional) +
+ * um valor monetário. Best-effort — sempre revisar antes de usar.
+ */
+function parseContrachequeDeTabelas(linhasTabela) {
+  const campos = {};
+  const verbasExtras = [];
+
+  for (const linha of linhasTabela) {
+    if (!Array.isArray(linha) || !linha.length) continue;
+    const celulas = linha.map((c) => (c == null ? '' : String(c).trim()));
+    const rotulo = celulas.join(' ').toUpperCase();
+
+    const campoReconhecido = CAMPOS_FICHA_FINANCEIRA.find((c) => c.regex.test(rotulo));
+    const verbaConhecida = !campoReconhecido && VERBAS_CONHECIDAS.find((v) => rotulo.includes(v));
+    if (!campoReconhecido && !verbaConhecida) continue;
+
+    // A primeira célula costuma ser o "código" da rubrica (ex: "0001", "0416")
+    // — um identificador, não um percentual nem um valor. Excluímos da busca
+    // de números para não confundir o código com a referência/valor reais.
+    const numeros = celulas.slice(1).map(paraNumero).filter((n) => n != null);
+    if (!numeros.length) continue;
+
+    // Nas linhas de contracheque, se houver 2 números, o primeiro <=100 costuma
+    // ser o percentual/referência e o outro é o valor em reais; se só houver 1
+    // número, é direto o valor (sem percentual reconhecível na própria linha).
+    let percentual = null;
+    let valor = null;
+    if (numeros.length >= 2 && numeros[0] <= 100) {
+      percentual = numeros[0];
+      valor = numeros.slice(1).find((n) => n > 0) ?? null;
+    } else {
+      valor = numeros[numeros.length - 1];
+    }
+    if (valor == null) continue;
+
+    if (campoReconhecido) {
+      if (campoReconhecido.tipo === 'valor_unico') {
+        campos[campoReconhecido.chave] = valor;
+      } else {
+        campos[campoReconhecido.chave] = valor;
+        if (percentual != null) campos[campoReconhecido.chave + 'Percentual'] = percentual;
+      }
+    } else if (verbaConhecida && percentual != null) {
+      // Usa o texto descritivo de verdade da linha (não só a palavra-chave
+      // curta que bateu), para um nome mais informativo (ex: "GRATIFICACAO
+      // GCECC" em vez de só "GRATIFICA").
+      const celulaDescricao = celulas.slice(1).find((c) => c && Number.isNaN(Number(c.replace(/\./g, '').replace(',', '.')))) || verbaConhecida;
+      verbasExtras.push({ nome: celulaDescricao, percentual });
+    }
+  }
+
+  return {
+    basePago: campos.salarioBase ?? null,
+    ...campos,
+    verbasPercentuais: verbasExtras,
+  };
+}
+
 module.exports = {
-  extrairTextoPdf, extrairTabelasPdf, pdfPareceEscaneado,
+  extrairTextoPdf, extrairTabelasPdf, linhasDeTextoTabulado, pdfPareceEscaneado,
   parseFichaFinanceiraDeTabelas, parseTabelaNiveis, parseTabelaNiveisDeTabelas,
+  parseContrachequeDeTabelas,
 };

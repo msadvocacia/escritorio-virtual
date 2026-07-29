@@ -3005,8 +3005,23 @@ function formularioRetroativoPccr(cat){
         <div class="field"><label>Até (mês/ano)${ajuda('O último mês deste período, ainda com os mesmos valores. Se algo mudou antes do fim do período retroativo todo, pare aqui e comece um novo período no próximo passo.')}</label><input type="month" id="pccr-periodo-ate"></div>
       </div>
       <div class="field-row">
-        <div class="field"><label>Base pago (R$)${ajuda('O salário-base que o servidor efetivamente recebeu nesses meses (o valor errado/antigo, que está na ficha financeira).')}</label><input type="number" step="0.01" id="pccr-periodo-basepago"></div>
-        <div class="field" id="pccr-periodo-basedevido-box"><label>Base devido (R$)${ajuda('O salário-base que o servidor deveria ter recebido (o valor correto, do nível/gratificação que deveria ter sido aplicado). Se você já importou a tabela de níveis acima, clique no valor certo nela para preencher este campo sozinho.')}</label><input type="number" step="0.01" id="pccr-periodo-basedevido"></div>
+        <div class="field">
+          <label>📎 Contracheque do último mês SEM o benefício (PDF, opcional)${ajuda('Envie o contracheque de UM mês só — o último antes do benefício ser implantado. O sistema lê o salário-base e os percentuais das verbas desse mês e preenche "Base pago" e os percentuais sozinho, como uma estimativa rápida (em vez de você digitar mês a mês na ficha completa). O arquivo não é salvo, só lido nesta hora.')}</label>
+          <input type="file" id="pccr-periodo-contracheque-de" accept="application/pdf">
+          <button class="btn btn-ghost btn-sm" style="margin-top:4px;" onclick="importarContrachequePeriodo('de')">Ler e preencher "Base pago"</button>
+          <div id="pccr-periodo-contracheque-de-status" style="margin-top:4px;"></div>
+        </div>
+        <div class="field">
+          <label>📎 Contracheque do primeiro mês COM o benefício (PDF, opcional)${ajuda('Envie o contracheque do primeiro mês em que o benefício já apareceu implantado no contracheque. O sistema lê o salário-base desse mês e preenche "Base devido" sozinho — dá pra usar como estimativa rápida do valor correto, no lugar de consultar a tabela de níveis.')}</label>
+          <input type="file" id="pccr-periodo-contracheque-ate" accept="application/pdf">
+          <button class="btn btn-ghost btn-sm" style="margin-top:4px;" onclick="importarContrachequePeriodo('ate')">Ler e preencher "Base devido"</button>
+          <div id="pccr-periodo-contracheque-ate-status" style="margin-top:4px;"></div>
+        </div>
+      </div>
+      <div class="hint">Os dois contracheques acima servem só para gerar uma <strong>estimativa rápida</strong> do período inteiro (de/até) — é diferente de importar a ficha financeira completa (que traz cada mês com seu próprio valor exato). Use os contracheques quando quiser uma conta rápida; use a ficha financeira completa quando precisar de precisão mês a mês.</div>
+      <div class="field-row">
+        <div class="field"><label>Base pago (R$)${ajuda('O salário-base que o servidor efetivamente recebeu nesses meses (o valor errado/antigo, que está na ficha financeira ou no contracheque). Pode ser preenchido automaticamente pelo contracheque acima.')}</label><input type="number" step="0.01" id="pccr-periodo-basepago"></div>
+        <div class="field" id="pccr-periodo-basedevido-box"><label>Base devido (R$)${ajuda('O salário-base que o servidor deveria ter recebido (o valor correto, do nível/gratificação que deveria ter sido aplicado). Pode ser preenchido automaticamente pelo contracheque acima, ou clicando num valor da tabela de níveis importada.')}</label><input type="number" step="0.01" id="pccr-periodo-basedevido"></div>
       </div>
       <div class="hint" id="pccr-periodo-nivel-selecionado" style="margin-bottom:8px;"></div>
       <div id="pccr-periodo-verbas-campos"></div>
@@ -3125,6 +3140,37 @@ function selecionarNivelPccr(subgrupo, nivel, classe, valor){
   showToast('Base devido preenchido: '+rotulo);
 }
 function removerMesPccr(i){ PCCR_MESES.splice(i,1); renderListaMesesPccr(); }
+async function importarContrachequePeriodo(qual){
+  const inputId = qual==='de' ? 'pccr-periodo-contracheque-de' : 'pccr-periodo-contracheque-ate';
+  const statusId = qual==='de' ? 'pccr-periodo-contracheque-de-status' : 'pccr-periodo-contracheque-ate-status';
+  const input = document.getElementById(inputId);
+  if(!input.files.length){ showToast('Escolha um arquivo PDF primeiro.'); return; }
+  const status = document.getElementById(statusId);
+  status.innerHTML = '<div class="empty">Lendo o PDF...</div>';
+  const form = new FormData();
+  form.append('arquivo', input.files[0]);
+  try{
+    const r = await apiFetchUpload('/api/calculos/retroativo-pccr/importar-contracheque', form);
+    const d = r.dados;
+    if(qual==='de'){
+      document.getElementById('pccr-periodo-basepago').value = d.basePago;
+    } else {
+      document.getElementById('pccr-periodo-basedevido').value = d.basePago;
+      document.getElementById('pccr-periodo-nivel-selecionado').innerHTML = `<strong>Preenchido a partir do contracheque</strong> — ${fmtMoney(d.basePago)}`;
+    }
+    // Preenche também os percentuais das verbas já cadastradas, se o contracheque trouxe algum reconhecido
+    if(PCCR_MODALIDADE==='nivel'){
+      PCCR_VERBAS_NOMES.forEach((nome,i)=>{
+        const chaveConhecida = {'Anuênio':'anuenioPercentual','Anuenio':'anuenioPercentual','Insalubridade':'insalubridadePercentual','Periculosidade':'periculosidadePercentual'}[nome];
+        if(chaveConhecida && d[chaveConhecida]!=null){
+          const campo = document.getElementById('pccr-periodo-verba-'+i);
+          if(campo) campo.value = d[chaveConhecida];
+        }
+      });
+    }
+    status.innerHTML = `<div class="hint">${escapeHtml(r.aviso)} Salário-base lido: <strong>${fmtMoney(d.basePago)}</strong>. Confira antes de adicionar o período.</div>`;
+  }catch(e){ status.innerHTML = `<div class="empty">${escapeHtml(e.message||'Não foi possível ler o PDF.')}</div>`; }
+}
 async function importarFichaFinanceira(){
   const input = document.getElementById('pccr-upload-ficha');
   if(!input.files.length){ showToast('Escolha um arquivo PDF primeiro.'); return; }
