@@ -448,16 +448,24 @@ router.post('/retroativo-pccr', requireAuth, requireRole('master', 'socio', 'ass
   const cab = cabecalho || {};
 
   try {
-    const cabecalhoLinhas = [
-      cab.nome && ['Nome: ', cab.nome],
-      cab.matricula && ['Matrícula: ', cab.matricula],
-      cab.funcao && ['Função: ', cab.funcao],
-      cab.processo && ['Processo: ', cab.processo],
-      cab.admissao && ['Admissão: ', cab.admissao.split('-').reverse().join('/')],
-      dadosCalculo.dataProtocolo && ['Protocolo: ', dadosCalculo.dataProtocolo.split('-').reverse().join('/')],
-      cab.implantacao && ['Implantação: ', cab.implantacao.split('-').reverse().join('/')],
-      ['Emitido em: ', T.fmtDateExtenso(todayISO())],
-    ].filter(Boolean);
+    const campoGrade = (label, valor) => valor ? [D.run(label, { bold: true, sizeHalfPt: SZ_INFO }), D.run(valor, { sizeHalfPt: SZ_INFO })] : '';
+    const gradeCabecalho = D.grade([
+      [
+        campoGrade('Nome: ', cab.nome),
+        campoGrade('Matrícula: ', cab.matricula),
+        campoGrade('Função: ', cab.funcao),
+      ],
+      [
+        campoGrade('Processo: ', cab.processo),
+        campoGrade('Admissão: ', cab.admissao && cab.admissao.split('-').reverse().join('/')),
+        campoGrade('Protocolo: ', dadosCalculo.dataProtocolo && dadosCalculo.dataProtocolo.split('-').reverse().join('/')),
+      ],
+      [
+        campoGrade('Implantação: ', cab.implantacao && cab.implantacao.split('-').reverse().join('/')),
+        campoGrade('Emitido em: ', T.fmtDateExtenso(todayISO())),
+        '',
+      ],
+    ], { largurasCm: [5.7, 5.7, 5.6] });
 
     const cabecalhoTabela = ['Data', 'Base pago', dadosCalculo.modalidade === 'nivel' ? 'Base devido' : 'Gratificação', ...nomesVerbas, 'Vant. 13º', '1/3 Férias', 'Total'];
     const linhasTabelaCorpo = resultado.linhas.map((l) => {
@@ -488,10 +496,7 @@ router.post('/retroativo-pccr', requireAuth, requireRole('master', 'socio', 'ass
       D.blank(),
       D.paragraph(D.run(dadosCalculo.modalidade === 'nivel' ? 'Modalidade: Mudança de Nível' : 'Modalidade: Implantação de Gratificação', { bold: true, sizeHalfPt: SZ_INFO + 2 }), { center: true, justify: false }),
       D.blank(),
-      ...cabecalhoLinhas.map(([label, valor]) => D.paragraph([
-        D.run(label, { bold: true, sizeHalfPt: SZ_INFO }),
-        D.run(valor, { sizeHalfPt: SZ_INFO }),
-      ])),
+      gradeCabecalho,
       D.blank(),
       D.paragraph(D.run(`Data-limite de prescrição quinquenal: ${resultado.competenciaLimitePrescricao}. Competências marcadas com "*" são anteriores a essa data e não entram no cálculo.`, { sizeHalfPt: SZ_INFO, italic: true })),
       D.blank(),
@@ -509,7 +514,7 @@ router.post('/retroativo-pccr', requireAuth, requireRole('master', 'socio', 'ass
       D.paragraph([
         D.run('Desconto IRRF: ', { sizeHalfPt: SZ_RESUMO }),
         D.run(resultado.resumo.irrfAtivo ? T.fmtMoney(resultado.resumo.somaIrrf) : 'Sem incidência', { bold: true, sizeHalfPt: SZ_RESUMO }),
-        ...(resultado.resumo.irrfAtivo ? [] : [D.run(' (OBS.: sem incidência de IRPF conforme Art. 12-A da Lei 7.713-88.)', { sizeHalfPt: SZ_RESUMO - 2, italic: true })]),
+        ...(resultado.resumo.irrfAtivo ? [] : [D.run(' (OBS.: sem incidência de IRPF conforme Art. 12-A da Lei 7.713-88.)', { sizeHalfPt: 20, italic: true })]),
       ]),
       D.paragraph([D.run('Soma (B): ', { bold: true, sizeHalfPt: SZ_RESUMO }), D.run(T.fmtMoney(resultado.resumo.somaB), { bold: true, sizeHalfPt: SZ_RESUMO })]),
       D.blank(),

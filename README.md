@@ -1008,6 +1008,19 @@ estiver sutilmente errado visualmente (cores, espaçamento fino), me avisa.
    como pedido — só aparece quando o IRRF realmente não incide.
 
 
+## 32. Cabeçalho corrigido: grade 3x3 alinhada (não mais empilhado)
+
+Entendi errado da primeira vez — você queria os campos lado a lado em 3
+colunas (Nome/Matrícula/Função na mesma linha, Processo/Admissão/Protocolo
+na linha de baixo, Implantação/Emitido em na última), não um embaixo do
+outro. Criei uma grade sem bordas visíveis (só para alinhar) e confirmei
+pelo texto extraído do PDF gerado — os três campos de cada linha aparecem
+lado a lado, alinhados, exatamente como no seu exemplo.
+
+Também corrigi o tamanho da nota do IRRF para exatamente 10pt (confirmei no
+XML: `sz=20`, que é 10pt).
+
+
 ---
 
 Qualquer erro ao subir, me mostre a mensagem exata que aparece (no Render, aba "Logs")

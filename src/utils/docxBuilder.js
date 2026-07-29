@@ -141,4 +141,25 @@ function tabela(cabecalhos, linhas, { largurasCm = null, sizeHalfPt = null, size
     `<w:${lado} w:val="single" w:sz="4" w:space="0" w:color="CCCCCC"/>`).join('')}</w:tblBorders></w:tblPr>${grid}${linhaCabecalho}${linhasXml}</w:tbl>`;
 }
 
-module.exports = { xmlEscape, cmParaTwips, run, paragraph, blank, montarBlocoPessoas, comDestaques, tabela };
+/**
+ * Uma grade simples SEM bordas visíveis, só para alinhar conteúdo em colunas
+ * (ex: um bloco de "Nome / Matrícula / Função" em 3 colunas). Cada célula
+ * recebe o conteúdo já pronto (string, run, ou array de runs) — não formata
+ * nada sozinha, ao contrário de tabela().
+ */
+function grade(linhas, { largurasCm = null } = {}) {
+  function celula(conteudo, larguraCm) {
+    let runsXml;
+    if (Array.isArray(conteudo)) runsXml = conteudo.join('');
+    else if (typeof conteudo === 'string' && conteudo.startsWith('<w:r')) runsXml = conteudo;
+    else runsXml = run(conteudo || '');
+    const tcW = larguraCm != null ? `<w:tcW w:w="${cmParaTwips(larguraCm)}" w:type="dxa"/>` : '<w:tcW w:w="0" w:type="auto"/>';
+    const semBorda = '<w:tcBorders>' + ['top', 'left', 'bottom', 'right'].map((lado) => `<w:${lado} w:val="nil"/>`).join('') + '</w:tcBorders>';
+    return `<w:tc><w:tcPr>${tcW}${semBorda}<w:vAlign w:val="center"/></w:tcPr><w:p><w:pPr><w:spacing w:line="240" w:lineRule="auto"/></w:pPr>${runsXml}</w:p></w:tc>`;
+  }
+  const grid = largurasCm ? `<w:tblGrid>${largurasCm.map((c) => `<w:gridCol w:w="${cmParaTwips(c)}"/>`).join('')}</w:tblGrid>` : '';
+  const linhasXml = linhas.map((linha) => `<w:tr>${linha.map((c, i) => celula(c, largurasCm ? largurasCm[i] : null)).join('')}</w:tr>`).join('');
+  return `<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblBorders>${['top', 'left', 'bottom', 'right', 'insideH', 'insideV'].map((lado) => `<w:${lado} w:val="nil"/>`).join('')}</w:tblBorders></w:tblPr>${grid}${linhasXml}</w:tbl>`;
+}
+
+module.exports = { xmlEscape, cmParaTwips, run, paragraph, blank, montarBlocoPessoas, comDestaques, tabela, grade };
