@@ -62,6 +62,31 @@ function linhasDeTextoTabulado(texto) {
     .filter((celulas) => celulas.length > 1 || (celulas.length === 1 && celulas[0]));
 }
 
+/**
+ * Variante para tabelas de nível/classe onde as colunas são separadas só por
+ * espaço simples (não tabulação) — ex: "A B (5%) C (15%) D (20%)" ou
+ * "2 1.322,70 1.388,83 1.597,15 1.916,59". Tokeniza reconhecendo números
+ * monetários, letras de nível (com ou sem o percentual entre parênteses) e
+ * números de classe, e trata linhas de subgrupo (sem nenhum desses padrões,
+ * mas com uma sigla curta) como uma única célula.
+ */
+function linhasDeTextoEspacado(texto) {
+  const regexToken = /[A-D]\s*\(\d{1,3}%?\)|-?\d{1,3}(?:\.\d{3})*,\d{2}|\b\d{1,2}\b|\b[A-D]\b/g;
+  return texto
+    .split(/\r?\n/)
+    .map((linha) => linha.trim())
+    .filter(Boolean)
+    .map((linha) => {
+      // Linhas de "carga horária" (ex: "CARGA HORÁRIA DE 30 HORAS") precisam
+      // ficar inteiras como rótulo — senão o tokenizador capturaria só o "30"
+      // e perderíamos a distinção entre a tabela de 30h e a de 40h.
+      if (/CARGA\s*HOR[AÁ]RIA/i.test(linha)) return [linha];
+      const tokens = [...linha.matchAll(regexToken)].map((m) => m[0].trim());
+      if (tokens.length >= 1) return tokens;
+      return [linha]; // não bateu nenhum padrão numérico/nível — trata a linha inteira como um rótulo (ex: subgrupo)
+    });
+}
+
 function pdfPareceEscaneado(texto) {
   // Um PDF com texto de verdade tem algum texto extraído; um PDF escaneado (só
   // imagem) devolve pouquíssimo ou nenhum. Limite propositalmente baixo (60
@@ -232,6 +257,7 @@ function parseTabelaNiveisDeTabelas(linhasTabela) {
   const niveis = [];
   let subgrupoAtual = null;
   let niveisPorIndice = null; // { indiceDaColuna: 'A'|'B'|'C'|'D' }
+  let cargaHorariaAtual = null; // detecta "CARGA HORÁRIA DE 30 HORAS" / "... 40 HORAS", para não confundir tabelas diferentes com o mesmo código de subgrupo
 
   // Reconhece "SUBGRUPO - F1", "SUBGRUPO -M1", "SUBGRUPO LF", "S - NÍVEL SUPERIOR",
   // "TF - TÉCNICO E FISCAL" etc — sempre extraindo só o código curto do subgrupo.
@@ -241,6 +267,9 @@ function parseTabelaNiveisDeTabelas(linhasTabela) {
     if (!Array.isArray(linha) || !linha.length) continue;
     const celulas = linha.map((c) => (c == null ? '' : String(c).trim()));
     const outrasVazias = celulas.slice(1).every((c) => !c);
+
+    const matchCarga = celulas[0] && celulas[0].match(/CARGA\s*HOR[AÁ]RIA\s*DE\s*(\d{2,3})\s*HORAS/i);
+    if (matchCarga) { cargaHorariaAtual = matchCarga[1] + 'h'; continue; }
 
     // Linha de subgrupo: só a primeira célula preenchida, com um rótulo (não um número).
     if (outrasVazias && celulas[0] && !/^\d/.test(celulas[0])) {
@@ -275,9 +304,10 @@ function parseTabelaNiveisDeTabelas(linhasTabela) {
         if (!nivel) return;
         const valor = paraNumero(valorStr);
         if (valor != null && valor >= 100) {
+          const rotuloBase = `${subgrupoAtual || ''}-${nivel}${classe}`.replace(/^-/, '');
           niveis.push({
-            rotulo: `${subgrupoAtual || ''}-${nivel}${classe}`.replace(/^-/, ''),
-            valor, subgrupo: subgrupoAtual, nivel, classe,
+            rotulo: cargaHorariaAtual ? `${rotuloBase} (${cargaHorariaAtual})` : rotuloBase,
+            valor, subgrupo: subgrupoAtual, nivel, classe, cargaHoraria: cargaHorariaAtual,
           });
         }
       });
@@ -290,7 +320,7 @@ function parseTabelaNiveisDeTabelas(linhasTabela) {
       if (!partes) continue;
       const valor = paraNumero(celulas[i + 1]);
       if (valor != null && valor >= 100) {
-        niveis.push({ rotulo: celulas[i].toUpperCase(), valor, ...partes });
+        niveis.push({ rotulo: celulas[i].toUpperCase(), valor, ...partes, cargaHoraria: cargaHorariaAtual });
       }
     }
   }
@@ -361,7 +391,7 @@ function parseContrachequeDeTabelas(linhasTabela) {
 }
 
 module.exports = {
-  extrairTextoPdf, extrairTabelasPdf, linhasDeTextoTabulado, pdfPareceEscaneado,
+  extrairTextoPdf, extrairTabelasPdf, linhasDeTextoTabulado, linhasDeTextoEspacado, pdfPareceEscaneado,
   parseFichaFinanceiraDeTabelas, parseTabelaNiveis, parseTabelaNiveisDeTabelas,
   parseContrachequeDeTabelas,
 };

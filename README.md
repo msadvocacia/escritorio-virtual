@@ -891,6 +891,40 @@ a ficha financeira completa** (ou os contracheques específicos de cada
 período), que já refletem a situação real de cada servidor.
 
 
+## 28. Tabela de níveis corrigida com o documento real + férias recorrentes por ano
+
+### Corrigido de verdade: leitura da tabela de níveis (Lei 2.509/2026 de Jequié)
+
+Vocês mandaram o PDF real da recomposição salarial, e ele revelou outro
+problema real: esse documento usa **espaço simples** entre as colunas (nem
+tabulação, nem tabela detectável) — um terceiro formato diferente do que já
+tínhamos visto (a ficha da Rosana usava tabulação; o `getTable()` não
+reconheceu nem um nem outro). Criei um terceiro caminho de leitura,
+específico para esse padrão de tabela em grade (nível nas colunas, classe
+nas linhas), reconhecendo números e "letra+percentual" (ex: "B (5%)") mesmo
+sem tabulação.
+
+**Testado contra o arquivo real**: 1.368 valores extraídos, **100%** com
+subgrupo/nível/classe reconhecidos (os 13 subgrupos do documento: F1, F2,
+F3, M1, M2, M3, S, TF, LF, LM, LS, SF1, SF2). Conferi 3 valores específicos
+direto contra o documento — todos bateram exato (ex: F1-A12 = R$ 1.612,36).
+
+**Segundo bug que encontrei e corrigi no mesmo teste**: o documento tem dois
+anexos com carga horária diferente (30h e 40h) usando os **mesmos códigos de
+subgrupo** — sem tratar isso, "F1-A12" aparecia duas vezes com valores
+diferentes (R$ 1.612,36 e R$ 2.149,82), uma ambiguidade real que teria
+gerado erro se o usuário clicasse no valor errado sem perceber. Corrigido:
+agora cada carga horária aparece como uma tabela separada ("Subgrupo F1
+(30h)" e "Subgrupo F1 (40h)").
+
+### Novo: férias recorrentes todo ano, sem repetir a informação
+
+No período "de/até", o campo de férias agora é um "mês de referência" — se
+você informar julho/2019, o sistema aplica o reflexo de 1/3 de férias em
+julho de **todos os anos** dentro do período (2019, 2020, 2021...), sem
+precisar cadastrar cada ano separadamente.
+
+
 ---
 
 Qualquer erro ao subir, me mostre a mensagem exata que aparece (no Render, aba "Logs")

@@ -2970,7 +2970,7 @@ function formularioRetroativoPccr(cat){
         <div class="field"><label>Data de admissão${ajuda('Quando o servidor começou a trabalhar no cargo.')}</label><input type="date" id="pccr-admissao"></div>
       </div>
       <div class="field-row">
-        <div class="field"><label>Data de protocolo${ajuda('A data em que o pedido administrativo (ou a ação judicial) foi protocolado. É a partir dela que o sistema calcula o corte de 5 anos (prescrição quinquenal) — tudo antes desse corte não entra no cálculo.')}</label><input type="date" id="pccr-protocolo"></div>
+        <div class="field"><label>Data de protocolo${ajuda('A data em que o pedido administrativo (ou a ação judicial) foi protocolado. É a partir dela que o sistema calcula o corte de 5 anos (prescrição quinquenal) — tudo antes desse corte não entra no cálculo. Vem preenchida com a data de hoje por padrão (para simular "a partir de agora, para trás") — troque se já existir um protocolo/ação com data diferente.')}</label><input type="date" id="pccr-protocolo" value="${todayISO()}"></div>
         <div class="field"><label>Data de implantação${ajuda('A data em que o benefício (novo nível ou gratificação) passou a ser efetivamente pago no contracheque. Marca o fim do período retroativo.')}</label><input type="date" id="pccr-implantacao"></div>
       </div>
     </fieldset>
@@ -3025,7 +3025,7 @@ function formularioRetroativoPccr(cat){
       </div>
       <div class="hint" id="pccr-periodo-nivel-selecionado" style="margin-bottom:8px;"></div>
       <div id="pccr-periodo-verbas-campos"></div>
-      <div class="field"><label>Mês de gozo de férias neste período (opcional)${ajuda('Se o servidor tirou férias em algum mês dentro deste período, selecione aqui — o sistema calcula o reflexo de 1/3 de férias automaticamente nesse mês. Deixe em branco se não houve férias neste período.')}</label><input type="month" id="pccr-periodo-mes-ferias"></div>
+      <div class="field"><label>Mês de férias de referência (opcional)${ajuda('Informe o mês/ano em que o servidor tira férias (ex: julho/2019). O sistema aplica o reflexo de 1/3 de férias automaticamente NESSE MÊS TODO ANO, a partir do ano informado até o fim deste período — não precisa repetir para cada ano. Deixe em branco se não houve férias neste período.')}</label><input type="month" id="pccr-periodo-mes-ferias"></div>
       <div class="hint">O reflexo de 13º salário é aplicado automaticamente em todo mês de dezembro dentro do período (e no mês da rescisão, se houver, mas isso ainda não é automático — adicione manualmente se for o caso).</div>
       <button class="btn btn-gold" style="margin-top:8px;" onclick="adicionarPeriodoPccr()">+ Adicionar período (gera os meses automaticamente)</button>
     </fieldset>
@@ -3112,10 +3112,17 @@ function adicionarPeriodoPccr(){
     if(!percentualGratificacao){ showToast('Preencha o percentual da gratificação.'); return; }
   }
 
+  const mesFeriasMM = mesFerias ? mesFerias.slice(5, 7) : null;
+  const anoFeriasReferencia = mesFerias ? parseInt(mesFerias.slice(0, 4), 10) : null;
+
   competencias.forEach(competencia=>{
     const mes = competencia.slice(5,7);
+    const anoCompetencia = parseInt(competencia.slice(0,4), 10);
     const incluir13 = mes==='12';
-    const incluirFerias = competencia===mesFerias;
+    // Férias: mesmo mês, todo ano, a partir do ano de referência informado —
+    // ex: "julho/2019" marca férias em julho/2019, julho/2020, julho/2021...
+    // até o fim do período, para demonstrar que o 1/3 foi pago todo ano.
+    const incluirFerias = mesFeriasMM!=null && mes===mesFeriasMM && anoCompetencia>=anoFeriasReferencia;
     // remove um mês já existente com a mesma competência (evita duplicar se períodos se sobrepuserem)
     PCCR_MESES = PCCR_MESES.filter(m=>m.competencia!==competencia);
     if(PCCR_MODALIDADE==='nivel'){
@@ -3219,22 +3226,26 @@ function renderTabelasNiveisAgrupadas(niveis){
     return `<div class="hint" style="margin-bottom:6px;">Não consegui separar subgrupo/nível/classe automaticamente — aqui está a lista lida, clique no valor certo para preenchê-lo no "Base devido" (o rótulo do nível não será preenchido, preencha à mão se precisar).</div>
       <table><thead><tr><th>Referência lida</th><th>Valor</th></tr></thead><tbody>${niveis.map(n=>`<tr style="cursor:pointer;" onclick="selecionarNivelPccr(null,null,null,${n.valor})"><td>${escapeHtml(n.rotulo)}</td><td>${fmtMoney(n.valor)}</td></tr>`).join('')}</tbody></table>`;
   }
-  // Agrupa por subgrupo -> nível -> classe
-  const subgrupos = {};
+  // Agrupa por (subgrupo + carga horária) -> nível -> classe — documentos com mais
+  // de um anexo (ex: 30h e 40h) usam os MESMOS códigos de subgrupo para tabelas
+  // diferentes, então a carga horária entra no agrupamento para não confundir.
+  const grupos = {};
   reconhecidos.forEach(n=>{
-    subgrupos[n.subgrupo] = subgrupos[n.subgrupo] || {};
-    subgrupos[n.subgrupo][n.nivel] = subgrupos[n.subgrupo][n.nivel] || {};
-    subgrupos[n.subgrupo][n.nivel][n.classe] = n.valor;
+    const chaveGrupo = n.subgrupo + (n.cargaHoraria? ' ('+n.cargaHoraria+')' : '');
+    grupos[chaveGrupo] = grupos[chaveGrupo] || {};
+    grupos[chaveGrupo][n.nivel] = grupos[chaveGrupo][n.nivel] || {};
+    grupos[chaveGrupo][n.nivel][n.classe] = n.valor;
   });
   const todasClasses = [...new Set(reconhecidos.map(n=>n.classe))].sort((a,b)=>a-b);
   let html = '';
-  Object.keys(subgrupos).sort().forEach(subgrupo=>{
-    const niveisDoSubgrupo = Object.keys(subgrupos[subgrupo]).sort();
-    html += `<div style="margin-bottom:14px;"><strong>Subgrupo ${escapeHtml(subgrupo)}</strong>
+  Object.keys(grupos).sort().forEach(chaveGrupo=>{
+    const niveisDoGrupo = Object.keys(grupos[chaveGrupo]).sort();
+    const subgrupoPuro = chaveGrupo.replace(/\s*\([^)]*\)\s*$/, '');
+    html += `<div style="margin-bottom:14px;"><strong>Subgrupo ${escapeHtml(chaveGrupo)}</strong>
       <table style="margin-top:4px;"><thead><tr><th>Nível</th>${todasClasses.map(c=>`<th>Classe ${c}</th>`).join('')}</tr></thead><tbody>
-      ${niveisDoSubgrupo.map(nivel=>`<tr><td><strong>${escapeHtml(nivel)}</strong></td>${todasClasses.map(c=>{
-        const valor = subgrupos[subgrupo][nivel][c];
-        return valor!=null? `<td style="cursor:pointer; color:var(--gold-dark);" onclick="selecionarNivelPccr('${subgrupo}','${nivel}',${c},${valor})" title="Clique para usar ${subgrupo}-${nivel}${c}">${fmtMoney(valor)}</td>` : '<td>—</td>';
+      ${niveisDoGrupo.map(nivel=>`<tr><td><strong>${escapeHtml(nivel)}</strong></td>${todasClasses.map(c=>{
+        const valor = grupos[chaveGrupo][nivel][c];
+        return valor!=null? `<td style="cursor:pointer; color:var(--gold-dark);" onclick="selecionarNivelPccr('${subgrupoPuro}','${nivel}',${c},${valor})" title="Clique para usar ${chaveGrupo}-${nivel}${c}">${fmtMoney(valor)}</td>` : '<td>—</td>';
       }).join('')}</tr>`).join('')}
       </tbody></table></div>`;
   });

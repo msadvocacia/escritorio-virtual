@@ -5,7 +5,7 @@ const { calcularSalarioBeneficio, calcularRMIRegraPermanente } = require('../uti
 const { obterParametrosCalculo, salvarParametrosCalculo } = require('../utils/parametrosCalculo');
 const { calcularRetroativoPccr } = require('../utils/calculoRetroativoPccr');
 const multer = require('multer');
-const { extrairTextoPdf, extrairTabelasPdf, linhasDeTextoTabulado, pdfPareceEscaneado, parseFichaFinanceiraDeTabelas, parseTabelaNiveis, parseTabelaNiveisDeTabelas, parseContrachequeDeTabelas } = require('../utils/leituraFichaFinanceira');
+const { extrairTextoPdf, extrairTabelasPdf, linhasDeTextoTabulado, linhasDeTextoEspacado, pdfPareceEscaneado, parseFichaFinanceiraDeTabelas, parseTabelaNiveis, parseTabelaNiveisDeTabelas, parseContrachequeDeTabelas } = require('../utils/leituraFichaFinanceira');
 
 // Tenta a extração por tabela detectada primeiro (mais confiável quando o PDF
 // tem linhas de grade); se nenhuma tabela for reconhecida (comum em recibos
@@ -384,8 +384,15 @@ router.post('/retroativo-pccr/importar-tabela-niveis', uploadPdf.single('arquivo
         erro: 'Este PDF parece ser escaneado (imagem, sem texto por trás) — não é possível ler automaticamente neste servidor. Use uma exportação em PDF com texto selecionável, ou preencha os níveis manualmente.',
       });
     }
-    let niveis = parseTabelaNiveisDeTabelas(await obterLinhasParaLeitura(req.file.buffer, texto));
-    if (!niveis.length) niveis = parseTabelaNiveis(texto); // fallback: texto corrido, sem tabela estruturada
+    // Tenta várias estratégias de leitura (tabela detectada, texto com tabulação,
+    // texto com espaço simples) e fica com a que reconhecer mais linhas.
+    const candidatos = [
+      parseTabelaNiveisDeTabelas(await extrairTabelasPdf(req.file.buffer)),
+      parseTabelaNiveisDeTabelas(linhasDeTextoTabulado(texto)),
+      parseTabelaNiveisDeTabelas(linhasDeTextoEspacado(texto)),
+    ];
+    let niveis = candidatos.reduce((melhor, atual) => (atual.length > melhor.length ? atual : melhor), []);
+    if (!niveis.length) niveis = parseTabelaNiveis(texto); // último recurso: texto corrido, sem noção de colunas
     if (!niveis.length) {
       return res.status(422).json({ erro: 'Não consegui reconhecer níveis e valores neste PDF. Preencha manualmente, ou peça para eu ajustar a leitura para o formato da sua tabela.' });
     }
