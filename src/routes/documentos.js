@@ -541,4 +541,116 @@ router.post('/retroativo-pccr', requireAuth, requireRole('master', 'socio', 'ass
   }
 });
 
+// Contrato de Associação de Advogado — MS Advocacia (CONTRATANTE, representada
+// por 1+ sócios escolhidos) x Associado (CONTRATADO). Texto fixo fornecido
+// pelo escritório; só as qualificações e a lista de assinaturas são dinâmicas.
+router.post('/contrato-associado', requireAuth, requireRole('master', 'socio'), async (req, res) => {
+  const { associadoId, sociosRepresentantesIds } = req.body || {};
+  const usuarios = await getCollection('usuarios', []);
+  const associado = usuarios.find((u) => u.id === associadoId && u.tipo === 'associado');
+  if (!associado) return res.status(404).json({ erro: 'Associado não encontrado.' });
+  const socios = usuarios.filter((u) => (sociosRepresentantesIds || []).includes(u.id) && u.tipo === 'socio');
+  if (!socios.length) return res.status(400).json({ erro: 'Selecione ao menos um sócio para representar o escritório.' });
+  const config = await getCollection('config', {});
+
+  const qualificacaoPessoa = (p) =>
+    `${p.nacionalidade || 'brasileiro(a)'}, ${p.estadoCivil || 'solteiro(a)'}, advogado(a) inscrito(a) na OAB/BA sob o nº ${p.oab || '—'}, inscrito(a) no CPF sob o nº ${T.formatCPF(p.cpf)}`;
+
+  const socioSingular = socios.length === 1;
+  const qualificacaoSocios = socios.map((s, i) => {
+    const conector = i === 0 ? '' : (i === socios.length - 1 ? ' e ' : ', ');
+    return `${conector}${s.nome}, ${qualificacaoPessoa(s)}`;
+  }).join('');
+
+  const enderecoEscritorio = config.endereco || 'Rua Frederico Costa, nº 124, Centro, Jequié/BA, CEP 45.200-225';
+  const qualificacaoAssociado = `${associado.nacionalidade || 'brasileiro(a)'}, ${associado.estadoCivil || 'solteiro(a)'}, advogado(a) devidamente inscrito(a) nos quadros da OAB/BA sob o nº ${associado.oab || '—'}, inscrito(a) no CPF sob o nº ${T.formatCPF(associado.cpf)}, residente e domiciliado(a) na ${associado.endereco || '—'}`;
+
+  try {
+    const SZ = null; // usa o tamanho padrão do documento (12pt), como procuração/contrato
+    const corpo = [
+      D.paragraph(D.run('CONTRATO DE ASSOCIAÇÃO DE ADVOGADO', { bold: true, sizeHalfPt: 26 }), { center: true, justify: false }),
+      D.blank(), D.blank(),
+      D.paragraph(D.run('CONTRATANTE:', { bold: true })),
+      D.blank(),
+      D.paragraph([
+        D.run('MS ADVOCACIA', { bold: true }),
+        D.run(`, atividade advocatícia individual exercida sob denominação comercial, com endereço profissional na ${enderecoEscritorio}, neste ato representada por ${socioSingular ? 'seu sócio' : 'seus sócios'}, `),
+        D.run(qualificacaoSocios),
+        D.run('.'),
+      ]),
+      D.blank(),
+      D.paragraph(D.run('CONTRATADO(A) ASSOCIADO(A):', { bold: true })),
+      D.blank(),
+      D.paragraph([
+        D.run(associado.nome, { bold: true }),
+        D.run(`, ${qualificacaoAssociado}.`),
+      ]),
+      D.blank(),
+      D.paragraph(D.run('As partes acima qualificadas têm, entre si, justo e contratado o presente Contrato de Associação de Advogado, mediante as seguintes cláusulas e condições:')),
+      D.blank(),
+      D.paragraph(D.run('CLÁUSULA PRIMEIRA – DA NATUREZA DA ASSOCIAÇÃO', { bold: true })),
+      D.blank(),
+      D.paragraph(D.run('1.1. O presente contrato tem por objeto a associação do(a) CONTRATADO(A) para prestação de serviços profissionais advocatícios em regime de cooperação com o escritório CONTRATANTE.')),
+      D.paragraph(D.run('1.2. Fica expressamente acordado que a presente relação é de ASSOCIAÇÃO, não constituindo sociedade de advogados de qualquer espécie, nem outorgando ao(à) CONTRATADO(A) a qualidade de sócio(a) patrimonial ou de serviço do escritório.')),
+      D.paragraph(D.run('1.3. A presente contratação é celebrada sem qualquer exclusividade, subordinação jurídica ou controle de jornada, não gerando, sob nenhuma hipótese, vínculo empregatício entre as partes, em estrito cumprimento ao art. 39 do Regulamento Geral da OAB e ao Provimento nº 169/2015 do CFOAB.')),
+      D.blank(),
+      D.paragraph(D.run('1.4. O(A) CONTRATADO(A) desempenhará suas funções com total autonomia técnica e profissional, devendo zelar pelo estrito cumprimento do Código de Ética e Disciplina da OAB.')),
+      D.blank(),
+      D.paragraph(D.run('CLÁUSULA SEGUNDA – DA DIVISÃO DOS HONORÁRIOS', { bold: true })),
+      D.blank(),
+      D.paragraph(D.run('Os honorários advocatícios, contratuais e/ou sucumbenciais, decorrentes das causas em que houver atuação do(a) CONTRATADO(A), serão partilhados da seguinte forma:')),
+      D.blank(),
+      D.paragraph(D.run('2.1. Clientes captados pelo(a) CONTRATADO(A) (Regra Geral):')),
+      D.paragraph(D.run('Nas demandas em que o cliente for captado ou trazido diretamente pelo(a) CONTRATADO(A), os honorários serão divididos na proporção de 70% (setenta por cento) para o(a) CONTRATADO(A) e 30% (trinta por cento) para o escritório CONTRATANTE.')),
+      D.blank(),
+      D.paragraph(D.run('2.2. Demandas da Área Criminal:')),
+      D.paragraph(D.run('Nas causas da área criminal, a divisão dos honorários observará os seguintes critérios:')),
+      D.paragraph(D.run('a) Quando o cliente for captado diretamente pelo(a) CONTRATADO(A), os honorários serão divididos na proporção de 70% (setenta por cento) para o(a) CONTRATADO(A) e 30% (trinta por cento) para o escritório CONTRATANTE;')),
+      D.paragraph(D.run('b) Quando o cliente for indicado pelo escritório CONTRATANTE ao(à) CONTRATADO(A), os honorários serão divididos na proporção de 60% (sessenta por cento) para o(a) CONTRATADO(A) e 40% (quarenta por cento) para o escritório CONTRATANTE;')),
+      D.paragraph(D.run('c) Quando houver atuação conjunta entre o escritório CONTRATANTE e o(a) CONTRATADO(A) na condução da causa criminal, os honorários serão divididos igualmente, na proporção de 50% (cinquenta por cento) para cada parte.')),
+      D.blank(),
+      D.paragraph(D.run('2.3. Atuação Conjunta em Demais Áreas (Causas de Interesse Mútuo):')),
+      D.paragraph(D.run('Nas demandas de outras áreas em que ambas as partes decidirem, em comum acordo, atuar conjuntamente, a divisão da cota-parte dos advogados será de 50% (cinquenta por cento) para cada um, ressalvada a taxa institucional do escritório de 20% (vinte por cento) incidente sobre o valor total dos honorários.')),
+      D.paragraph(D.run('Parágrafo Único (Exemplo de cálculo):')),
+      D.paragraph(D.run('Em uma causa com honorários correspondentes a 100% do valor recebido, serão inicialmente destinados 20% (vinte por cento) ao escritório CONTRATANTE, a título de taxa institucional. Os 80% (oitenta por cento) restantes serão divididos igualmente entre o(a) advogado(a) do escritório responsável pela atuação e o(a) CONTRATADO(A), cabendo 40% (quarenta por cento) para cada um.')),
+      D.blank(),
+      D.paragraph(D.run('CLÁUSULA TERCEIRA – DAS DESPESAS', { bold: true })),
+      D.blank(),
+      D.paragraph(D.run('3.1. As despesas administrativas gerais do escritório (aluguel, internet, sistemas de gestão, pessoal de apoio) são de responsabilidade exclusiva do CONTRATANTE.')),
+      D.paragraph(D.run('3.2. As despesas específicas para o andamento das causas (custas processuais, taxas, emolumentos, deslocamentos para diligências externas) serão custeadas diretamente pelo cliente. Caso necessitem ser adiantadas, as partes pactuarão previamente a forma de rateio ou reembolso.')),
+      D.blank(),
+      D.paragraph(D.run('CLÁUSULA QUARTA – DOS DIREITOS, DEVERES E RESPONSABILIDADE ÉTICA', { bold: true })),
+      D.blank(),
+      D.paragraph(D.run('4.1. O(A) CONTRATADO(A) responde civil e eticamente por seus atos omissivos ou comissivos no exercício da profissão, devendo indenizar regressivamente o CONTRATANTE caso este sofra prejuízos por culpa ou dolo exclusivo do(a) associado(a).')),
+      D.paragraph(D.run('4.2. É garantido ao(à) CONTRATADO(A) o livre acesso às dependências do escritório para o exercício de suas atividades, reuniões com clientes associados e utilização da infraestrutura disponibilizada.')),
+      D.paragraph(D.run('4.3. Ambas as partes comprometem-se a manter sigilo absoluto sobre os dados, documentos e estratégias dos clientes do escritório, em respeito ao sigilo profissional determinado pela OAB.')),
+      D.blank(),
+      D.paragraph(D.run('CLÁUSULA QUINTA – DA VIGÊNCIA E RESCISÃO', { bold: true })),
+      D.blank(),
+      D.paragraph(D.run('5.1. Este contrato entra em vigor na data de sua assinatura e terá prazo de vigência indeterminado.')),
+      D.paragraph(D.run('5.2. Qualquer uma das partes poderá rescindir o presente instrumento a qualquer momento, mediante aviso prévio por escrito com antecedência mínima de 30 (trinta) dias.')),
+      D.paragraph(D.run('5.3. Em caso de rescisão, o(a) CONTRATADO(A) permanecerá com o direito de receber os honorários futuros decorrentes dos processos em que atuou ou que trouxe ao escritório, nas exatas proporções estipuladas na Cláusula Segunda, à medida que forem pagos pelos clientes ou liberados pelo Judiciário.')),
+      D.paragraph(D.run('E, por estarem assim justos e contratados, assinam o presente instrumento em 2 (duas) vias de igual teor e forma.')),
+      D.blank(), D.blank(),
+      D.paragraph(D.run(`Jequié/BA, ${T.fmtDateExtenso(todayISO())}.`), { indentCm: 2, justify: false }),
+      D.blank(), D.blank(),
+      D.paragraph(D.run('_____________________________________________________________'), { center: true, justify: false }),
+      D.paragraph(D.run('MS ADVOCACIA', { bold: true }), { center: true, justify: false }),
+      D.paragraph(D.run('Contratante (Representante Legal)'), { center: true, justify: false }),
+      D.blank(),
+      D.paragraph(D.run('_____________________________________________________________'), { center: true, justify: false }),
+      D.paragraph(D.run(associado.nome, { bold: true }), { center: true, justify: false }),
+      D.paragraph(D.run('Contratado(a) Associado(a)'), { center: true, justify: false }),
+    ].join('');
+
+    const buffer = gerarDocxComCorpo(corpo, { margemInferiorTwips: 1843 });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="Contrato de Associacao - ${associado.nome.replace(/[^\w\- ]/g, '')}.docx"`);
+    res.send(buffer);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ erro: 'Não foi possível gerar o documento.' });
+  }
+});
+
 module.exports = router;

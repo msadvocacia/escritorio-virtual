@@ -1021,6 +1021,24 @@ Também corrigi o tamanho da nota do IRRF para exatamente 10pt (confirmei no
 XML: `sz=20`, que é 10pt).
 
 
+## 33. Novo: Contrato de Associação de Advogado
+
+Adicionado exatamente como pedido: um ícone 📄 na lista de "Usuários", ao
+lado de editar/redefinir senha, que aparece **só nas linhas de associado**.
+Ao clicar, abre uma tela para escolher qual(is) sócio(s) representarão a
+MS ADVOCACIA como CONTRATANTE — pode escolher um ou vários — e gera o
+documento no timbrado, usando o texto exato que vocês passaram.
+
+- **CONTRATANTE**: MS ADVOCACIA, com o endereço cadastrado em
+  Configurações, representada pelo(s) sócio(s) escolhido(s) (qualificação
+  completa: nacionalidade, estado civil, OAB, CPF).
+- **CONTRATADO(A) ASSOCIADO(A)**: dados do próprio associado selecionado.
+- Testei com 1 sócio e com 2 sócios representando — a frase se ajusta
+  sozinha ("representada por seu sócio" / "representada por seus sócios",
+  com "e" entre eles quando há mais de um) e todo o texto das 5 cláusulas
+  saiu idêntico ao modelo que vocês enviaram.
+
+
 ---
 
 Qualquer erro ao subir, me mostre a mensagem exata que aparece (no Render, aba "Logs")

@@ -1121,6 +1121,37 @@ async function redefinirSenha(id){
     showToast('Senha redefinida. O usuário deverá trocá-la no próximo acesso.');
   }catch(e){ showToast(e.message || 'Não foi possível redefinir a senha.'); }
 }
+function abrirGerarContratoAssociado(associadoId, nomeAssociado){
+  const socios = DB.usuarios.filter(u=>u.tipo==='socio');
+  if(!socios.length){ showToast('Nenhum sócio cadastrado para representar o escritório.'); return; }
+  const body = `
+    <div class="hint" style="margin-bottom:10px;">Gerar o Contrato de Associação de <strong>${escapeHtml(nomeAssociado)}</strong> com o escritório. Selecione qual(is) sócio(s) representará(ão) a MS ADVOCACIA como CONTRATANTE neste contrato.</div>
+    <div class="field"><label>Sócio(s) representante(s)</label>
+      <div style="display:flex; flex-direction:column; gap:6px; margin-top:6px;">
+        ${socios.map(s=>`<label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" class="chk-socio-representante" value="${s.id}" style="width:auto;"> ${escapeHtml(s.nome)} (OAB/BA ${escapeHtml(s.oab)||'—'})</label>`).join('')}
+      </div>
+    </div>`;
+  openModal('Gerar contrato de associação', body, async ()=>{
+    const sociosRepresentantesIds = Array.from(document.querySelectorAll('.chk-socio-representante:checked')).map(el=>el.value);
+    if(!sociosRepresentantesIds.length){ showToast('Selecione ao menos um sócio.'); return; }
+    try{
+      const resp = await fetch('/api/documentos/contrato-associado', {
+        method:'POST',
+        headers: {'Content-Type':'application/json', 'Authorization':'Bearer '+AUTH_TOKEN},
+        body: JSON.stringify({ associadoId, sociosRepresentantesIds }),
+      });
+      if(!resp.ok){ const err = await resp.json().catch(()=>({})); throw new Error(err.erro || 'Não foi possível gerar o documento.'); }
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `Contrato de Associacao - ${nomeAssociado}.docx`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+      closeModal();
+      showToast('Contrato gerado.');
+    }catch(e){ showToast(e.message || 'Não foi possível gerar o documento.'); }
+  });
+}
 async function toggleAtivoUsuario(id){
   try{
     await apiFetch('/api/usuarios/'+id+'/toggle-ativo', { method:'POST' });
@@ -1145,6 +1176,7 @@ function renderUsuarios(){
       <td><span class="tag tag-${u.ativo!==false?'ativo':'inativo'}">${u.ativo!==false?'Ativo':'Inativo'}</span></td>
       <td><div class="row-actions">
         ${u.tipo!=='master'? `<button class="icon-btn" onclick="openUsuarioForm('${u.id}')" title="Editar">✎</button>`:''}
+        ${u.tipo==='associado'? `<button class="icon-btn" onclick="abrirGerarContratoAssociado('${u.id}','${escapeHtml(u.nome)}')" title="Gerar contrato de associação">📄</button>`:''}
         ${u.tipo!=='master'? `<button class="icon-btn" onclick="redefinirSenha('${u.id}')" title="Redefinir senha">🔑</button>`:''}
         ${u.tipo!=='master'? `<button class="icon-btn" onclick="toggleAtivoUsuario('${u.id}')" title="Ativar/Inativar">⏻</button>`:''}
         ${u.tipo!=='master' && isMaster()? `<button class="icon-btn danger" onclick="excluirUsuario('${u.id}','${escapeHtml(u.nome)}')" title="Excluir">🗑</button>`:''}
