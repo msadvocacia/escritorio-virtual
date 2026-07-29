@@ -20,9 +20,10 @@ function cmParaTwips(cm) {
 }
 
 /** Uma "rodada" de texto (w:r), com negrito e tamanho de fonte opcionais. */
-function run(texto, { bold = false, sizeHalfPt = null } = {}) {
+function run(texto, { bold = false, italic = false, sizeHalfPt = null } = {}) {
   const partes = [];
   if (bold) partes.push('<w:b/>');
+  if (italic) partes.push('<w:i/>');
   if (sizeHalfPt) partes.push(`<w:sz w:val="${sizeHalfPt}"/><w:szCs w:val="${sizeHalfPt}"/>`);
   const rPr = partes.length ? `<w:rPr>${partes.join('')}</w:rPr>` : '';
   return `<w:r>${rPr}<w:t xml:space="preserve">${xmlEscape(texto)}</w:t></w:r>`;
@@ -111,25 +112,27 @@ function comDestaques(texto, termos) {
  * array de células — cada célula pode ser uma string simples ou um array de
  * runs já prontos (para poder deixar só parte do conteúdo em negrito).
  */
-function tabela(cabecalhos, linhas, { largurasCm = null } = {}) {
+function tabela(cabecalhos, linhas, { largurasCm = null, sizeHalfPt = null, cabecalhoVertical = false } = {}) {
   const borda = '<w:tcBorders>' + ['top', 'left', 'bottom', 'right'].map((lado) =>
     `<w:${lado} w:val="single" w:sz="4" w:space="0" w:color="CCCCCC"/>`).join('') + '</w:tcBorders>';
 
-  function celula(conteudo, { bold = false, larguraCm = null } = {}) {
+  function celula(conteudo, { bold = false, larguraCm = null, vertical = false } = {}) {
     let runsXml;
     if (Array.isArray(conteudo)) {
       runsXml = conteudo.join('');
     } else if (typeof conteudo === 'string' && conteudo.startsWith('<w:r')) {
       runsXml = conteudo; // já é XML de um run pronto
     } else {
-      runsXml = run(conteudo, { bold });
+      runsXml = run(conteudo, { bold, sizeHalfPt });
     }
     const tcW = larguraCm != null ? `<w:tcW w:w="${cmParaTwips(larguraCm)}" w:type="dxa"/>` : '<w:tcW w:w="0" w:type="auto"/>';
-    return `<w:tc><w:tcPr>${tcW}${borda}<w:vAlign w:val="center"/></w:tcPr><w:p><w:pPr><w:spacing w:line="240" w:lineRule="auto"/></w:pPr>${runsXml}</w:p></w:tc>`;
+    const direcao = vertical ? '<w:textDirection w:val="btLr"/>' : '';
+    return `<w:tc><w:tcPr>${tcW}${borda}${direcao}<w:vAlign w:val="center"/></w:tcPr><w:p><w:pPr><w:spacing w:line="240" w:lineRule="auto"/>${vertical ? '<w:jc w:val="center"/>' : ''}</w:pPr>${runsXml}</w:p></w:tc>`;
   }
 
   const grid = largurasCm ? `<w:tblGrid>${largurasCm.map((c) => `<w:gridCol w:w="${cmParaTwips(c)}"/>`).join('')}</w:tblGrid>` : '';
-  const linhaCabecalho = `<w:tr>${cabecalhos.map((h, i) => celula(h, { bold: true, larguraCm: largurasCm ? largurasCm[i] : null })).join('')}</w:tr>`;
+  const trPrCabecalho = cabecalhoVertical ? '<w:trPr><w:trHeight w:val="1600" w:hRule="atLeast"/></w:trPr>' : '';
+  const linhaCabecalho = `<w:tr>${trPrCabecalho}${cabecalhos.map((h, i) => celula(h, { bold: true, larguraCm: largurasCm ? largurasCm[i] : null, vertical: cabecalhoVertical })).join('')}</w:tr>`;
   const linhasXml = linhas.map((linha) =>
     `<w:tr>${linha.map((c, i) => celula(c, { larguraCm: largurasCm ? largurasCm[i] : null })).join('')}</w:tr>`
   ).join('');

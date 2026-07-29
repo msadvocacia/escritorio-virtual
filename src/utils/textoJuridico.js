@@ -75,9 +75,13 @@ function fmtMoney(v) {
   v = Number(v) || 0;
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
+function fmtNumero(v) {
+  v = Number(v) || 0;
+  return v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
 
 module.exports = {
   onlyDigits, formatCPF, fmtDateExtenso, numberToWordsPT, valorPorExtenso, enderecoCompleto,
   qualificacaoCliente, qualificacaoClienteSemEndereco, qualificacaoAdvogado, qualificacaoAdvogadoSemEndereco,
-  enderecoAdvogado, fmtMoney,
+  enderecoAdvogado, fmtMoney, fmtNumero,
 };

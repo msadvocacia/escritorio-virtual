@@ -925,6 +925,69 @@ julho de **todos os anos** dentro do período (2019, 2020, 2021...), sem
 precisar cadastrar cada ano separadamente.
 
 
+## 29. Corrigidos os dois problemas dos prints: detalhamento por verba + documento Word
+
+### O que estava acontecendo
+
+Os dois prints mostraram exatamente o problema: a tabela na tela só mostrava
+"Total do mês", sem separar quanto veio de cada verba (Anuênio, Insalubridade,
+Gratificação) — o cálculo ESTAVA certo por trás (conferi: R$ 2.499,43 é
+exatamente base+anuênio 28%+insalubridade 20%+gratificação 50%), só não
+aparecia detalhado. E não existia nenhum botão para gerar o documento.
+
+### Corrigido
+
+1. **Tabela na tela agora mostra uma coluna por verba** usada no cálculo,
+   além da diferença de base — dá para conferir de onde vem cada centavo do
+   total antes de gerar o documento.
+2. **Botão "Gerar documento (Word, timbrado)"** — agora existe, logo abaixo
+   do resumo A/B/C. Gera o .docx no timbrado, com a tabela completa (uma
+   coluna por verba, igual à tela) e o resumo A/B/C formatado.
+
+### Bug que encontrei e corrigi durante o teste
+
+A tabela desse documento tem muitas colunas (competência + 2 bases + cada
+verba + 2 reflexos + total). Na primeira versão que gerei, os valores
+quebravam de forma feia dentro das células (ex: "R$ 353,4" numa linha e "6"
+na linha de baixo). Corrigido: esse documento específico agora é gerado em
+**folha paisagem** (mais larga), o que deu espaço suficiente — testei de
+novo e todos os valores ficaram numa linha só, legíveis.
+
+### Uma limitação que preciso ser honesto sobre
+
+A ferramenta que uso para conferir visualmente os documentos não carregou
+imagens nesta sessão (tentei várias vezes) — então **não consegui confirmar
+visualmente se o timbrado (logo, cabeçalho, rodapé) continua bem posicionado
+na orientação paisagem**. Analisei o XML do timbrado e os elementos gráficos
+são posicionados de forma relativa à margem (não à borda absoluta da
+página), o que é um bom sinal de que devem continuar alinhados — mas não é
+uma confirmação visual de verdade. **Recomendo abrir o primeiro documento
+gerado e conferir se o timbrado aparece correto antes de usar em produção**;
+se tiver algum problema visual, me avisa que eu ajusto.
+
+Testei e confirmei com certeza (isso não depende de imagem): todos os
+valores da tabela, a aritmética do resumo A/B/C, e que o texto não quebra
+mais.
+
+
+## 30. Cabe em retrato, sem paisagem — reproduzindo o truque do modelo de referência
+
+Você tinha razão: o modelo "RM Cálculos" cabe tudo em retrato porque usa dois
+truques que eu não tinha copiado: **cabeçalhos das colunas na vertical**
+(economiza largura) e **os valores dentro da tabela não mostram "R$"** (só o
+número — o "R$" fica implícito, já que é óbvio que é dinheiro).
+
+Reproduzi os dois: adicionei suporte a cabeçalho vertical nas tabelas
+(girado 90°, dentro do próprio Word), criei um formato de número sem "R$"
+para usar dentro da tabela (mantendo "R$" no resumo A/B/C, onde não há
+aperto de espaço), e reduzi a fonte da tabela para 8pt. Removi a orientação
+paisagem do passo anterior — não precisa mais.
+
+Testei de novo com o mesmo caso: **todos os valores numa linha só, sem
+quebrar, em página retrato normal** — confirmei pelo texto extraído do PDF
+gerado.
+
+
 ---
 
 Qualquer erro ao subir, me mostre a mensagem exata que aparece (no Render, aba "Logs")

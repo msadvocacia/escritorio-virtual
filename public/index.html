@@ -3271,22 +3271,32 @@ async function calcularRetroativoPccrUI(){
   const regimePrevidenciario = document.getElementById('pccr-regime').value;
   const box = document.getElementById('pccr-resultado');
   box.innerHTML = '<div class="empty">Calculando...</div>';
+  const payload = { modalidade: PCCR_MODALIDADE, dataProtocolo, meses: PCCR_MESES, irrfAtivo, irrfPercentual, contribuicaoPatronalPercentual, regimePrevidenciario };
   try{
-    const r = await apiFetch('/api/calculos/retroativo-pccr', { method:'POST', body: JSON.stringify({
-      modalidade: PCCR_MODALIDADE, dataProtocolo, meses: PCCR_MESES, irrfAtivo, irrfPercentual, contribuicaoPatronalPercentual, regimePrevidenciario
-    })});
-    const linhasHtml = r.linhas.map(l=>`<tr ${l.cortadoPorPrescricao?'style="opacity:.5;"':''}>
+    const r = await apiFetch('/api/calculos/retroativo-pccr', { method:'POST', body: JSON.stringify(payload) });
+    PCCR_ULTIMO_CALCULO = payload; // guarda para o botão de gerar documento
+    // Nomes de verbas realmente usados (para colunas dinâmicas na tabela)
+    const nomesVerbas = PCCR_MODALIDADE==='nivel' ? [...new Set(r.linhas.flatMap(l=>(l.detalheVerbas||[]).map(v=>v.nome)))] : [];
+    const linhasHtml = r.linhas.map(l=>{
+      const celulasVerbas = nomesVerbas.map(nome=>{
+        const v = (l.detalheVerbas||[]).find(x=>x.nome===nome);
+        return `<td>${v? fmtMoney(v.valor) : '—'}</td>`;
+      }).join('');
+      return `<tr ${l.cortadoPorPrescricao?'style="opacity:.5;"':''}>
       <td>${l.competencia}${l.cortadoPorPrescricao?' (prescrito)':''}</td>
       <td>${fmtMoney(l.basePago)}</td>
       <td>${l.baseDevido!=null? fmtMoney(l.baseDevido) : (l.valorGratificacao!=null? fmtMoney(l.valorGratificacao)+' (grat.)' : '—')}</td>
+      <td>${l.diferencaBase!=null? fmtMoney(l.diferencaBase) : '—'}</td>
+      ${celulasVerbas}
       <td>${l.reflexo13? fmtMoney(l.reflexo13):'—'}</td>
       <td>${l.reflexoFerias? fmtMoney(l.reflexoFerias):'—'}</td>
       <td><strong>${fmtMoney(l.totalMes)}</strong></td>
-    </tr>`).join('');
+    </tr>`;
+    }).join('');
     box.innerHTML = `
       <div class="hint" style="margin-bottom:8px;">Data-limite de prescrição quinquenal: ${fmtDate(r.competenciaLimitePrescricao+'-01')}. Meses antes dessa data aparecem esmaecidos e zerados. Regime previdenciário usado: ${r.regimePrevidenciario==='rpps'?'RPPS (previdência própria)':'RGPS (INSS nacional)'}.</div>
       ${(r.avisos||[]).map(a=>`<div class="hint" style="background:#fff3cd; border:1px solid #ffe08a; padding:8px; border-radius:6px; margin-bottom:8px; color:#7a5c00;">⚠️ ${escapeHtml(a)}</div>`).join('')}
-      <table><thead><tr><th>Competência</th><th>Base pago</th><th>Base devido / Gratificação</th><th>Reflexo 13º</th><th>Reflexo 1/3 férias</th><th>Total do mês</th></tr></thead><tbody>${linhasHtml}</tbody></table>
+      <div style="overflow-x:auto;"><table><thead><tr><th>Competência</th><th>Base pago</th><th>Base devido / Gratificação</th><th>Diferença base</th>${nomesVerbas.map(n=>`<th>${escapeHtml(n)}</th>`).join('')}<th>Reflexo 13º</th><th>Reflexo 1/3 férias</th><th>Total do mês</th></tr></thead><tbody>${linhasHtml}</tbody></table></div>
       <div class="panel" style="margin-top:14px;">
         <h4>A — Proventos</h4>
         <div class="irow"><span>Subtotal salarial</span><strong>${fmtMoney(r.resumo.subtotalSalarial)}</strong></div>
@@ -3303,8 +3313,39 @@ async function calcularRetroativoPccrUI(){
         <div class="irow"><span>+ IRRF retido</span><strong>${r.resumo.irrfAtivo? fmtMoney(r.resumo.somaIrrf) : 'R$ 0,00'}</strong></div>
         <div class="irow"><span>+ Contribuição previdenciária patronal (${r.resumo.percentualPatronal}%)</span><strong>${fmtMoney(r.resumo.contribuicaoPatronal)}</strong></div>
         <div class="irow" style="border-top:1px solid var(--line); padding-top:6px; margin-top:6px;"><span>Valor total devido (C)</span><strong style="color:var(--gold-dark); font-size:18px;">${fmtMoney(r.resumo.totalC)}</strong></div>
-      </div>`;
+      </div>
+      <button class="btn btn-gold" style="margin-top:14px;" onclick="gerarDocumentoPccr()">📄 Gerar documento (Word, timbrado)</button>
+      <div id="pccr-doc-status" style="margin-top:8px;"></div>`;
   }catch(e){ box.innerHTML = `<div class="empty">${escapeHtml(e.message||'Não foi possível calcular.')}</div>`; }
+}
+let PCCR_ULTIMO_CALCULO = null;
+async function gerarDocumentoPccr(){
+  if(!PCCR_ULTIMO_CALCULO){ showToast('Calcule primeiro.'); return; }
+  const status = document.getElementById('pccr-doc-status');
+  status.innerHTML = '<div class="empty">Gerando documento...</div>';
+  try{
+    const cabecalho = {
+      nome: document.getElementById('pccr-nome').value,
+      matricula: document.getElementById('pccr-matricula').value,
+      funcao: document.getElementById('pccr-funcao').value,
+      processo: document.getElementById('pccr-processo').value,
+      admissao: document.getElementById('pccr-admissao').value,
+      implantacao: document.getElementById('pccr-implantacao').value,
+    };
+    const resp = await fetch('/api/documentos/retroativo-pccr', {
+      method:'POST',
+      headers: {'Content-Type':'application/json', 'Authorization':'Bearer '+AUTH_TOKEN},
+      body: JSON.stringify({ ...PCCR_ULTIMO_CALCULO, cabecalho }),
+    });
+    if(!resp.ok){ const err = await resp.json().catch(()=>({})); throw new Error(err.erro || 'Não foi possível gerar o documento.'); }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `Calculo Retroativo - ${cabecalho.nome||'servidor'}.docx`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    status.innerHTML = '<div class="hint">Documento gerado.</div>';
+  }catch(e){ status.innerHTML = `<div class="empty">${escapeHtml(e.message||'Não foi possível gerar o documento.')}</div>`; }
 }
 
 function renderFinanceiro(){
