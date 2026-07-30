@@ -1102,6 +1102,37 @@ sozinho com um clique — o campo continua digitável normalmente para
 qualquer outro local.
 
 
+## 37. Bug grave corrigido: nada estava salvando (prazo, audiência, processo)
+
+Encontrei a causa raiz, e preciso ser totalmente transparente: **fui eu quem
+causou esse bug**, numa edição de algumas rodadas atrás. Ao adicionar a
+função de upload de arquivo (`apiFetchUpload`), sem querer **apaguei** a
+função `uid()` — que gera o identificador único de qualquer registro novo
+(prazo, audiência, processo, honorário, despesa, lembrete, etc.) — no lugar
+de só adicionar a nova função ao lado dela.
+
+Sem a `uid()`, ao clicar em "Salvar" num registro novo, o sistema tentava
+gerar o ID, encontrava um erro interno (`uid is not defined`) e **parava
+silenciosamente** — sem mensagem de erro visível, sem gravar nada, o que
+bate exatamente com o que você descreveu ("clico em salvar e não faz nada").
+Registros já existentes (editar) não eram afetados, só a criação de novos.
+
+### Como encontrei e confirmei
+
+Não dava para achar isso só lendo o código — o JavaScript não tinha erro de
+sintaxe, e o problema só aparecia na hora real de clicar. Usei uma ferramenta
+de navegador automatizado (Playwright) para simular um usuário de verdade:
+logar, abrir "Novo Prazo", preencher e clicar em Salvar — e capturar
+qualquer erro que aparecesse no console do navegador. Foi assim que apareceu
+o erro exato. Corrigido (a função `uid()` foi restaurada) e testei de novo
+com o mesmo robô: agora o prazo salva de verdade, com a requisição ao
+servidor completando corretamente.
+
+Como a mesma função é usada por praticamente todo "criar novo" no sistema,
+essa correção resolve os três casos que você reportou (prazo, audiência,
+processo) de uma vez.
+
+
 ---
 
 Qualquer erro ao subir, me mostre a mensagem exata que aparece (no Render, aba "Logs")

@@ -594,6 +594,7 @@ async function apiFetch(path, options={}){
   return body;
 }
 
+function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
 async function apiFetchUpload(path, formData){
   const headers = {};
   if(AUTH_TOKEN) headers['Authorization'] = 'Bearer '+AUTH_TOKEN;
