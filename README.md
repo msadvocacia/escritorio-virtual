@@ -1133,6 +1133,25 @@ essa correção resolve os três casos que você reportou (prazo, audiência,
 processo) de uma vez.
 
 
+## 38. Parágrafo único condicional na Cláusula 6ª do contrato
+
+Adicionado exatamente como pedido: logo abaixo da Cláusula 6ª (Dos
+Honorários), o contrato agora inclui automaticamente um "PARÁGRAFO ÚNICO" —
+o texto muda sozinho conforme o tipo de valor escolhido na hora de gerar o
+contrato:
+
+- **Percentual**: usa o texto de honorários ad exitum sobre o proveito
+  econômico, com o percentual exato que você escolheu (ex: 20%, 30%)
+  inserido automaticamente na frase.
+- **Valor fixo**: usa o texto sobre honorários de êxito incidindo sobre
+  valores levantados/liberados, com a menção ao Mandado de Segurança e à
+  ausência de sucumbência.
+
+Testei os dois cenários gerando o contrato de verdade e conferindo o texto
+completo — bate exatamente com o que você passou, incluindo o percentual
+dinâmico.
+
+
 ---
 
 Qualquer erro ao subir, me mostre a mensagem exata que aparece (no Render, aba "Logs")

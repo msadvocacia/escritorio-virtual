@@ -212,6 +212,11 @@ router.post('/contrato', requireAuth, requireRole('master', 'socio', 'associado'
         ...D.comDestaques('Cláusula 6ª. O CONTRATANTE, como contraprestação aos serviços jurídicos prestados, pagará ao CONTRATADO, a título de pro labore, ', TERMOS_DESTAQUE),
         ...runsValor, ...runsDivisao, D.run('.'),
       ]),
+      D.paragraph(
+        tipoValor === 'percentual'
+          ? D.comDestaques(`PARÁGRAFO ÚNICO. A título de honorários advocatícios contratuais (ad exitum), o(a) CONTRATANTE pagará ao(à) CONTRATADO(A) o percentual de ${parseFloat(percentual) || 0}% sobre o proveito econômico total obtido na demanda, seja ele decorrente de condenação principal, acordos, indenizações, parcelas vencidas e vincendas, bem como sobre valores recebidos a título de multas cominatórias (astreintes), juros e correções monetárias.`, TERMOS_DESTAQUE)
+          : D.comDestaques('PARÁGRAFO ÚNICO. Fica estipulado que os honorários de êxito incidirão sobre todo e qualquer valor levantado ou liberado em favor do(a) CONTRATANTE, inclusive aqueles resultantes de multas diárias por descumprimento de obrigação de fazer ou não fazer (astreintes) impostas no bojo do Mandado de Segurança, haja vista a inexistência de honorários de sucumbência nesta modalidade de ação.', TERMOS_DESTAQUE)
+      ),
       D.blank(),
       D.paragraph(D.comDestaques('Cláusula 7ª. Os honorários de sucumbência pertencem ao CONTRATADO e não se confundem com os honorários contratuais aqui tratados.', TERMOS_DESTAQUE)),
       D.paragraph(D.comDestaques('Parágrafo único. Caso haja morte ou incapacidade civil do CONTRATADO, seus sucessores ou representante(s) legal(s) receberão os honorários na proporção do trabalho realizado.', TERMOS_DESTAQUE)),
