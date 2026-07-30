@@ -1071,6 +1071,37 @@ agora aparece em caixa alta e negrito, igual ao padrão já usado para o
 sócio representante do CONTRATANTE. Testei e confirmei no XML gerado.
 
 
+## 36. Três correções: negrito completo no contrato, visibilidade entre sócios, atalho de audiência
+
+### Negrito completo no Contrato de Associação
+
+Em vez de marcar termo por termo (o que sempre corre o risco de esquecer
+algum), criei uma função que detecta **automaticamente** qualquer trecho em
+caixa alta e qualquer percentual, e aplica negrito neles — assim cobre
+CONTRATANTE, CONTRATADO(A), ASSOCIAÇÃO, OAB, CFOAB e qualquer outra sigla em
+caixa alta que apareça no texto, além de todos os percentuais (antes só
+alguns estavam em negrito, agora são todos: 70%, 30%, 60%, 40%, 50%, 20%,
+100%, 80%). Testei e conferi no XML gerado — bate.
+
+No bloco de assinatura, "MS ADVOCACIA" e o nome do associado (agora em caixa
+alta) aparecem em negrito, como pedido.
+
+### Corrigido: sócio não via o outro sócio
+
+Encontrei a causa: o backend já mandava os dados certos (sócio vê outros
+sócios e associados, só não vê master) — o bug estava só no frontend, que
+descartava essa informação por engano e filtrava para mostrar só
+associados. Corrigido e testado direto pela API: login como sócio agora
+mostra os outros sócios normalmente.
+
+### Atalho para local de audiência por videoconferência
+
+No formulário de audiência, abaixo do campo "Local", agora tem um link
+clicável "VIDEOCONFERÊNCIA, através de SALA VIRTUAL" que preenche o campo
+sozinho com um clique — o campo continua digitável normalmente para
+qualquer outro local.
+
+
 ---
 
 Qualquer erro ao subir, me mostre a mensagem exata que aparece (no Render, aba "Logs")

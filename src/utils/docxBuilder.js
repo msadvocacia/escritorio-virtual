@@ -107,6 +107,40 @@ function comDestaques(texto, termos) {
 }
 
 /**
+ * Para documentos onde a regra é "tudo em caixa alta fica em negrito, e todo
+ * valor/percentual também" (em vez de uma lista fixa de termos) — detecta por
+ * padrão em vez de precisar listar cada palavra. Usado no Contrato de
+ * Associação, por exemplo.
+ */
+function comCaixaAltaEValores(texto) {
+  const regexCaixaAlta = /[A-ZÀÁÂÃÄÅÇÈÉÊËÌÍÎÏÑÒÓÔÕÖÙÚÛÜÝ]{2,}(?:\([A-ZÀ-Ü]+\))?(?:\/[A-ZÀ-Ü0-9]+)?/g;
+  const regexPercentual = /\d+(?:,\d+)?%(?:\s*\([^)]*\))?/g;
+  const intervalos = [];
+  [regexCaixaAlta, regexPercentual].forEach((re) => {
+    let m;
+    while ((m = re.exec(texto))) intervalos.push([m.index, m.index + m[0].length]);
+  });
+  intervalos.sort((a, b) => a[0] - b[0]);
+  const mesclados = [];
+  intervalos.forEach(([ini, fim]) => {
+    if (mesclados.length && ini <= mesclados[mesclados.length - 1][1]) {
+      mesclados[mesclados.length - 1][1] = Math.max(mesclados[mesclados.length - 1][1], fim);
+    } else {
+      mesclados.push([ini, fim]);
+    }
+  });
+  const runs = [];
+  let cursor = 0;
+  mesclados.forEach(([ini, fim]) => {
+    if (ini > cursor) runs.push(run(texto.slice(cursor, ini)));
+    runs.push(run(texto.slice(ini, fim), { bold: true }));
+    cursor = fim;
+  });
+  if (cursor < texto.length) runs.push(run(texto.slice(cursor)));
+  return runs;
+}
+
+/**
  * Uma tabela OOXML de verdade (bordas finas, cabeçalho em negrito), a partir de
  * um array de cabeçalhos (strings) e um array de linhas, onde cada linha é um
  * array de células — cada célula pode ser uma string simples ou um array de
@@ -162,4 +196,4 @@ function grade(linhas, { largurasCm = null } = {}) {
   return `<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblBorders>${['top', 'left', 'bottom', 'right', 'insideH', 'insideV'].map((lado) => `<w:${lado} w:val="nil"/>`).join('')}</w:tblBorders></w:tblPr>${grid}${linhasXml}</w:tbl>`;
 }
 
-module.exports = { xmlEscape, cmParaTwips, run, paragraph, blank, montarBlocoPessoas, comDestaques, tabela, grade };
+module.exports = { xmlEscape, cmParaTwips, run, paragraph, blank, montarBlocoPessoas, comDestaques, comCaixaAltaEValores, tabela, grade };

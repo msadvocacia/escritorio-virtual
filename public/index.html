@@ -1163,7 +1163,7 @@ function renderUsuarios(){
   if(!podeGerenciarUsuarios()) return;
   const tbody = document.getElementById('tbl-usuarios');
   const empty = document.getElementById('empty-usuarios');
-  let list = DB.usuarios.filter(u=> u.tipo!=='cliente' && (isMaster()? true : u.tipo==='associado'));
+  let list = DB.usuarios.filter(u=> u.tipo!=='cliente' && (isMaster()? true : u.tipo!=='master'));
   if(list.length===0){ tbody.innerHTML=''; empty.style.display='block'; return; }
   empty.style.display='none';
   const labels = {master:'Administrador Master', socio:'Sócio', associado:'Associado', cliente:'Cliente'};
@@ -1779,7 +1779,11 @@ function openAudienciaForm(id){
       <div class="field"><label>Data</label><input type="date" id="af-data" value="${a.data}"></div>
       <div class="field"><label>Horário</label><input type="time" id="af-hora" value="${a.hora}"></div>
     </div>
-    <div class="field"><label>Local</label><input id="af-local" value="${escapeHtml(a.local)}" placeholder="Ex: Fórum de Jequié, 2ª Vara Cível"></div>
+    <div class="field"><label>Local</label><input id="af-local" value="${escapeHtml(a.local)}" placeholder="Ex: Fórum de Jequié, 2ª Vara Cível">
+      <div class="hint" style="margin-top:4px;">
+        <span style="cursor:pointer; text-decoration:underline; color:var(--gold-dark);" onclick="document.getElementById('af-local').value='VIDEOCONFERÊNCIA, através de SALA VIRTUAL'">VIDEOCONFERÊNCIA, através de SALA VIRTUAL</span> (clique para preencher)
+      </div>
+    </div>
     <div class="field"><label>Status</label><select id="af-status">
       <option value="agendada" ${a.status==='agendada'?'selected':''}>Agendada</option>
       <option value="realizada" ${a.status==='realizada'?'selected':''}>Realizada</option>
