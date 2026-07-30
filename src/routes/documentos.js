@@ -557,16 +557,15 @@ router.post('/contrato-associado', requireAuth, requireRole('master', 'socio'), 
     `${p.nacionalidade || 'brasileiro(a)'}, ${p.estadoCivil || 'solteiro(a)'}, advogado(a) inscrito(a) na OAB/BA sob o nº ${p.oab || '—'}, inscrito(a) no CPF sob o nº ${T.formatCPF(p.cpf)}`;
 
   const socioSingular = socios.length === 1;
-  const qualificacaoSocios = socios.map((s, i) => {
-    const conector = i === 0 ? '' : (i === socios.length - 1 ? ' e ' : ', ');
-    return `${conector}${s.nome}, ${qualificacaoPessoa(s)}`;
-  }).join('');
+  const runsQualificacaoSocios = socios.flatMap((s, i) => {
+    const conector = i === 0 ? [] : [D.run(i === socios.length - 1 ? ' e ' : ', ')];
+    return [...conector, D.run(s.nome.toUpperCase(), { bold: true }), D.run(`, ${qualificacaoPessoa(s)}`)];
+  });
 
   const enderecoEscritorio = config.endereco || 'Rua Frederico Costa, nº 124, Centro, Jequié/BA, CEP 45.200-225';
   const qualificacaoAssociado = `${associado.nacionalidade || 'brasileiro(a)'}, ${associado.estadoCivil || 'solteiro(a)'}, advogado(a) devidamente inscrito(a) nos quadros da OAB/BA sob o nº ${associado.oab || '—'}, inscrito(a) no CPF sob o nº ${T.formatCPF(associado.cpf)}, residente e domiciliado(a) na ${associado.endereco || '—'}`;
 
   try {
-    const SZ = null; // usa o tamanho padrão do documento (12pt), como procuração/contrato
     const corpo = [
       D.paragraph(D.run('CONTRATO DE ASSOCIAÇÃO DE ADVOGADO', { bold: true, sizeHalfPt: 26 }), { center: true, justify: false }),
       D.blank(), D.blank(),
@@ -575,16 +574,13 @@ router.post('/contrato-associado', requireAuth, requireRole('master', 'socio'), 
       D.paragraph([
         D.run('MS ADVOCACIA', { bold: true }),
         D.run(`, atividade advocatícia individual exercida sob denominação comercial, com endereço profissional na ${enderecoEscritorio}, neste ato representada por ${socioSingular ? 'seu sócio' : 'seus sócios'}, `),
-        D.run(qualificacaoSocios),
+        ...runsQualificacaoSocios,
         D.run('.'),
       ]),
       D.blank(),
       D.paragraph(D.run('CONTRATADO(A) ASSOCIADO(A):', { bold: true })),
       D.blank(),
-      D.paragraph([
-        D.run(associado.nome, { bold: true }),
-        D.run(`, ${qualificacaoAssociado}.`),
-      ]),
+      D.paragraph([D.run(associado.nome.toUpperCase(), { bold: true }), D.run(`, ${qualificacaoAssociado}.`)]),
       D.blank(),
       D.paragraph(D.run('As partes acima qualificadas têm, entre si, justo e contratado o presente Contrato de Associação de Advogado, mediante as seguintes cláusulas e condições:')),
       D.blank(),
@@ -600,17 +596,37 @@ router.post('/contrato-associado', requireAuth, requireRole('master', 'socio'), 
       D.blank(),
       D.paragraph(D.run('Os honorários advocatícios, contratuais e/ou sucumbenciais, decorrentes das causas em que houver atuação do(a) CONTRATADO(A), serão partilhados da seguinte forma:')),
       D.blank(),
-      D.paragraph(D.run('2.1. Clientes captados pelo(a) CONTRATADO(A) (Regra Geral):')),
-      D.paragraph(D.run('Nas demandas em que o cliente for captado ou trazido diretamente pelo(a) CONTRATADO(A), os honorários serão divididos na proporção de 70% (setenta por cento) para o(a) CONTRATADO(A) e 30% (trinta por cento) para o escritório CONTRATANTE.')),
+      D.paragraph(D.run('2.1. Clientes captados pelo(a) CONTRATADO(A) (Regra Geral):', { bold: true })),
+      D.paragraph([
+        D.run('Nas demandas em que o cliente for captado ou trazido diretamente pelo(a) CONTRATADO(A), os honorários serão divididos na proporção de '),
+        D.run('70% (setenta por cento) para o(a) CONTRATADO(A) e 30% (trinta por cento)', { bold: true }),
+        D.run(' para o escritório CONTRATANTE.'),
+      ]),
       D.blank(),
-      D.paragraph(D.run('2.2. Demandas da Área Criminal:')),
+      D.paragraph(D.run('2.2. Demandas da Área Criminal:', { bold: true })),
       D.paragraph(D.run('Nas causas da área criminal, a divisão dos honorários observará os seguintes critérios:')),
-      D.paragraph(D.run('a) Quando o cliente for captado diretamente pelo(a) CONTRATADO(A), os honorários serão divididos na proporção de 70% (setenta por cento) para o(a) CONTRATADO(A) e 30% (trinta por cento) para o escritório CONTRATANTE;')),
-      D.paragraph(D.run('b) Quando o cliente for indicado pelo escritório CONTRATANTE ao(à) CONTRATADO(A), os honorários serão divididos na proporção de 60% (sessenta por cento) para o(a) CONTRATADO(A) e 40% (quarenta por cento) para o escritório CONTRATANTE;')),
-      D.paragraph(D.run('c) Quando houver atuação conjunta entre o escritório CONTRATANTE e o(a) CONTRATADO(A) na condução da causa criminal, os honorários serão divididos igualmente, na proporção de 50% (cinquenta por cento) para cada parte.')),
+      D.paragraph([
+        D.run('a) Quando o cliente for captado diretamente pelo(a) CONTRATADO(A), os honorários serão divididos na proporção de '),
+        D.run('70% (setenta por cento) para o(a) CONTRATADO(A) e 30% (trinta por cento)', { bold: true }),
+        D.run(' para o escritório CONTRATANTE;'),
+      ]),
+      D.paragraph([
+        D.run('b) Quando o cliente for indicado pelo escritório CONTRATANTE ao(à) CONTRATADO(A), os honorários serão divididos na proporção de '),
+        D.run('60% (sessenta por cento) para o(a) CONTRATADO(A) e 40% (quarenta por cento)', { bold: true }),
+        D.run(' para o escritório CONTRATANTE;'),
+      ]),
+      D.paragraph([
+        D.run('c) Quando houver atuação conjunta entre o escritório CONTRATANTE e o(a) CONTRATADO(A) na condução da causa criminal, os honorários serão divididos igualmente, na proporção de '),
+        D.run('50% (cinquenta por cento) para cada parte', { bold: true }),
+        D.run('.'),
+      ]),
       D.blank(),
-      D.paragraph(D.run('2.3. Atuação Conjunta em Demais Áreas (Causas de Interesse Mútuo):')),
-      D.paragraph(D.run('Nas demandas de outras áreas em que ambas as partes decidirem, em comum acordo, atuar conjuntamente, a divisão da cota-parte dos advogados será de 50% (cinquenta por cento) para cada um, ressalvada a taxa institucional do escritório de 20% (vinte por cento) incidente sobre o valor total dos honorários.')),
+      D.paragraph(D.run('2.3. Atuação Conjunta em Demais Áreas (Causas de Interesse Mútuo):', { bold: true })),
+      D.paragraph([
+        D.run('Nas demandas de outras áreas em que ambas as partes decidirem, em comum acordo, atuar conjuntamente, a divisão da cota-parte dos advogados será '),
+        D.run('de 50% (cinquenta por cento) para cada um, ressalvada a taxa institucional do escritório de 20% (vinte por cento)', { bold: true }),
+        D.run(' incidente sobre o valor total dos honorários.'),
+      ]),
       D.paragraph(D.run('Parágrafo Único (Exemplo de cálculo):')),
       D.paragraph(D.run('Em uma causa com honorários correspondentes a 100% do valor recebido, serão inicialmente destinados 20% (vinte por cento) ao escritório CONTRATANTE, a título de taxa institucional. Os 80% (oitenta por cento) restantes serão divididos igualmente entre o(a) advogado(a) do escritório responsável pela atuação e o(a) CONTRATADO(A), cabendo 40% (quarenta por cento) para cada um.')),
       D.blank(),
@@ -635,11 +651,11 @@ router.post('/contrato-associado', requireAuth, requireRole('master', 'socio'), 
       D.paragraph(D.run(`Jequié/BA, ${T.fmtDateExtenso(todayISO())}.`), { indentCm: 2, justify: false }),
       D.blank(), D.blank(),
       D.paragraph(D.run('_____________________________________________________________'), { center: true, justify: false }),
-      D.paragraph(D.run('MS ADVOCACIA', { bold: true }), { center: true, justify: false }),
+      D.paragraph(D.run('MS ADVOCACIA'), { center: true, justify: false }),
       D.paragraph(D.run('Contratante (Representante Legal)'), { center: true, justify: false }),
       D.blank(),
       D.paragraph(D.run('_____________________________________________________________'), { center: true, justify: false }),
-      D.paragraph(D.run(associado.nome, { bold: true }), { center: true, justify: false }),
+      D.paragraph(D.run(associado.nome), { center: true, justify: false }),
       D.paragraph(D.run('Contratado(a) Associado(a)'), { center: true, justify: false }),
     ].join('');
 

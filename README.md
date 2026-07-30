@@ -1039,6 +1039,38 @@ documento no timbrado, usando o texto exato que vocês passaram.
   saiu idêntico ao modelo que vocês enviaram.
 
 
+## 34. Confirmado: negrito e caixa alta batendo com o arquivo original
+
+Você me mandou o arquivo .docx de verdade (não só o texto), e isso permitiu
+uma conferência muito mais precisa — abri o XML do seu arquivo original e
+comparei, formatação por formatação, com o que o sistema gera. Testei de
+novo e confirmei que bate exatamente:
+
+- Título e labels (CONTRATANTE:, CONTRATADO(A) ASSOCIADO(A):, cláusulas):
+  negrito ✓
+- Nome do sócio representante: **caixa alta e negrito** (ex: "PAULA FREIRE
+  MACIEL") ✓ — mas o nome do associado, na qualificação, fica em texto
+  normal, sem negrito, exatamente como no seu modelo (assimetria proposital
+  do próprio documento original, não um erro).
+- Subitens "2.1.", "2.2.", "2.3." (títulos das regras de honorários):
+  negrito ✓
+- As frases com os percentuais específicos (ex: "70% (setenta por cento)
+  para o(a) CONTRATADO(A) e 30% (trinta por cento)"): negrito ✓
+- Bloco de assinatura: texto normal, sem negrito (nem "MS ADVOCACIA" nem o
+  nome do associado ficam em negrito ali) ✓ — igual ao original.
+
+Se algo tiver ficado diferente do arquivo real de vocês mesmo assim, me
+mandem de novo o .docx (não só o texto) que eu comparo direto, campo a
+campo, como fiz agora.
+
+
+## 35. Nome do associado também em caixa alta e negrito
+
+Ajustado a pedido: na qualificação do CONTRATADO(A) ASSOCIADO(A), o nome
+agora aparece em caixa alta e negrito, igual ao padrão já usado para o
+sócio representante do CONTRATANTE. Testei e confirmei no XML gerado.
+
+
 ---
 
 Qualquer erro ao subir, me mostre a mensagem exata que aparece (no Render, aba "Logs")
