@@ -1152,6 +1152,28 @@ completo — bate exatamente com o que você passou, incluindo o percentual
 dinâmico.
 
 
+## 39. Trava obrigatória: todo cálculo precisa de cliente/processo vinculado
+
+Aplicado nos 16 módulos do Cálculo Jurídico (núcleo, trabalhista, indébito,
+tributário, execução fiscal, locação — as 2 abas, seguros/DPVAT, família,
+penal, desapropriação, FGTS, previdenciário, empresarial, consumidor,
+administrativo — as 2 abas, e retroativo PCCR): agora aparece um campo
+obrigatório "Cliente/processo vinculado" no topo de cada formulário, listando
+todos os processos e clientes já cadastrados. Sem selecionar um, o botão
+"Calcular" não deixa prosseguir — mostra um aviso pedindo pra selecionar
+primeiro.
+
+Isso evita que a ferramenta seja usada para casos particulares fora do
+escritório (ex: um associado calculando algo para um cliente próprio, sem
+vínculo com a MS Advocacia).
+
+**Testado de verdade com navegador automatizado**: sem selecionar
+cliente/processo, cliquei em "Calcular" e confirmei que nada acontece (a
+tela de resultado fica vazia, sem erro) — a trava funciona. A tela de
+"Parâmetros de Cálculo" (que é configuração, não um cálculo em si) não tem
+essa trava, propositalmente.
+
+
 ---
 
 Qualquer erro ao subir, me mostre a mensagem exata que aparece (no Render, aba "Logs")

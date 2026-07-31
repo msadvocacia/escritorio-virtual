@@ -648,6 +648,24 @@ function toggleAjuda(id, event){
   if(el) el.style.display = (el.style.display==='none'||!el.style.display) ? 'block' : 'none';
 }
 document.addEventListener('click', ()=>{ document.querySelectorAll('.ajuda-balao').forEach(el=>el.style.display='none'); });
+// Trava obrigatória: todo cálculo jurídico precisa estar vinculado a um
+// cliente ou processo já cadastrado — evita uso do sistema para casos
+// particulares fora do escritório. Só um formulário de cálculo fica visível
+// por vez, então um único id compartilhado ("calc-vinculo") basta.
+function campoVinculoCalculo(){
+  const processos = (DB.processos||[]).slice().sort((a,b)=>(a.numero||'').localeCompare(b.numero||''));
+  const clientes = (DB.clientes||[]).slice().sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
+  const opcoesProcessos = processos.map(p=>`<option value="processo:${p.id}">Processo ${escapeHtml(p.numero||'sem número')} — ${escapeHtml(clienteNome(p.clienteId))}</option>`).join('');
+  const opcoesClientes = clientes.map(c=>`<option value="cliente:${c.id}">Cliente: ${escapeHtml(c.nome)}</option>`).join('');
+  return `<fieldset style="margin-bottom:10px; border-color:var(--gold-dark);"><legend>Cliente/processo vinculado (obrigatório)${ajuda('Todo cálculo precisa estar vinculado a um cliente ou processo já cadastrado no sistema — isso evita que a ferramenta seja usada para casos particulares fora do escritório. Cadastre o cliente ou processo primeiro, se ainda não existir.')}</legend>
+    <div class="field"><label>Cliente ou processo</label><select id="calc-vinculo"><option value="">Selecione...</option>${opcoesProcessos}${opcoesClientes}</select></div>
+  </fieldset>`;
+}
+function validarVinculoCalculo(){
+  const v = document.getElementById('calc-vinculo')?.value;
+  if(!v){ showToast('Selecione o cliente ou processo vinculado antes de calcular.'); return false; }
+  return true;
+}
 function onlyDigits(s){ return (s||'').replace(/\D/g,''); }
 function addDaysISO(iso, n){ const d = new Date(iso+'T00:00:00'); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
 
@@ -2261,6 +2279,7 @@ const INDICES_DISPONIVEIS = [
 ];
 function formularioNucleoCorrecao(){
   return `<h3>Núcleo: Correção Monetária + Juros</h3>
+    ${campoVinculoCalculo()}
     <div class="hint" style="margin-bottom:10px;">Busca os índices ao vivo direto do Banco Central (SGS). Convenção: a correção incide do mês seguinte ao inicial até o mês final — confira se a decisão do seu caso determina outra convenção.</div>
     <div class="field-row">
       <div class="field"><label>Valor base (R$)${ajuda('O valor original que você quer corrigir — por exemplo, o valor de uma dívida, indenização ou honorário na data em que era devido, antes de aplicar qualquer atualização.')}</label><input type="number" step="0.01" id="nc-valor" placeholder="0,00"></div>
@@ -2281,6 +2300,7 @@ function formularioNucleoCorrecao(){
     <div id="nc-resultado" style="margin-top:14px;"></div>`;
 }
 async function calcularNucleoCorrecao(){
+  if(!validarVinculoCalculo()) return;
   const valorBase = parseFloat(document.getElementById('nc-valor').value);
   const dataInicial = document.getElementById('nc-data-inicial').value;
   const dataFinal = document.getElementById('nc-data-final').value;
@@ -2307,6 +2327,7 @@ async function calcularNucleoCorrecao(){
 }
 function formularioRescisaoTrabalhista(){
   return `<h3>Trabalhista — Verbas Rescisórias (dispensa sem justa causa)</h3>
+    ${campoVinculoCalculo()}
     <div class="hint" style="margin-bottom:10px;">Fórmulas padronizadas da CLT. Não considera adicionais, médias variáveis, convenção coletiva ou hora extra habitual — confira com atenção antes de usar em petição.</div>
     <div class="field-row">
       <div class="field"><label>Salário (R$)${ajuda('O último salário mensal do trabalhador, sem descontos (salário bruto), usado como base para calcular todas as verbas.')}</label><input type="number" step="0.01" id="rt-salario" placeholder="0,00"></div>
@@ -2321,6 +2342,7 @@ function formularioRescisaoTrabalhista(){
     <div id="rt-resultado" style="margin-top:14px;"></div>`;
 }
 async function calcularRescisaoTrabalhista(){
+  if(!validarVinculoCalculo()) return;
   const salario = parseFloat(document.getElementById('rt-salario').value);
   const dataAdmissao = document.getElementById('rt-admissao').value;
   const dataDemissao = document.getElementById('rt-demissao').value;
@@ -2343,6 +2365,7 @@ async function calcularRescisaoTrabalhista(){
 }
 function formularioIndebitoCivel(cat){
   return `<h3>${escapeHtml(cat.titulo)} — Repetição de Indébito</h3>
+    ${campoVinculoCalculo()}
     <div class="hint" style="margin-bottom:10px;">Simples ou em dobro (art. 42, parágrafo único, CDC), com correção monetária opcional via o núcleo. Os demais itens desta categoria (liquidação de sentença, danos materiais, pensão alimentícia, honorários) ainda estão em construção.</div>
     <div class="field-row">
       <div class="field"><label>Valor pago indevidamente (R$)${ajuda('Quanto o consumidor efetivamente pagou a mais, ou pagou sem dever. Não inclui juros/correção ainda — isso é calculado separadamente abaixo.')}</label><input type="number" step="0.01" id="ci-valor" placeholder="0,00"></div>
@@ -2360,6 +2383,7 @@ function formularioIndebitoCivel(cat){
     <div id="ci-resultado" style="margin-top:14px;"></div>`;
 }
 async function calcularIndebitoCivel(){
+  if(!validarVinculoCalculo()) return;
   const valorPago = parseFloat(document.getElementById('ci-valor').value);
   const emDobro = document.getElementById('ci-dobro').value==='true';
   const aplicarCorrecao = document.getElementById('ci-corrigir').checked;
@@ -2379,6 +2403,7 @@ async function calcularIndebitoCivel(){
 
 function formularioTributario(cat){
   return `<h3>${escapeHtml(cat.titulo)} — Multa + Juros Selic</h3>
+    ${campoVinculoCalculo()}
     <div class="hint" style="margin-bottom:10px;">Aplica a multa percentual sobre o tributo e depois corrige pela Selic acumulada (que já embute juros) entre o vencimento e o pagamento.</div>
     <div class="field-row">
       <div class="field"><label>Valor do tributo (R$)${ajuda('O valor original do imposto/tributo devido, sem multa nem juros — o valor que constava na guia de cobrança.')}</label><input type="number" step="0.01" id="tr-valor" placeholder="0,00"></div>
@@ -2392,6 +2417,7 @@ function formularioTributario(cat){
     <div id="tr-resultado" style="margin-top:14px;"></div>`;
 }
 async function calcularTributario(){
+  if(!validarVinculoCalculo()) return;
   const valorTributo = parseFloat(document.getElementById('tr-valor').value);
   const percentualMulta = parseFloat(document.getElementById('tr-multa').value)||0;
   const dataVencimento = document.getElementById('tr-vencimento').value;
@@ -2411,6 +2437,7 @@ async function calcularTributario(){
 }
 function formularioExecucaoFiscal(cat){
   return `<h3>${escapeHtml(cat.titulo)} — Atualização de débito em dívida ativa</h3>
+    ${campoVinculoCalculo()}
     <div class="hint" style="margin-bottom:10px;">Corrige o valor inscrito pela Selic acumulada (padrão para débitos com a Fazenda Pública).</div>
     <div class="field-row">
       <div class="field"><label>Valor inscrito (R$)</label><input type="number" step="0.01" id="ef-valor" placeholder="0,00"></div>
@@ -2421,6 +2448,7 @@ function formularioExecucaoFiscal(cat){
     <div id="ef-resultado" style="margin-top:14px;"></div>`;
 }
 async function calcularExecucaoFiscal(){
+  if(!validarVinculoCalculo()) return;
   const valorInscrito = parseFloat(document.getElementById('ef-valor').value);
   const dataInscricao = document.getElementById('ef-data-inicial').value;
   const dataAtualizacao = document.getElementById('ef-data-final').value;
@@ -2438,6 +2466,7 @@ async function calcularExecucaoFiscal(){
 }
 function formularioLocacao(cat){
   return `<h3>${escapeHtml(cat.titulo)}</h3>
+    ${campoVinculoCalculo()}
     <div class="pill-select" style="margin-bottom:10px;" id="loc-tabs">
       <button class="fin-tab active" data-tab="reajuste" onclick="setLocacaoTab('reajuste')">Revisional de aluguel</button>
       <button class="fin-tab" data-tab="debitos" onclick="setLocacaoTab('debitos')">Débitos locatícios (despejo)</button>
@@ -2473,6 +2502,7 @@ function setLocacaoTab(tab){
   }
 }
 async function calcularReajusteLocacao(){
+  if(!validarVinculoCalculo()) return;
   const valorAluguel = parseFloat(document.getElementById('loc-valor').value);
   const indice = document.getElementById('loc-indice').value;
   const dataUltimoReajuste = document.getElementById('loc-data-inicial').value;
@@ -2490,6 +2520,7 @@ async function calcularReajusteLocacao(){
   }catch(e){ box.innerHTML = `<div class="empty">${escapeHtml(e.message||'Não foi possível calcular.')}</div>`; }
 }
 async function calcularDebitosLocacao(){
+  if(!validarVinculoCalculo()) return;
   const valorDebito = parseFloat(document.getElementById('locd-valor').value);
   const percentualMulta = parseFloat(document.getElementById('locd-multa').value)||0;
   const indice = document.getElementById('locd-indice').value;
@@ -2510,6 +2541,7 @@ async function calcularDebitosLocacao(){
 }
 function formularioDpvat(cat){
   return `<h3>${escapeHtml(cat.titulo)} — DPVAT/SPVAT</h3>
+    ${campoVinculoCalculo()}
     <div class="hint" style="margin-bottom:10px;">Valores fixos por lei (Lei nº 11.945/2009), mantidos no SPVAT (sucessor do DPVAT a partir de 2026). <strong>Atenção ao prazo</strong>: acidentes dentro do período de cobertura do antigo DPVAT só podem ser reclamados até 14/11/2026.</div>
     <div class="field"><label>Tipo de indenização${ajuda('Escolha conforme o que aconteceu com a vítima do acidente de trânsito: morte (valor fixo), invalidez permanente (proporcional ao grau apurado em perícia médica) ou reembolso de despesas médicas.')}</label><select id="dp-tipo" onchange="document.getElementById('dp-invalidez-box').style.display=this.value==='invalidez'?'block':'none'">
       <option value="morte">Morte (R$ 13.500,00 fixo)</option>
@@ -2521,6 +2553,7 @@ function formularioDpvat(cat){
     <div id="dp-resultado" style="margin-top:14px;"></div>`;
 }
 async function calcularDpvat(){
+  if(!validarVinculoCalculo()) return;
   const tipo = document.getElementById('dp-tipo').value;
   const percentualInvalidez = parseFloat(document.getElementById('dp-percentual').value)||100;
   const box = document.getElementById('dp-resultado');
@@ -2533,6 +2566,7 @@ let PARTILHA_BENS = [];
 function formularioPartilha(cat){
   PARTILHA_BENS = [];
   return `<h3>${escapeHtml(cat.titulo)} — Partilha de Bens</h3>
+    ${campoVinculoCalculo()}
     <div class="hint" style="margin-bottom:10px;">Some os bens (e marque dívidas/bens não partilháveis) para calcular a meação (50/50). Para partilha em proporção diferente do acordo, ajuste manualmente sobre o total.</div>
     <div class="field-row">
       <div class="field"><label>Descrição do bem${ajuda('O que é esse bem — ex: "Casa na Rua X", "Carro Honda Civic 2020", "Conta poupança Banco Y".')}</label><input id="pt-desc" placeholder="Ex: Imóvel, veículo, conta..."></div>
@@ -2558,6 +2592,7 @@ function renderListaPartilha(){
   document.getElementById('pt-lista').innerHTML = PARTILHA_BENS.length? PARTILHA_BENS.map((b,i)=>`<div class="list-row"><div>${escapeHtml(b.descricao)} ${b.partilhavel?'':'<span class="hint">(não partilhável)</span>'}</div><div class="rmeta">${fmtMoney(b.valor)} <button class="icon-btn danger" onclick="removerBemPartilha(${i})">🗑</button></div></div>`).join('') : '<div class="empty">Nenhum bem adicionado ainda.</div>';
 }
 async function calcularPartilha(){
+  if(!validarVinculoCalculo()) return;
   if(!PARTILHA_BENS.length){ showToast('Adicione ao menos um bem.'); return; }
   const box = document.getElementById('pt-resultado');
   try{
@@ -2571,6 +2606,7 @@ async function calcularPartilha(){
 }
 function formularioDosimetria(cat){
   return `<h3>${escapeHtml(cat.titulo)} — Dosimetria da Pena (art. 68 CP)</h3>
+    ${campoVinculoCalculo()}
     <div class="hint" style="margin-bottom:10px;">Calcula as 3 fases sobre o intervalo pena mínima–máxima do tipo penal. Informe as frações em % que você já decidiu aplicar em cada fase — este cálculo não substitui a fundamentação da sentença/peça, só a aritmética.</div>
     <div class="field-row">
       <div class="field"><label>Pena mínima (meses)${ajuda('A pena mínima prevista em lei para o crime, em meses (ex: furto simples = 1 ano = 12 meses). Converta anos para meses multiplicando por 12.')}</label><input type="number" step="0.01" id="ds-min"></div>
@@ -2595,6 +2631,7 @@ function formularioDosimetria(cat){
     <div id="ds-resultado" style="margin-top:14px;"></div>`;
 }
 async function calcularDosimetria(){
+  if(!validarVinculoCalculo()) return;
   const penaMinimaMeses = parseFloat(document.getElementById('ds-min').value);
   const penaMaximaMeses = parseFloat(document.getElementById('ds-max').value);
   if(penaMinimaMeses==null || penaMaximaMeses==null || isNaN(penaMinimaMeses) || isNaN(penaMaximaMeses)){ showToast('Preencha a pena mínima e máxima.'); return; }
@@ -2619,6 +2656,7 @@ async function calcularDosimetria(){
 
 function formularioDesapropriacao(cat){
   return `<h3>${escapeHtml(cat.titulo)}</h3>
+    ${campoVinculoCalculo()}
     <div class="hint" style="margin-bottom:10px;">Juros compensatórios de 12% ao ano (Súmula 618 STF) sobre o valor corrigido, mais juros moratórios opcionais (se houver atraso no pagamento após decisão).</div>
     <div class="field-row">
       <div class="field"><label>Valor justo (R$)${ajuda('O valor da indenização fixado pela perícia/acordo judicial como "justo valor" do bem desapropriado, na data-base do laudo.')}</label><input type="number" step="0.01" id="dsp-valor"></div>
@@ -2636,6 +2674,7 @@ function formularioDesapropriacao(cat){
     <div id="dsp-resultado" style="margin-top:14px;"></div>`;
 }
 async function calcularDesapropriacao(){
+  if(!validarVinculoCalculo()) return;
   const valorJusto = parseFloat(document.getElementById('dsp-valor').value);
   const indice = document.getElementById('dsp-indice').value;
   const dataImissaoPosse = document.getElementById('dsp-data-inicial').value;
@@ -2657,6 +2696,7 @@ async function calcularDesapropriacao(){
 }
 function formularioFgtsDiferencas(cat){
   return `<h3>${escapeHtml(cat.titulo)} — Diferenças de FGTS não recolhido</h3>
+    ${campoVinculoCalculo()}
     <div class="hint" style="margin-bottom:10px;">Estima 8% da remuneração por mês não recolhido, corrigido pelo índice escolhido. Não cobre a correção de expurgos inflacionários específicos (Planos Verão/Collor) — esse cálculo é mais específico e ainda não está implementado.</div>
     <div class="field-row">
       <div class="field"><label>Remuneração mensal (R$)${ajuda('O salário mensal do trabalhador no período em que o FGTS não foi recolhido corretamente.')}</label><input type="number" step="0.01" id="fg-remuneracao"></div>
@@ -2671,6 +2711,7 @@ function formularioFgtsDiferencas(cat){
     <div id="fg-resultado" style="margin-top:14px;"></div>`;
 }
 async function calcularFgtsDiferencas(){
+  if(!validarVinculoCalculo()) return;
   const remuneracaoMensal = parseFloat(document.getElementById('fg-remuneracao').value);
   const mesesNaoRecolhidos = parseFloat(document.getElementById('fg-meses').value);
   const indice = document.getElementById('fg-indice').value;
@@ -2693,6 +2734,7 @@ let PREV_SALARIOS = [];
 function formularioPrevidenciario(cat){
   PREV_SALARIOS = [];
   return `<h3>${escapeHtml(cat.titulo)} — RMI (regra permanente, EC 103/2019)</h3>
+    ${campoVinculoCalculo()}
     <div class="hint" style="background:#fff3cd; border:1px solid #ffe08a; padding:10px; border-radius:8px; margin-bottom:12px; color:#7a5c00;">
       ⚠️ <strong>Escopo limitado de propósito.</strong> Este cálculo cobre só a <strong>regra permanente</strong> (quem não tinha direito adquirido nem cumpriu regra de transição até 13/11/2019).
       <strong>NÃO cobre</strong>: fator previdenciário, regras de transição por pontos/pedágio 50%/100%, divisor mínimo de 108 contribuições, aposentadoria especial com conversão de tempo, ou invalidez.
@@ -2734,6 +2776,7 @@ function renderListaPrev(){
   document.getElementById('pv-lista').innerHTML = PREV_SALARIOS.length? PREV_SALARIOS.map((s,i)=>`<div class="list-row"><div>${s.competencia}</div><div class="rmeta">${fmtMoney(s.valor)} <button class="icon-btn danger" onclick="removerSalarioPrev(${i})">🗑</button></div></div>`).join('') : '<div class="empty">Nenhum salário adicionado ainda.</div>';
 }
 async function calcularSalarioBeneficioPrev(){
+  if(!validarVinculoCalculo()) return;
   if(!PREV_SALARIOS.length){ showToast('Adicione ao menos um salário de contribuição.'); return; }
   const dataCalculo = document.getElementById('pv-dib').value;
   const box = document.getElementById('pv-sb-resultado');
@@ -2748,6 +2791,7 @@ async function calcularSalarioBeneficioPrev(){
   }catch(e){ box.innerHTML = `<div class="empty">${escapeHtml(e.message||'Não foi possível calcular.')}</div>`; }
 }
 async function calcularRmiPrev(){
+  if(!validarVinculoCalculo()) return;
   const salarioBeneficio = parseFloat(document.getElementById('pv-sb-final').value);
   const anosContribuicao = parseFloat(document.getElementById('pv-anos-contrib').value);
   const anosMinimoExigido = parseFloat(document.getElementById('pv-anos-minimo').value);
@@ -2767,6 +2811,7 @@ let LUCROS_SOCIOS = [];
 function formularioDistribuicaoLucros(cat){
   LUCROS_SOCIOS = [];
   return `<h3>${escapeHtml(cat.titulo)} — Distribuição de Lucros</h3>
+    ${campoVinculoCalculo()}
     <div class="hint" style="margin-bottom:10px;">Apuração de haveres (dissolução de sociedade) ainda está em construção — depende muito de perícia contábil específica do caso.</div>
     <div class="field"><label>Lucro total a distribuir (R$)${ajuda('O lucro líquido apurado da empresa, já descontados custos, despesas e impostos, no período que será distribuído aos sócios.')}</label><input type="number" step="0.01" id="dl-total"></div>
     <div class="field-row">
@@ -2792,6 +2837,7 @@ function renderListaLucros(){
   document.getElementById('dl-lista').innerHTML = (LUCROS_SOCIOS.length? LUCROS_SOCIOS.map((s,i)=>`<div class="list-row"><div>${escapeHtml(s.nome)}</div><div class="rmeta">${s.percentual}% <button class="icon-btn danger" onclick="removerSocioLucro(${i})">🗑</button></div></div>`).join('') : '<div class="empty">Nenhum sócio adicionado ainda.</div>') + `<div class="hint" style="margin-top:6px;">Soma atual: ${soma}% ${Math.abs(soma-100)>0.01?'(precisa somar 100% para calcular)':'✓'}</div>`;
 }
 async function calcularDistribuicaoLucros(){
+  if(!validarVinculoCalculo()) return;
   const lucroTotal = parseFloat(document.getElementById('dl-total').value);
   if(!lucroTotal || !LUCROS_SOCIOS.length){ showToast('Preencha o lucro total e adicione ao menos um sócio.'); return; }
   const box = document.getElementById('dl-resultado');
@@ -2802,6 +2848,7 @@ async function calcularDistribuicaoLucros(){
 }
 function formularioAmortizacao(cat){
   return `<h3>${escapeHtml(cat.titulo)} — Price x SAC</h3>
+    ${campoVinculoCalculo()}
     <div class="hint" style="margin-bottom:10px;">Compara os dois sistemas de amortização mais comuns em financiamentos. Análise de juros abusivos, capitalização indevida ou comissão de permanência exige perícia específica do contrato — ainda em construção.</div>
     <div class="field-row">
       <div class="field"><label>Valor financiado (R$)${ajuda('O valor total que foi (ou será) financiado — o preço do bem menos qualquer entrada já paga.')}</label><input type="number" step="0.01" id="am-valor"></div>
@@ -2812,6 +2859,7 @@ function formularioAmortizacao(cat){
     <div id="am-resultado" style="margin-top:14px;"></div>`;
 }
 async function calcularAmortizacao(){
+  if(!validarVinculoCalculo()) return;
   const valorFinanciado = parseFloat(document.getElementById('am-valor').value);
   const taxaJurosAoMes = parseFloat(document.getElementById('am-taxa').value);
   const numeroParcelas = parseInt(document.getElementById('am-parcelas').value);
@@ -2918,6 +2966,7 @@ async function salvarParametrosCalculoUI(){
 }
 function formularioAdministrativo(cat){
   return `<h3>${escapeHtml(cat.titulo)}</h3>
+    ${campoVinculoCalculo()}
     <div class="pill-select" style="margin-bottom:10px;" id="adm-tabs">
       <button class="fin-tab active" data-tab="reposicao" onclick="setAdministrativoTab('reposicao')">Reposição salarial</button>
       <button class="fin-tab" data-tab="planos" onclick="setAdministrativoTab('planos')">Diferenças de planos econômicos</button>
@@ -2951,6 +3000,7 @@ async function setAdministrativoTab(tab){
   }
 }
 async function calcularReposicaoAdm(){
+  if(!validarVinculoCalculo()) return;
   const valorBase = parseFloat(document.getElementById('adm-valor').value);
   const indice = document.getElementById('adm-indice').value;
   const dataInicial = document.getElementById('adm-data-inicial').value;
@@ -2968,6 +3018,7 @@ async function calcularReposicaoAdm(){
   }catch(e){ box.innerHTML = `<div class="empty">${escapeHtml(e.message||'Não foi possível calcular.')}</div>`; }
 }
 async function calcularPlanosEconomicos(){
+  if(!validarVinculoCalculo()) return;
   const valorBase = parseFloat(document.getElementById('admp-valor').value);
   const chavesPlanos = Array.from(document.querySelectorAll('.admp-chk:checked')).map(el=>el.value);
   if(!valorBase || !chavesPlanos.length){ showToast('Preencha o valor e selecione ao menos um plano.'); return; }
@@ -2989,6 +3040,7 @@ let PCCR_MESES = []; // [{competencia, basePago, baseDevido/percentualGratificac
 function formularioRetroativoPccr(cat){
   PCCR_MODALIDADE = 'nivel'; PCCR_VERBAS_NOMES = []; PCCR_MESES = []; PCCR_NIVEIS_IMPORTADOS = [];
   return `<h3>${escapeHtml(cat.titulo)}</h3>
+    ${campoVinculoCalculo()}
     <div class="hint" style="background:#fff3cd; border:1px solid #ffe08a; padding:10px; border-radius:8px; margin-bottom:12px; color:#7a5c00;">
       ⚠️ A entrada de dados aqui é <strong>manual</strong> — a extração automática a partir do PDF da ficha financeira e da tabela de níveis do PCS ainda não está implementada. Prescrição quinquenal é aplicada automaticamente sobre a data de protocolo informada. <strong>Importante</strong>: o percentual de cada verba (ex: anuênio) é informado <strong>mês a mês</strong>, porque costuma mudar ao longo do tempo (o servidor acumula anuênios, por exemplo) — não é um percentual fixo para todo o período.
     </div>
@@ -3298,6 +3350,7 @@ function renderListaMesesPccr(){
   }).join('') : '<div class="empty">Nenhum mês adicionado ainda.</div>';
 }
 async function calcularRetroativoPccrUI(){
+  if(!validarVinculoCalculo()) return;
   if(!PCCR_MESES.length){ showToast('Adicione ao menos um mês.'); return; }
   const dataProtocolo = document.getElementById('pccr-protocolo').value;
   if(!dataProtocolo){ showToast('Informe a data de protocolo.'); return; }
