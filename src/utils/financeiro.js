@@ -17,6 +17,7 @@ function partesSplit(splitTipo) {
     case 'associado_60_40': return { profissional: 0.6, escritorio: 0.4 };
     case 'associado_50_50': return { profissional: 0.5, escritorio: 0.5 };
     case 'associado_50_socio_30_escritorio_20': return { profissional: 0.5, socio: 0.3, escritorio: 0.2 };
+    case 'associado_40_socio_40_escritorio_20': return { profissional: 0.4, socio: 0.4, escritorio: 0.2 };
     case 'dois_associados_50_50': return { profissional: 1 }; // 100% dividido entre os profissionais selecionados, nada para o escritório
     default: return { escritorio: 1 };
   }

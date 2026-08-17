@@ -1352,7 +1352,7 @@ function associadoOptionsProc(selected){
 }
 function podeDefinirHonorario(){ return isMaster()||isSocio()||isAssociado(); }
 function splitLabel(tipo){
-  return {associado_70_30:'Profissional(is) 70% / Escritório 30%', associado_60_40:'Profissional(is) 60% / Escritório 40%', associado_50_50:'Profissional(is) 50% / Escritório 50%', associado_50_socio_30_escritorio_20:'Profissional(is) 50% / Sócio 30% / Escritório 20%', dois_associados_50_50:'Profissionais dividem 100% igualmente', nenhum:'Integral ao escritório'}[tipo] || '—';
+  return {associado_70_30:'Profissional(is) 70% / Escritório 30%', associado_60_40:'Profissional(is) 60% / Escritório 40%', associado_50_50:'Profissional(is) 50% / Escritório 50%', associado_50_socio_30_escritorio_20:'Profissional(is) 50% / Sócio 30% / Escritório 20%', associado_40_socio_40_escritorio_20:'Profissional(is) 40% / Sócio 40% / Escritório 20%', dois_associados_50_50:'Profissionais dividem 100% igualmente', nenhum:'Integral ao escritório'}[tipo] || '—';
 }
 function dispararImpressao(){
   const tituloOriginal = document.title;
@@ -1425,6 +1425,7 @@ function openProcessoForm(id){
           <option value="associado_60_40" ${p.splitTipo==='associado_60_40'?'selected':''}>Profissional(is) 60% / Escritório 40%</option>
           <option value="associado_50_50" ${p.splitTipo==='associado_50_50'?'selected':''}>Profissional(is) 50% / Escritório 50%</option>
           <option value="associado_50_socio_30_escritorio_20" ${p.splitTipo==='associado_50_socio_30_escritorio_20'?'selected':''}>Profissional(is) 50% / Sócio 30% / Escritório 20%</option>
+          <option value="associado_40_socio_40_escritorio_20" ${p.splitTipo==='associado_40_socio_40_escritorio_20'?'selected':''}>Profissional(is) 40% / Sócio 40% / Escritório 20%</option>
           <option value="dois_associados_50_50" ${p.splitTipo==='dois_associados_50_50'?'selected':''}>Profissionais selecionados dividem 100% igualmente</option>
       </select></div>
       <div class="field" id="pf-profissionais-box"><label>Profissional(is) vinculado(s)</label>${profissionaisSelecaoHtml(idsAtuais)}</div>
@@ -1891,6 +1892,7 @@ function partesSplit(splitTipo){
     case 'associado_60_40': return {profissional:.6, escritorio:.4};
     case 'associado_50_50': return {profissional:.5, escritorio:.5};
     case 'associado_50_socio_30_escritorio_20': return {profissional:.5, socio:.3, escritorio:.2};
+    case 'associado_40_socio_40_escritorio_20': return {profissional:.4, socio:.4, escritorio:.2};
     case 'dois_associados_50_50': return {profissional:1};
     default: return {escritorio:1};
   }

@@ -1174,6 +1174,15 @@ tela de resultado fica vazia, sem erro) — a trava funciona. A tela de
 essa trava, propositalmente.
 
 
+## 40. Novo tipo de vínculo em "Honorários e vínculo"
+
+Adicionado: **Profissional(is) 40% / Sócio 40% / Escritório 20%**, ao lado
+das opções que já existiam. Atualizei nos 4 lugares que precisavam ficar
+consistentes (rótulo exibido, opção no formulário, e o cálculo da divisão de
+verdade tanto no front quanto no back) — testei e confirmei que a soma das
+partes fecha em 100%. Nenhuma outra mudança feita.
+
+
 ---
 
 Qualquer erro ao subir, me mostre a mensagem exata que aparece (no Render, aba "Logs")
