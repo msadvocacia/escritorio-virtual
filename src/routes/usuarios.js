@@ -31,7 +31,7 @@ router.get('/basico', requireAuth, async (req, res) => {
 
 // Cria sócio (só master) ou associado (master ou sócio)
 router.post('/', requireAuth, requireRole('master', 'socio'), async (req, res) => {
-  const { nome, tipo, login, senha, oab, nacionalidade, estadoCivil, rg, cpf, telefone, endereco, ativo } = req.body || {};
+  const { nome, tipo, login, senha, oab, nacionalidade, estadoCivil, rg, cpf, telefone, endereco, ativo, agendaPessoalLiberada } = req.body || {};
   if (!nome || !login || !tipo) return res.status(400).json({ erro: 'Preencha nome, login e perfil.' });
   if (tipo === 'socio' && !isMaster(req.user)) {
     return res.status(403).json({ erro: 'Somente o administrador master pode cadastrar sócios.' });
@@ -48,6 +48,7 @@ router.post('/', requireAuth, requireRole('master', 'socio'), async (req, res) =
     id: uid(), tipo, nome, login, senhaHash, mustChange: true, ativo: ativo !== false,
     oab: oab || '', nacionalidade: nacionalidade || 'brasileiro(a)', estadoCivil: estadoCivil || 'solteiro(a)',
     rg: rg || '', cpf: cpf || '', telefone: telefone || '', endereco: endereco || '', vinculoId: null, clienteId: null,
+    agendaPessoalLiberada: tipo === 'socio' ? true : !!agendaPessoalLiberada,
   };
   usuarios.push(novo);
   await setCollection('usuarios', usuarios);
@@ -61,7 +62,7 @@ router.patch('/:id', requireAuth, requireRole('master', 'socio'), async (req, re
   const usuario = usuarios.find((u) => u.id === req.params.id);
   if (!usuario) return res.status(404).json({ erro: 'Usuário não encontrado.' });
   if (usuario.tipo === 'master') return res.status(403).json({ erro: 'O administrador master não pode ser editado por aqui.' });
-  const campos = ['nome', 'oab', 'ativo', 'nacionalidade', 'estadoCivil', 'rg', 'cpf', 'telefone', 'endereco'];
+  const campos = ['nome', 'oab', 'ativo', 'nacionalidade', 'estadoCivil', 'rg', 'cpf', 'telefone', 'endereco', 'agendaPessoalLiberada'];
   campos.forEach((c) => { if (req.body[c] !== undefined) usuario[c] = req.body[c]; });
   await setCollection('usuarios', usuarios);
   const { senhaHash, ...semSenha } = usuario;

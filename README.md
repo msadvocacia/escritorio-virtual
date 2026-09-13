@@ -1183,6 +1183,119 @@ verdade tanto no front quanto no back) — testei e confirmei que a soma das
 partes fecha em 100%. Nenhuma outra mudança feita.
 
 
+## 41. Rodada grande: lixeiras, pop-ups, ordenação, bug do olhinho e Agenda Pessoal
+
+### 1. Lixeira em Lembretes e Mensagens
+Lembretes vencidos (data passada, não concluídos) vão sozinhos para uma aba
+"🗑 Lixeira" dentro do próprio módulo — o arquivamento roda automaticamente
+ao entrar no sistema, sem precisar excluir nada na mão. Restaurar e excluir
+definitivamente ficam disponíveis na lixeira. Mensagens ganharam o mesmo
+conceito: cada balão tem um "excluir" que manda pra uma lixeira da conversa,
+com um botão para alternar entre a conversa ativa e a lixeira.
+
+### 2 e 3. Pop-ups de notificação
+Um pop-up unificado aparece ao entrar no sistema, juntando lembretes
+pendentes e mensagens não lidas de clientes num só lugar — cada item leva
+direto pra tela relevante ao clicar. Como o sistema não tem push em tempo
+real (sem WebSocket), adicionei uma verificação a cada 45 segundos enquanto
+o usuário está usando o sistema: se chegar mensagem nova de um cliente,
+mostra o pop-up na hora, para os responsáveis pelo cliente e para
+sócios/master (que veem tudo).
+
+### 4. Ordem alfabética em Clientes
+Aplicada por padrão na listagem.
+
+### 5. Bug do "olhinho" no Resumo do mês
+Corrigido — a causa era um `fmtMoney()` direto onde devia ser `vmoney()` (a
+versão que respeita o botão de ocultar valores). Agora se comporta igual ao
+resto do painel.
+
+### 6. Agenda Pessoal (módulo novo)
+- Aparece **obrigatoriamente** para sócios, e para associados **só se
+  liberado** — novo checkbox "Agenda pessoal" no formulário de editar
+  usuário.
+- **Isolamento testado e confirmado**: nem um sócio vê a agenda de outro
+  sócio — só o Master vê a agenda de qualquer um (sócio ou associado),
+  numa tela chamada "Acompanhar agendas" (nome diferente, como pedido),
+  escolhendo o usuário numa lista antes de abrir a agenda dele.
+- Mini-painel próprio, numa única janela de cadastro: nome do cliente,
+  número do processo, tipo do processo, valor da causa (só anotação, sem
+  entrar no financeiro do escritório), audiência (data/hora + lembrete) e
+  prazo (data + lembrete) — com um painel de "próximas audiências" e
+  "próximos prazos" no topo.
+- **Testei de ponta a ponta com requisições reais**: sócio cria um
+  registro, outro sócio não consegue vê-lo, associado sem liberação é
+  bloqueado ao tentar criar, e o Master consegue ver a lista de usuários e
+  abrir a agenda específica de qualquer um deles.
+
+### Uma simplificação que assumi, para ficar honesto
+Cada registro da Agenda Pessoal tem **uma** audiência e **um** prazo (não
+uma lista de várias audiências/prazos por processo). Se você precisar
+registrar mais de uma audiência ou prazo para o mesmo cliente/processo,
+por enquanto crie um segundo registro. Se isso for importante, me avise
+que eu transformo em listas por registro.
+
+
+## 42. Novo módulo: DJEN (Diário de Justiça Eletrônico Nacional)
+
+Construí as 3 camadas que você pediu, cada uma testada isoladamente antes de
+juntar tudo. Antes de tudo, uma transparência importante: **pesquisei a API
+real do DJEN** (não é documentada oficialmente para quem consulta, só para
+quem publica) e baseei a integração no que integradores relatam funcionar de
+verdade em produção — não é algo que eu tenha inventado, mas também não é
+100% oficial/estável, porque o próprio CNJ não garante isso.
+
+### O que funciona
+
+- **Busca**: por nome do escritório, nome do advogado, OAB+UF, CPF/CNPJ ou
+  número do processo — com filtro de abrangência nacional ou por
+  tribunal/estado, e período por data única ou intervalo. Visual em abas,
+  parecido com o comunica.pje.jus.br.
+- **Leitura e triagem por IA** (`src/utils/triagemDjen.js`): usa a API da
+  Anthropic (Claude) para ler o texto bruto da publicação e identificar se
+  há prazo, de quantos dias, o tipo de ato e o responsável — precisa da
+  variável `ANTHROPIC_API_KEY` no servidor. Sem ela, o módulo continua
+  funcionando normalmente, só a classificação fica manual.
+- **Cálculo de prazos pelo art. 224 do CPC** (`src/utils/prazoCpc224.js`):
+  disponibilização → primeiro dia útil (publicação) → primeiro dia útil
+  seguinte (início da contagem) → soma os dias do prazo contando só dias
+  úteis. **Testei com casos concretos**: disponibilização numa quinta,
+  numa sexta (atravessando fim de semana), e um prazo de 15 dias úteis —
+  todos bateram com a conta manual. Inclui feriados nacionais fixos e
+  móveis (Carnaval, Sexta-feira Santa, Corpus Christi — conferi que o
+  Carnaval de 2026 calculado bate com o calendário real, 17/02).
+- **Interface de tratamento**: cada publicação importada fica com status
+  Pendente → Vinculada (a um processo já cadastrado) → Concluída, salva
+  permanentemente (não some da tela). Dá pra corrigir o prazo manualmente
+  se a IA errar ou não tiver identificado.
+- **Testei o fluxo inteiro de ponta a ponta pela API real do servidor**:
+  importar, bloquear duplicata, vincular a processo, corrigir prazo,
+  concluir, reabrir — tudo funcionou certo.
+
+### Duas limitações reais que preciso que você saiba antes de usar
+
+1. **Bloqueio geográfico**: testei a busca real do DJEN a partir deste
+   ambiente e recebi HTTP 403 — segundo relatos de quem já integrou, essa
+   API bloqueia acesso de fora do Brasil. **Se o Render hospedar este
+   sistema fora do Brasil, a busca pode não funcionar**, e não vai ser bug
+   do código. Teste assim que subir; se acontecer isso, me avise que
+   providenciamos uma alternativa (ex: um pequeno proxy hospedado no
+   Brasil).
+2. **Busca por nome/CPF-CNPJ não é oficialmente garantida**: o único filtro
+   de pessoa que a comunidade confirma funcionar de forma confiável na API
+   pública é OAB + UF (nome varia de grafia entre tribunais). Implementei a
+   busca por nome/escritório/CPF-CNPJ mesmo assim (tentando como parâmetro
+   e também filtrando o texto retornado localmente como reforço), mas o
+   resultado pode vir incompleto nesses casos — a OAB continua sendo o
+   critério mais confiável.
+
+Também vale registrar: o calendário de feriados cobre só os nacionais — não
+inclui feriados estaduais/municipais nem recessos forenses específicos de
+cada tribunal, então prazos perto dessas datas merecem conferência humana
+antes de serem considerados definitivos (isso já está avisado na própria
+tela, dentro do código).
+
+
 ---
 
 Qualquer erro ao subir, me mostre a mensagem exata que aparece (no Render, aba "Logs")

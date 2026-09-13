@@ -516,8 +516,9 @@
         <div class="grid-2">
           <div class="panel" id="msg-lista-box"><h3>Conversas</h3><div id="msg-lista"></div></div>
           <div class="panel"><h3 id="msg-thread-title">Selecione uma conversa</h3>
+            <div style="text-align:right; margin-bottom:4px;"><button class="btn btn-ghost btn-sm" id="msg-lixeira-btn" onclick="toggleThreadLixeira()" style="display:none;">🗑 Ver lixeira</button></div>
             <div class="msg-thread" id="msg-thread"></div>
-            <div style="display:flex; gap:8px; margin-top:10px;"><input type="text" id="msg-input" placeholder="Escreva uma mensagem..." onkeydown="if(event.key==='Enter')enviarMensagem()"><button class="btn btn-gold" onclick="enviarMensagem()">Enviar</button></div>
+            <div style="display:flex; gap:8px; margin-top:10px;" id="msg-input-row"><input type="text" id="msg-input" placeholder="Escreva uma mensagem..." onkeydown="if(event.key==='Enter')enviarMensagem()"><button class="btn btn-gold" onclick="enviarMensagem()">Enviar</button></div>
           </div>
         </div>
       </div>
@@ -528,11 +529,79 @@
         <div id="meus-processos-box"></div>
       </div>
 
+      <!-- DJEN -->
+      <div class="page" id="page-djen">
+        <div class="section-head"><div><h2>DJEN — Diário de Justiça Eletrônico Nacional</h2><p>Busca publicações e intimações direto na base oficial do CNJ.</p></div></div>
+        <div class="hint" style="margin-bottom:10px;">Consulta oficial do CNJ (comunica.pje.jus.br). A busca mais confiável é por <strong>OAB + estado</strong> ou <strong>número do processo</strong> — nome e CPF/CNPJ são tentados, mas o próprio CNJ não garante esse filtro (grafia de nome varia entre tribunais).</div>
+        <div class="pill-select" style="margin-bottom:14px;" id="djen-tabs">
+          <button class="fin-tab active" data-tab="buscar" onclick="setDjenTab('buscar')">🔎 Buscar no DJEN</button>
+          <button class="fin-tab" data-tab="capturadas" onclick="setDjenTab('capturadas')">📋 Capturadas</button>
+        </div>
+
+        <div id="djen-painel-buscar">
+          <div class="panel">
+            <div class="field-row">
+              <div class="field"><label>Nome do escritório</label><input id="djen-f-escritorio" placeholder="Ex: MS Advocacia"></div>
+              <div class="field"><label>Nome do advogado</label><input id="djen-f-advogado" placeholder="Ex: Paula Freire Maciel"></div>
+            </div>
+            <div class="field-row">
+              <div class="field"><label>OAB (só números)</label><input id="djen-f-oab" placeholder="Ex: 77194"></div>
+              <div class="field"><label>UF da OAB</label><select id="djen-f-uf-oab"><option value="">—</option>${['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(u=>`<option value="${u}">${u}</option>`).join('')}</select></div>
+              <div class="field"><label>CPF/CNPJ</label><input id="djen-f-cpfcnpj" placeholder="Só números"></div>
+            </div>
+            <div class="field"><label>Número do processo (CNJ, com ou sem máscara)</label><input id="djen-f-processo" placeholder="0000000-00.0000.0.00.0000"></div>
+            <div class="field-row">
+              <div class="field"><label>Abrangência${ajuda('Nacional busca em todos os tribunais. Por estado restringe a um tribunal específico (mais rápido e mais preciso quando você já sabe onde o processo tramita).')}</label><select id="djen-f-abrangencia" onchange="document.getElementById('djen-f-tribunal-box').style.display=this.value==='estado'?'block':'none'"><option value="nacional">Nacional (todos os tribunais)</option><option value="estado">Por estado / tribunal</option></select></div>
+              <div class="field" id="djen-f-tribunal-box" style="display:none;"><label>Tribunal (sigla)</label><input id="djen-f-tribunal" placeholder="Ex: TJBA, TRF1, TRT5"></div>
+            </div>
+            <div class="field-row">
+              <div class="field"><label>Período${ajuda('Escolha "Data única" para um dia só, ou "Intervalo" para um período — a data é a de disponibilização no diário, não a de publicação (que o sistema calcula sozinho depois, pelo art. 224 do CPC).')}</label><select id="djen-f-tipo-data" onchange="atualizarCamposDataDjen()"><option value="unica">Data única</option><option value="intervalo">Intervalo (de/até)</option></select></div>
+              <div class="field"><label id="djen-label-data-inicio">Data</label><input type="date" id="djen-f-data-inicio" value="${todayISO()}"></div>
+              <div class="field" id="djen-f-data-fim-box" style="display:none;"><label>Até</label><input type="date" id="djen-f-data-fim" value="${todayISO()}"></div>
+            </div>
+            <button class="btn btn-gold" onclick="buscarDjen()">🔎 Buscar</button>
+            <div id="djen-busca-status" style="margin-top:10px;"></div>
+          </div>
+          <div id="djen-resultados" style="margin-top:14px;"></div>
+        </div>
+
+        <div id="djen-painel-capturadas" style="display:none;">
+          <div class="pill-select" style="margin-bottom:10px;" id="djen-status-tabs">
+            <button class="fin-tab active" data-status="pendente" onclick="setDjenStatusTab('pendente')">Pendentes</button>
+            <button class="fin-tab" data-status="vinculada" onclick="setDjenStatusTab('vinculada')">Vinculadas</button>
+            <button class="fin-tab" data-status="concluida" onclick="setDjenStatusTab('concluida')">Concluídas</button>
+          </div>
+          <div id="djen-capturadas-lista"></div>
+        </div>
+      </div>
+
+      <!-- AGENDA PESSOAL -->
+      <div class="page" id="page-agenda-pessoal">
+        <div class="section-head"><div><h2 id="ap-titulo-pagina">Agenda Pessoal</h2><p>Um espaço só seu — clientes, processos, audiências e prazos particulares, à parte do sistema principal.</p></div>
+          <button class="btn btn-gold" id="ap-btn-novo" onclick="openAgendaPessoalForm()" style="display:none;">+ Novo registro</button>
+        </div>
+        <div id="ap-selecao-usuario" style="display:none;"></div>
+        <div id="ap-dashboard" style="display:none;">
+          <div id="ap-voltar-master" style="display:none; margin-bottom:10px;"><button class="btn btn-ghost btn-sm" onclick="renderAgendaPessoalPage(true)">← Voltar à lista de usuários</button></div>
+          <div class="kpi-grid" style="margin-bottom:14px;">
+            <div class="panel"><h3>Próximas audiências</h3><div id="ap-proximas-audiencias"></div></div>
+            <div class="panel"><h3>Próximos prazos</h3><div id="ap-proximos-prazos"></div></div>
+          </div>
+          <div class="panel" style="padding:0;"><table><thead><tr><th>Cliente</th><th>Processo</th><th>Tipo</th><th>Valor da causa</th><th>Audiência</th><th>Prazo</th><th></th></tr></thead><tbody id="tbl-agenda-pessoal"></tbody></table>
+          <div class="empty" id="empty-agenda-pessoal" style="display:none;"><div class="big">🗂️</div>Nenhum registro ainda.</div></div>
+        </div>
+      </div>
+
       <!-- LEMBRETES -->
       <div class="page" id="page-lembretes">
         <div class="section-head"><div><h2>Lembretes</h2><p>Anotações e avisos gerais do escritório.</p></div>
           <button class="btn btn-gold" onclick="openLembreteForm()">+ Novo lembrete</button>
         </div>
+        <div class="pill-select" style="margin-bottom:10px;" id="lemb-tabs">
+          <button class="fin-tab active" data-tab="ativos" onclick="setLembretesTab('ativos')">Ativos</button>
+          <button class="fin-tab" data-tab="lixeira" onclick="setLembretesTab('lixeira')">🗑 Lixeira</button>
+        </div>
+        <div class="hint" style="margin-bottom:8px;">Lembretes com a data já vencida (e ainda não concluídos) vão sozinhos para a lixeira — não precisa excluir na mão.</div>
         <div class="panel" style="padding:0;"><table><thead><tr><th>Título</th><th>Descrição</th><th>Data</th><th>Situação</th><th></th></tr></thead><tbody id="tbl-lembretes"></tbody></table>
         <div class="empty" id="empty-lembretes" style="display:none;"><div class="big">🔔</div>Nenhum lembrete cadastrado ainda.</div></div>
       </div>
@@ -876,7 +945,7 @@ async function doLogin(){
   AUTH_TOKEN = resposta.token;
   localStorage.setItem('ms_token', AUTH_TOKEN);
   const u = resposta.usuario;
-  CURRENT_USER = { id:u.id, tipo:u.tipo, nome:u.nome, clienteId:u.clienteId||null, vinculoId:u.vinculoId||null, mustChange: !!u.mustChange };
+  CURRENT_USER = { id:u.id, tipo:u.tipo, nome:u.nome, clienteId:u.clienteId||null, vinculoId:u.vinculoId||null, mustChange: !!u.mustChange, agendaPessoalLiberada: !!u.agendaPessoalLiberada };
   document.getElementById('login-pass').value='';
   await enterApp();
   if(CURRENT_USER.mustChange) setTimeout(()=>openTrocarSenha(true), 300);
@@ -895,9 +964,56 @@ async function enterApp(){
   atualizarBotoesValoresOcultos();
   buildNav();
   await loadAll();
+  await arquivarLembretesVencidos();
+  IDS_MENSAGENS_JA_AVISADAS = new Set(DB.mensagens.filter(m=>m.autor==='cliente' && !m.lida).map(m=>m.id));
   goPage(PAGES_BY_ROLE[CURRENT_USER.tipo][0].id);
   renderAll();
+  mostrarPopupNotificacoesEntrada();
 }
+function mostrarPopupNotificacoesEntrada(){
+  if(isCliente()) return; // pop-up é só para a equipe do escritório
+  const hoje = todayISO();
+  const meusIds = meusClientes().map(c=>c.id);
+  const lembretesPendentes = DB.lembretes.filter(l=>!l.feito && !l.lixeira && l.data<=hoje).sort((a,b)=>a.data.localeCompare(b.data));
+  const mensagensNaoLidas = DB.clientes.filter(c=>meusIds.includes(c.id)).map(c=>({
+    cliente:c, qtd: DB.mensagens.filter(m=>m.clienteId===c.id && m.autor==='cliente' && !m.lida && !m.lixeira).length,
+  })).filter(x=>x.qtd>0);
+  if(!lembretesPendentes.length && !mensagensNaoLidas.length) return;
+  const corpo = `
+    ${mensagensNaoLidas.length? `<div style="margin-bottom:14px;"><strong>💬 Mensagens não lidas</strong>
+      ${mensagensNaoLidas.map(x=>`<div class="list-row" style="cursor:pointer;" onclick="closeModal(); goPage('mensagens'); abrirThread('${x.cliente.id}','${x.cliente.vinculoId||''}');"><div><div class="rtitle">${escapeHtml(x.cliente.nome)}</div></div><span class="badge" style="background:var(--danger); color:#fff; border-radius:20px; padding:1px 7px; font-size:10px;">${x.qtd}</span></div>`).join('')}
+    </div>` : ''}
+    ${lembretesPendentes.length? `<div><strong>🔔 Lembretes pendentes</strong>
+      ${lembretesPendentes.map(l=>`<div class="list-row" style="cursor:pointer;" onclick="closeModal(); goPage('lembretes');"><span class="dot" style="background:${l.data<hoje?'var(--danger)':'var(--gold)'}"></span><div><div class="rtitle">${escapeHtml(l.titulo)}</div><div class="rsub">${escapeHtml(l.descricao)||''}</div></div><div class="rmeta">${fmtDate(l.data)}</div></div>`).join('')}
+    </div>` : ''}
+    <div class="hint" style="margin-top:12px;">Fica assim até você marcar como concluído (lembrete) ou ler a mensagem — ou enviar para a lixeira.</div>
+  `;
+  openModal('Você tem pendências', corpo, null);
+  document.getElementById('modal-save-btn').style.display = 'none';
+}
+// Como o sistema não tem push em tempo real, verifica periodicamente se
+// chegou mensagem nova de algum cliente e avisa com um pop-up — sem precisar
+// que o usuário fique com a página de Mensagens aberta o tempo todo.
+let IDS_MENSAGENS_JA_AVISADAS = new Set();
+async function verificarMensagensNovas(){
+  if(!CURRENT_USER || isCliente()) return;
+  let mensagensAtuais;
+  try{ mensagensAtuais = await apiFetch('/api/collections/mensagens'); }catch(e){ return; }
+  DB.mensagens = mensagensAtuais;
+  const meusIds = meusClientes().map(c=>c.id);
+  const novas = mensagensAtuais.filter(m=>m.autor==='cliente' && !m.lida && !m.lixeira && meusIds.includes(m.clienteId) && !IDS_MENSAGENS_JA_AVISADAS.has(m.id));
+  if(!novas.length) return;
+  novas.forEach(m=>IDS_MENSAGENS_JA_AVISADAS.add(m.id));
+  const porCliente = {};
+  novas.forEach(m=>{ porCliente[m.clienteId] = (porCliente[m.clienteId]||0)+1; });
+  const corpo = `<div><strong>💬 Nova(s) mensagem(ns) recebida(s)</strong>
+    ${Object.entries(porCliente).map(([clienteId,qtd])=>`<div class="list-row" style="cursor:pointer;" onclick="closeModal(); goPage('mensagens'); abrirThread('${clienteId}','${clienteNome(clienteId)?(DB.clientes.find(c=>c.id===clienteId)?.vinculoId||''):''}');"><div><div class="rtitle">${escapeHtml(clienteNome(clienteId))}</div></div><span class="badge" style="background:var(--danger); color:#fff; border-radius:20px; padding:1px 7px; font-size:10px;">${qtd}</span></div>`).join('')}
+  </div>`;
+  openModal('Nova mensagem de cliente', corpo, null);
+  document.getElementById('modal-save-btn').style.display = 'none';
+  updateNavBadges(); if(document.getElementById('page-mensagens')?.classList.contains('active')) renderMensagens();
+}
+setInterval(verificarMensagensNovas, 45000);
 
 async function openTrocarSenha(forced){
   const body = `
@@ -952,13 +1068,18 @@ const ICONS = {
   calc:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M8 6h8M8 11h.01M12 11h.01M16 11h.01M8 15h.01M12 15h.01M16 15h.01M8 19h.01M12 19h.01M16 19h.01"/></svg>',
 };
 const PAGES_BY_ROLE = {
-  master: [ {id:'dashboard',label:'Painel',icon:'grid'}, {id:'usuarios',label:'Usuários',icon:'users'}, {id:'clientes',label:'Clientes',icon:'user'}, {id:'processos',label:'Processos',icon:'folder'}, {id:'prazos',label:'Prazos',icon:'calendar'}, {id:'financeiro',label:'Financeiro',icon:'money'}, {id:'calculo',label:'Cálculo Jurídico',icon:'calc'}, {id:'agenda',label:'Agenda',icon:'calendar'}, {id:'mensagens',label:'Mensagens',icon:'msg'}, {id:'lembretes',label:'Lembretes',icon:'bell'}, {id:'config',label:'Configurações',icon:'cog'} ],
-  socio: [ {id:'dashboard',label:'Painel',icon:'grid'}, {id:'usuarios',label:'Usuários',icon:'users'}, {id:'clientes',label:'Clientes',icon:'user'}, {id:'processos',label:'Processos',icon:'folder'}, {id:'prazos',label:'Prazos',icon:'calendar'}, {id:'financeiro',label:'Financeiro',icon:'money'}, {id:'calculo',label:'Cálculo Jurídico',icon:'calc'}, {id:'agenda',label:'Agenda',icon:'calendar'}, {id:'mensagens',label:'Mensagens',icon:'msg'}, {id:'lembretes',label:'Lembretes',icon:'bell'} ],
-  associado: [ {id:'dashboard',label:'Painel',icon:'grid'}, {id:'clientes',label:'Clientes',icon:'user'}, {id:'processos',label:'Processos',icon:'folder'}, {id:'prazos',label:'Prazos',icon:'calendar'}, {id:'financeiro',label:'Financeiro',icon:'money'}, {id:'calculo',label:'Cálculo Jurídico',icon:'calc'}, {id:'agenda',label:'Agenda',icon:'calendar'}, {id:'mensagens',label:'Mensagens',icon:'msg'}, {id:'lembretes',label:'Lembretes',icon:'bell'} ],
+  master: [ {id:'dashboard',label:'Painel',icon:'grid'}, {id:'usuarios',label:'Usuários',icon:'users'}, {id:'clientes',label:'Clientes',icon:'user'}, {id:'processos',label:'Processos',icon:'folder'}, {id:'prazos',label:'Prazos',icon:'calendar'}, {id:'financeiro',label:'Financeiro',icon:'money'}, {id:'calculo',label:'Cálculo Jurídico',icon:'calc'}, {id:'djen',label:'DJEN',icon:'bell'}, {id:'agenda',label:'Agenda',icon:'calendar'}, {id:'mensagens',label:'Mensagens',icon:'msg'}, {id:'lembretes',label:'Lembretes',icon:'bell'}, {id:'config',label:'Configurações',icon:'cog'} ],
+  socio: [ {id:'dashboard',label:'Painel',icon:'grid'}, {id:'usuarios',label:'Usuários',icon:'users'}, {id:'clientes',label:'Clientes',icon:'user'}, {id:'processos',label:'Processos',icon:'folder'}, {id:'prazos',label:'Prazos',icon:'calendar'}, {id:'financeiro',label:'Financeiro',icon:'money'}, {id:'calculo',label:'Cálculo Jurídico',icon:'calc'}, {id:'djen',label:'DJEN',icon:'bell'}, {id:'agenda',label:'Agenda',icon:'calendar'}, {id:'mensagens',label:'Mensagens',icon:'msg'}, {id:'lembretes',label:'Lembretes',icon:'bell'} ],
+  associado: [ {id:'dashboard',label:'Painel',icon:'grid'}, {id:'clientes',label:'Clientes',icon:'user'}, {id:'processos',label:'Processos',icon:'folder'}, {id:'prazos',label:'Prazos',icon:'calendar'}, {id:'financeiro',label:'Financeiro',icon:'money'}, {id:'calculo',label:'Cálculo Jurídico',icon:'calc'}, {id:'djen',label:'DJEN',icon:'bell'}, {id:'agenda',label:'Agenda',icon:'calendar'}, {id:'mensagens',label:'Mensagens',icon:'msg'}, {id:'lembretes',label:'Lembretes',icon:'bell'} ],
   cliente: [ {id:'meus-processos',label:'Meus processos',icon:'folder'}, {id:'agendar-cliente',label:'Agendar visita',icon:'calendar'}, {id:'mensagens',label:'Mensagens',icon:'msg'} ],
 };
 function buildNav(){
-  const pages = PAGES_BY_ROLE[CURRENT_USER.tipo];
+  let pages = PAGES_BY_ROLE[CURRENT_USER.tipo].slice();
+  if(CURRENT_USER.tipo==='master'){
+    pages = [...pages.slice(0,1), {id:'agenda-pessoal', label:'Acompanhar agendas', icon:'calendar'}, ...pages.slice(1)];
+  } else if(CURRENT_USER.tipo==='socio' || (CURRENT_USER.tipo==='associado' && CURRENT_USER.agendaPessoalLiberada)){
+    pages = [...pages.slice(0,1), {id:'agenda-pessoal', label:'Agenda Pessoal', icon:'calendar'}, ...pages.slice(1)];
+  }
   document.getElementById('nav-list').innerHTML = pages.map(p=>`
     <div class="nav-item" id="nav-${p.id}" onclick="goPage('${p.id}')">${ICONS[p.icon]}<span>${p.label}</span><span class="badge" id="badge-${p.id}" style="display:none;"></span></div>`).join('');
 }
@@ -967,8 +1088,10 @@ function goPage(id){
   document.getElementById('page-'+id).classList.add('active');
   document.querySelectorAll('.nav-item').forEach(el=>el.classList.remove('active'));
   const navEl = document.getElementById('nav-'+id); if(navEl) navEl.classList.add('active');
-  const p = PAGES_BY_ROLE[CURRENT_USER.tipo].find(x=>x.id===id);
+  const p = PAGES_BY_ROLE[CURRENT_USER.tipo].find(x=>x.id===id) || (id==='agenda-pessoal'? {label: CURRENT_USER.tipo==='master'?'Acompanhar agendas':'Agenda Pessoal'} : null);
   document.getElementById('page-title').textContent = p? p.label : '';
+  if(id==='agenda-pessoal') renderAgendaPessoalPage();
+  if(id==='djen') renderDjenPage();
   if(id==='agenda') renderAgendaPage();
   if(id==='agendar-cliente') renderAgendarCliente();
   if(id==='mensagens') renderMensagens();
@@ -1089,7 +1212,7 @@ function openUsuarioForm(id){
   const body = `
     <div class="field-row">
       <div class="field"><label>Nome completo</label><input id="uf-nome" value="${escapeHtml(u.nome)}"></div>
-      <div class="field"><label>Perfil</label><select id="uf-tipo">${tiposPermitidos.map(t=>`<option value="${t}" ${u.tipo===t?'selected':''}>${t==='socio'?'Sócio':'Associado'}</option>`).join('')}</select></div>
+      <div class="field"><label>Perfil</label><select id="uf-tipo" onchange="const c=document.getElementById('uf-agenda-pessoal'); if(this.value==='socio'){c.checked=true;c.disabled=true;}else{c.disabled=false;}">${tiposPermitidos.map(t=>`<option value="${t}" ${u.tipo===t?'selected':''}>${t==='socio'?'Sócio':'Associado'}</option>`).join('')}</select></div>
     </div>
     <div class="field-row">
       <div class="field"><label>Login</label><input id="uf-login" value="${escapeHtml(u.login)}" placeholder="ex: joao.silva" ${id?'disabled':''}></div>
@@ -1112,13 +1235,14 @@ function openUsuarioForm(id){
       </div>
     </fieldset>
     ${!id? `<div class="field"><label>Senha inicial</label><input type="password" id="uf-senha" placeholder="Defina uma senha temporária"></div>` : ''}
+    <div class="field"><label><input type="checkbox" id="uf-agenda-pessoal" style="width:auto; margin-right:6px;" ${u.tipo==='socio'||u.agendaPessoalLiberada?'checked':''} ${u.tipo==='socio'?'disabled':''}> Agenda pessoal${ajuda('Libera a aba "Agenda Pessoal" para este usuário — um mini-painel só dele, para anotar clientes, processos, audiências e prazos particulares. Sócios sempre têm acesso; para associados, você decide aqui.')}</label></div>
     <div class="field"><label>Situação</label><select id="uf-ativo"><option value="true" ${u.ativo!==false?'selected':''}>Ativo</option><option value="false" ${u.ativo===false?'selected':''}>Inativo</option></select></div>
   `;
   openModal(id? 'Editar usuário' : 'Novo usuário', body, async ()=>{
     const nome = document.getElementById('uf-nome').value.trim();
     const login = document.getElementById('uf-login').value.trim();
     if(!nome || !login){ showToast('Preencha nome e login.'); return; }
-    const data = { nome, tipo: document.getElementById('uf-tipo').value, oab: document.getElementById('uf-oab').value.trim(), ativo: document.getElementById('uf-ativo').value==='true', nacionalidade: document.getElementById('uf-nac').value.trim(), estadoCivil: document.getElementById('uf-ec').value.trim(), rg: document.getElementById('uf-rg').value.trim(), cpf: document.getElementById('uf-cpf').value.trim(), telefone: document.getElementById('uf-telefone').value.trim(), endereco: document.getElementById('uf-endereco').value.trim() };
+    const data = { nome, tipo: document.getElementById('uf-tipo').value, oab: document.getElementById('uf-oab').value.trim(), ativo: document.getElementById('uf-ativo').value==='true', nacionalidade: document.getElementById('uf-nac').value.trim(), estadoCivil: document.getElementById('uf-ec').value.trim(), rg: document.getElementById('uf-rg').value.trim(), cpf: document.getElementById('uf-cpf').value.trim(), telefone: document.getElementById('uf-telefone').value.trim(), endereco: document.getElementById('uf-endereco').value.trim(), agendaPessoalLiberada: document.getElementById('uf-agenda-pessoal').checked };
     try{
       if(id){
         await apiFetch('/api/usuarios/'+id, { method:'PATCH', body: JSON.stringify(data) });
@@ -1316,6 +1440,7 @@ function renderClientes(){
   const empty = document.getElementById('empty-clientes');
   const busca = (document.getElementById('f-cli-busca')?.value||'').toLowerCase();
   let list = meusClientes().filter(c => !busca || (c.nome+' '+c.cpf).toLowerCase().includes(busca));
+  list = list.slice().sort((a,b)=>(a.nome||'').localeCompare(b.nome||'', 'pt-BR'));
   if(list.length===0){ tbody.innerHTML=''; empty.style.display='block'; return; }
   empty.style.display='none';
   tbody.innerHTML = list.map(c=>`
@@ -3634,17 +3759,33 @@ function renderMensagens(){
     listaPanel.style.display='block';
     const clientesRelacionados = meusClientes();
     listaBox.innerHTML = clientesRelacionados.length? clientesRelacionados.map(c=>{
-      const naoLidas = DB.mensagens.filter(m=>m.clienteId===c.id && m.autor==='cliente' && !m.lida).length;
+      const naoLidas = DB.mensagens.filter(m=>m.clienteId===c.id && m.autor==='cliente' && !m.lida && !m.lixeira).length;
       return `<div class="list-row" style="cursor:pointer;" onclick="abrirThread('${c.id}','${c.vinculoId}')"><div><div class="rtitle">${escapeHtml(c.nome)}</div></div>${naoLidas>0? `<span class="rmeta"><span class="badge" style="background:var(--danger); color:#fff; border-radius:20px; padding:1px 7px; font-size:10px;">${naoLidas}</span></span>`:''}</div>`;
     }).join('') : `<div class="empty">Nenhum cliente vinculado.</div>`;
   }
 }
-function abrirThread(clienteId, usuarioId){ THREAD_ATIVA = {clienteId, usuarioId}; renderThread(); }
+function abrirThread(clienteId, usuarioId){ THREAD_ATIVA = {clienteId, usuarioId}; THREAD_MOSTRAR_LIXEIRA=false; renderThread(); }
+let THREAD_MOSTRAR_LIXEIRA = false;
+function toggleThreadLixeira(){
+  THREAD_MOSTRAR_LIXEIRA = !THREAD_MOSTRAR_LIXEIRA;
+  renderThread();
+}
+async function moverMensagemLixeira(id){
+  await persistMutation('mensagens', arr=>{ const m = arr.find(x=>x.id===id); if(m) m.lixeira=true; return arr; });
+  renderThread();
+}
+async function restaurarMensagem(id){
+  await persistMutation('mensagens', arr=>{ const m = arr.find(x=>x.id===id); if(m) m.lixeira=false; return arr; });
+  renderThread();
+}
 async function renderThread(){
   if(!THREAD_ATIVA){ document.getElementById('msg-thread').innerHTML=''; return; }
-  document.getElementById('msg-thread-title').textContent = 'Conversa com ' + clienteNome(THREAD_ATIVA.clienteId);
-  const msgs = DB.mensagens.filter(m=>m.clienteId===THREAD_ATIVA.clienteId).sort((a,b)=>a.data.localeCompare(b.data));
-  document.getElementById('msg-thread').innerHTML = msgs.length? msgs.map(m=>`<div class="msg-bubble msg-${m.autor}">${escapeHtml(m.texto)}<div class="msg-meta">${new Date(m.data).toLocaleString('pt-BR')}</div></div>`).join('') : `<div class="empty">Nenhuma mensagem ainda.</div>`;
+  document.getElementById('msg-thread-title').textContent = (THREAD_MOSTRAR_LIXEIRA? '🗑 Lixeira — ' : '') + 'Conversa com ' + clienteNome(THREAD_ATIVA.clienteId);
+  const btnLixeira = document.getElementById('msg-lixeira-btn');
+  if(!isCliente()){ btnLixeira.style.display='inline-flex'; btnLixeira.textContent = THREAD_MOSTRAR_LIXEIRA? '↩️ Voltar para a conversa' : '🗑 Ver lixeira'; } else { btnLixeira.style.display='none'; }
+  document.getElementById('msg-input-row').style.display = THREAD_MOSTRAR_LIXEIRA? 'none':'flex';
+  const msgs = DB.mensagens.filter(m=>m.clienteId===THREAD_ATIVA.clienteId && !!m.lixeira===THREAD_MOSTRAR_LIXEIRA).sort((a,b)=>a.data.localeCompare(b.data));
+  document.getElementById('msg-thread').innerHTML = msgs.length? msgs.map(m=>`<div class="msg-bubble msg-${m.autor}">${escapeHtml(m.texto)}<div class="msg-meta">${new Date(m.data).toLocaleString('pt-BR')}${!isCliente()? (THREAD_MOSTRAR_LIXEIRA? ` · <span style="cursor:pointer; text-decoration:underline;" onclick="restaurarMensagem('${m.id}')">restaurar</span>` : ` · <span style="cursor:pointer; text-decoration:underline;" onclick="moverMensagemLixeira('${m.id}')">excluir</span>`) : ''}</div></div>`).join('') : `<div class="empty">${THREAD_MOSTRAR_LIXEIRA? 'A lixeira está vazia.' : 'Nenhuma mensagem ainda.'}</div>`;
   const temNaoLidas = msgs.some(m=>m.autor==='cliente' && !m.lida);
   if(temNaoLidas && !isCliente()){
     await persistMutation('mensagens', arr=>{
@@ -3658,7 +3799,7 @@ async function enviarMensagem(){
   const input = document.getElementById('msg-input'); const texto = input.value.trim();
   if(!texto) return;
   await persistMutation('mensagens', arr=>{
-    arr.push({id:uid(), clienteId:THREAD_ATIVA.clienteId, usuarioId:THREAD_ATIVA.usuarioId, autor: isCliente()?'cliente':'advogado', texto, data:new Date().toISOString(), lida:false});
+    arr.push({id:uid(), clienteId:THREAD_ATIVA.clienteId, usuarioId:THREAD_ATIVA.usuarioId, autor: isCliente()?'cliente':'advogado', texto, data:new Date().toISOString(), lida:false, lixeira:false});
     return arr;
   });
   input.value=''; renderThread(); if(!isCliente()) renderMensagens();
@@ -3714,6 +3855,283 @@ async function consultarUltimaMovimentacao(numero){
 /* ============================================================
    LEMBRETES
    ============================================================ */
+/* ============================================================
+   AGENDA PESSOAL — mini-painel particular por usuário; Master acompanha
+   a de qualquer sócio/associado, mas ninguém mais vê a agenda alheia.
+   ============================================================ */
+let AP_USUARIO_SELECIONADO = null; // só usado pelo Master
+let AP_REGISTROS = [];
+async function renderAgendaPessoalPage(forcarSelecao){
+  document.getElementById('ap-titulo-pagina').textContent = CURRENT_USER.tipo==='master' ? 'Acompanhar agendas' : 'Agenda Pessoal';
+  if(CURRENT_USER.tipo==='master'){
+    if(forcarSelecao || !AP_USUARIO_SELECIONADO){
+      AP_USUARIO_SELECIONADO = null;
+      document.getElementById('ap-selecao-usuario').style.display='block';
+      document.getElementById('ap-dashboard').style.display='none';
+      document.getElementById('ap-btn-novo').style.display='none';
+      try{
+        const usuarios = await apiFetch('/api/agenda-pessoal/usuarios');
+        document.getElementById('ap-selecao-usuario').innerHTML = usuarios.length? usuarios.map(u=>`<div class="list-row" style="cursor:pointer;" onclick="selecionarUsuarioAgendaPessoal('${u.id}','${escapeHtml(u.nome)}')"><div><div class="rtitle">${escapeHtml(u.nome)}</div><div class="rsub">${u.tipo==='socio'?'Sócio':'Associado'}</div></div></div>`).join('') : '<div class="empty">Nenhum sócio ou associado cadastrado.</div>';
+      }catch(e){ showToast(e.message||'Não foi possível carregar a lista.'); }
+      return;
+    }
+  } else {
+    document.getElementById('ap-selecao-usuario').style.display='none';
+  }
+  document.getElementById('ap-dashboard').style.display='block';
+  document.getElementById('ap-btn-novo').style.display='inline-flex';
+  document.getElementById('ap-voltar-master').style.display = CURRENT_USER.tipo==='master' ? 'block':'none';
+  await carregarAgendaPessoal();
+}
+function selecionarUsuarioAgendaPessoal(id, nome){
+  AP_USUARIO_SELECIONADO = {id, nome};
+  renderAgendaPessoalPage();
+}
+async function carregarAgendaPessoal(){
+  const qs = (CURRENT_USER.tipo==='master' && AP_USUARIO_SELECIONADO) ? '?usuarioId='+AP_USUARIO_SELECIONADO.id : '';
+  try{ AP_REGISTROS = await apiFetch('/api/agenda-pessoal'+qs); }
+  catch(e){ AP_REGISTROS = []; showToast(e.message||'Não foi possível carregar a agenda.'); }
+  renderTabelaAgendaPessoal();
+}
+function renderTabelaAgendaPessoal(){
+  const tbody = document.getElementById('tbl-agenda-pessoal');
+  const empty = document.getElementById('empty-agenda-pessoal');
+  const ativos = AP_REGISTROS.filter(r=>!r.concluido);
+  if(!ativos.length){ tbody.innerHTML=''; empty.style.display='block'; }
+  else {
+    empty.style.display='none';
+    tbody.innerHTML = ativos.map(r=>`<tr>
+      <td>${escapeHtml(r.clienteNome)||'—'}</td>
+      <td>${escapeHtml(r.numeroProcesso)||'—'}</td>
+      <td>${escapeHtml(r.tipoProcesso)||'—'}</td>
+      <td>${r.valorCausa? fmtMoney(r.valorCausa) : '—'}</td>
+      <td>${r.audienciaData? fmtDate(r.audienciaData)+(r.audienciaHora?' '+r.audienciaHora:'')+(r.audienciaLembrete?' 🔔':'') : '—'}</td>
+      <td>${r.prazoData? fmtDate(r.prazoData)+(r.prazoLembrete?' 🔔':'') : '—'}</td>
+      <td><div class="row-actions">
+        <button class="icon-btn" onclick="openAgendaPessoalForm('${r.id}')" title="Editar">✎</button>
+        <button class="icon-btn" onclick="concluirAgendaPessoal('${r.id}')" title="Marcar como concluído">✔️</button>
+        <button class="icon-btn danger" onclick="excluirAgendaPessoal('${r.id}')" title="Excluir">🗑</button>
+      </div></td>
+    </tr>`).join('');
+  }
+  const hoje = todayISO();
+  const aud = AP_REGISTROS.filter(r=>!r.concluido && r.audienciaData).sort((a,b)=>a.audienciaData.localeCompare(b.audienciaData)).slice(0,6);
+  document.getElementById('ap-proximas-audiencias').innerHTML = aud.length? aud.map(r=>`<div class="list-row"><span class="dot" style="background:${r.audienciaData<hoje?'var(--danger)':'var(--gold)'}"></span><div><div class="rtitle">${escapeHtml(r.clienteNome)||'Audiência'}</div><div class="rsub">${escapeHtml(r.numeroProcesso)||''}</div></div><div class="rmeta">${fmtDate(r.audienciaData)}${r.audienciaHora?' '+r.audienciaHora:''}</div></div>`).join('') : '<div class="empty">Nenhuma audiência agendada.</div>';
+  const prazos = AP_REGISTROS.filter(r=>!r.concluido && r.prazoData).sort((a,b)=>a.prazoData.localeCompare(b.prazoData)).slice(0,6);
+  document.getElementById('ap-proximos-prazos').innerHTML = prazos.length? prazos.map(r=>`<div class="list-row"><span class="dot" style="background:${r.prazoData<hoje?'var(--danger)':'var(--gold)'}"></span><div><div class="rtitle">${escapeHtml(r.prazoDescricao)||'Prazo'}</div><div class="rsub">${escapeHtml(r.clienteNome)||''}</div></div><div class="rmeta">${fmtDate(r.prazoData)}</div></div>`).join('') : '<div class="empty">Nenhum prazo cadastrado.</div>';
+}
+function openAgendaPessoalForm(id){
+  const r = id? AP_REGISTROS.find(x=>x.id===id) : {clienteNome:'',numeroProcesso:'',tipoProcesso:'',valorCausa:'',audienciaData:'',audienciaHora:'',audienciaLembrete:false,prazoDescricao:'',prazoData:'',prazoLembrete:false,obs:''};
+  if(id && !r){ showToast('Registro não encontrado.'); return; }
+  const body = `
+    <div class="field-row">
+      <div class="field"><label>Nome do cliente</label><input id="ap-cliente" value="${escapeHtml(r.clienteNome)}"></div>
+      <div class="field"><label>Nº do processo</label><input id="ap-numero" value="${escapeHtml(r.numeroProcesso)}"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Tipo do processo</label><input id="ap-tipo" value="${escapeHtml(r.tipoProcesso)}" placeholder="Ex: Ação de cobrança"></div>
+      <div class="field"><label>Valor da causa (anotação)${ajuda('Só para anotar, sem entrar no controle financeiro do escritório.')}</label><input type="number" step="0.01" id="ap-valor" value="${r.valorCausa||''}"></div>
+    </div>
+    <fieldset><legend>Audiência</legend>
+      <div class="field-row">
+        <div class="field"><label>Data</label><input type="date" id="ap-aud-data" value="${r.audienciaData||''}"></div>
+        <div class="field"><label>Horário</label><input type="time" id="ap-aud-hora" value="${r.audienciaHora||''}"></div>
+      </div>
+      <div class="field"><label><input type="checkbox" id="ap-aud-lembrete" style="width:auto; margin-right:6px;" ${r.audienciaLembrete?'checked':''}> Lembrar desta audiência</label></div>
+    </fieldset>
+    <fieldset><legend>Prazo</legend>
+      <div class="field"><label>Descrição do prazo</label><input id="ap-prazo-desc" value="${escapeHtml(r.prazoDescricao)}" placeholder="Ex: Contestação"></div>
+      <div class="field"><label>Data</label><input type="date" id="ap-prazo-data" value="${r.prazoData||''}"></div>
+      <div class="field"><label><input type="checkbox" id="ap-prazo-lembrete" style="width:auto; margin-right:6px;" ${r.prazoLembrete?'checked':''}> Lembrar deste prazo</label></div>
+    </fieldset>
+    <div class="field"><label>Observações</label><textarea id="ap-obs">${escapeHtml(r.obs)}</textarea></div>
+  `;
+  openModal(id?'Editar registro':'Novo registro', body, async ()=>{
+    const data = {
+      clienteNome: document.getElementById('ap-cliente').value.trim(),
+      numeroProcesso: document.getElementById('ap-numero').value.trim(),
+      tipoProcesso: document.getElementById('ap-tipo').value.trim(),
+      valorCausa: parseFloat(document.getElementById('ap-valor').value)||null,
+      audienciaData: document.getElementById('ap-aud-data').value || null,
+      audienciaHora: document.getElementById('ap-aud-hora').value || null,
+      audienciaLembrete: document.getElementById('ap-aud-lembrete').checked,
+      prazoDescricao: document.getElementById('ap-prazo-desc').value.trim(),
+      prazoData: document.getElementById('ap-prazo-data').value || null,
+      prazoLembrete: document.getElementById('ap-prazo-lembrete').checked,
+      obs: document.getElementById('ap-obs').value.trim(),
+    };
+    if(!data.clienteNome && !data.numeroProcesso){ showToast('Informe ao menos o nome do cliente ou o número do processo.'); return; }
+    try{
+      if(id){
+        await apiFetch('/api/agenda-pessoal/'+id, { method:'PUT', body: JSON.stringify(data) });
+      } else {
+        const body2 = {...data};
+        if(CURRENT_USER.tipo==='master' && AP_USUARIO_SELECIONADO) body2.usuarioId = AP_USUARIO_SELECIONADO.id;
+        await apiFetch('/api/agenda-pessoal', { method:'POST', body: JSON.stringify(body2) });
+      }
+      await carregarAgendaPessoal();
+      closeModal(); showToast('Registro salvo.');
+    }catch(e){ showToast(e.message||'Não foi possível salvar.'); }
+  });
+}
+async function concluirAgendaPessoal(id){
+  try{ await apiFetch('/api/agenda-pessoal/'+id, {method:'PUT', body: JSON.stringify({concluido:true})}); await carregarAgendaPessoal(); showToast('Marcado como concluído.'); }
+  catch(e){ showToast(e.message||'Não foi possível atualizar.'); }
+}
+async function excluirAgendaPessoal(id){
+  if(!confirm('Excluir este registro definitivamente?')) return;
+  try{ await apiFetch('/api/agenda-pessoal/'+id, {method:'DELETE'}); await carregarAgendaPessoal(); showToast('Registro excluído.'); }
+  catch(e){ showToast(e.message||'Não foi possível excluir.'); }
+}
+/* ============================================================
+   DJEN — busca na base oficial do CNJ + triagem/gestão local
+   ============================================================ */
+let DJEN_TAB = 'buscar';
+let DJEN_STATUS_TAB = 'pendente';
+let DJEN_RESULTADOS_ATUAIS = [];
+let DJEN_CAPTURADAS_CACHE = [];
+function renderDjenPage(){
+  setDjenTab(DJEN_TAB);
+}
+function setDjenTab(tab){
+  DJEN_TAB = tab;
+  document.querySelectorAll('#djen-tabs .fin-tab').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
+  document.getElementById('djen-painel-buscar').style.display = tab==='buscar'? 'block':'none';
+  document.getElementById('djen-painel-capturadas').style.display = tab==='capturadas'? 'block':'none';
+  if(tab==='capturadas') carregarDjenCapturadas();
+}
+function atualizarCamposDataDjen(){
+  const intervalo = document.getElementById('djen-f-tipo-data').value==='intervalo';
+  document.getElementById('djen-f-data-fim-box').style.display = intervalo? 'block':'none';
+  document.getElementById('djen-label-data-inicio').textContent = intervalo? 'De' : 'Data';
+}
+async function buscarDjen(){
+  const escritorio = document.getElementById('djen-f-escritorio').value.trim();
+  const advogado = document.getElementById('djen-f-advogado').value.trim();
+  const oab = document.getElementById('djen-f-oab').value.trim();
+  const ufOab = document.getElementById('djen-f-uf-oab').value;
+  const cpfCnpj = document.getElementById('djen-f-cpfcnpj').value.trim();
+  const processo = document.getElementById('djen-f-processo').value.trim();
+  const abrangencia = document.getElementById('djen-f-abrangencia').value;
+  const tribunal = abrangencia==='estado' ? document.getElementById('djen-f-tribunal').value.trim() : '';
+  const tipoData = document.getElementById('djen-f-tipo-data').value;
+  const dataInicio = document.getElementById('djen-f-data-inicio').value;
+  const dataFim = tipoData==='intervalo' ? document.getElementById('djen-f-data-fim').value : dataInicio;
+
+  if(!oab && !processo && !advogado && !escritorio && !cpfCnpj){ showToast('Informe ao menos um critério de busca.'); return; }
+
+  const status = document.getElementById('djen-busca-status');
+  status.innerHTML = '<div class="empty">Consultando o DJEN...</div>';
+  document.getElementById('djen-resultados').innerHTML = '';
+  const params = new URLSearchParams();
+  if(oab) params.set('oab', oab);
+  if(ufOab) params.set('ufOab', ufOab);
+  if(processo) params.set('numeroProcesso', processo);
+  if(tribunal) params.set('siglaTribunal', tribunal);
+  if(dataInicio) params.set('dataInicio', dataInicio);
+  if(dataFim) params.set('dataFim', dataFim);
+  if(advogado) params.set('nomeAdvogado', advogado);
+  if(escritorio) params.set('nomeEscritorio', escritorio);
+  if(cpfCnpj) params.set('cpfCnpj', cpfCnpj);
+  try{
+    const r = await apiFetch('/api/djen/buscar?'+params.toString());
+    DJEN_RESULTADOS_ATUAIS = r.items;
+    status.innerHTML = `<div class="hint">${r.total} publicação(ões) encontrada(s) (mostrando ${r.items.length}).</div>`;
+    renderDjenResultados();
+  }catch(e){ status.innerHTML = `<div class="empty">${escapeHtml(e.message||'Não foi possível consultar o DJEN agora.')}</div>`; }
+}
+function renderDjenResultados(){
+  const box = document.getElementById('djen-resultados');
+  if(!DJEN_RESULTADOS_ATUAIS.length){ box.innerHTML = '<div class="empty">Nenhuma publicação encontrada com esses critérios.</div>'; return; }
+  box.innerHTML = DJEN_RESULTADOS_ATUAIS.map((it,i)=>`
+    <div class="panel" style="margin-bottom:10px;">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px;">
+        <div>
+          <strong>${escapeHtml(it.tribunal||'Tribunal não identificado')}</strong> ${it.orgaoJulgador? '— '+escapeHtml(it.orgaoJulgador):''}
+          <div class="rsub">Processo: ${escapeHtml(it.numeroProcesso)||'—'} · Disponibilização: ${it.dataDisponibilizacao? fmtDate(it.dataDisponibilizacao):'—'}</div>
+        </div>
+        ${it.jaImportado? '<span class="tag">Já importada</span>' : `<button class="btn btn-gold btn-sm" onclick="importarDjenItem(${i})">+ Importar e triar</button>`}
+      </div>
+      <p style="margin-top:8px; font-size:13px; color:var(--ink-soft); max-height:120px; overflow-y:auto;">${escapeHtml(it.texto).slice(0,1200)}${it.texto.length>1200?'...':''}</p>
+    </div>
+  `).join('');
+}
+async function importarDjenItem(indice){
+  const item = DJEN_RESULTADOS_ATUAIS[indice];
+  if(!item) return;
+  showToast('Importando e analisando o texto...');
+  try{
+    await apiFetch('/api/djen/importar', { method:'POST', body: JSON.stringify(item) });
+    item.jaImportado = true;
+    renderDjenResultados();
+    showToast('Publicação importada — veja em "Capturadas".');
+  }catch(e){ showToast(e.message||'Não foi possível importar.'); }
+}
+async function carregarDjenCapturadas(){
+  document.getElementById('djen-capturadas-lista').innerHTML = '<div class="empty">Carregando...</div>';
+  try{
+    DJEN_CAPTURADAS_CACHE = await apiFetch('/api/djen/capturadas');
+  }catch(e){ DJEN_CAPTURADAS_CACHE = []; showToast(e.message||'Não foi possível carregar.'); }
+  renderDjenCapturadas();
+}
+function setDjenStatusTab(status){
+  DJEN_STATUS_TAB = status;
+  document.querySelectorAll('#djen-status-tabs .fin-tab').forEach(b=>b.classList.toggle('active', b.dataset.status===status));
+  renderDjenCapturadas();
+}
+function renderDjenCapturadas(){
+  const lista = DJEN_CAPTURADAS_CACHE.filter(c=>c.status===DJEN_STATUS_TAB).sort((a,b)=>(b.importadoEm||'').localeCompare(a.importadoEm||''));
+  const box = document.getElementById('djen-capturadas-lista');
+  if(!lista.length){ box.innerHTML = '<div class="empty">Nenhum registro nesta situação.</div>'; return; }
+  const hoje = todayISO();
+  box.innerHTML = lista.map(c=>{
+    const t = c.triagem;
+    const atrasado = c.dataFinalPrazo && c.dataFinalPrazo<hoje && c.status!=='concluida';
+    return `<div class="panel" style="margin-bottom:10px; ${atrasado?'border-color:var(--danger);':''}">
+      <div style="display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+        <div>
+          <strong>${escapeHtml(c.tribunal||'Tribunal não identificado')}</strong>
+          <div class="rsub">Processo: ${escapeHtml(c.numeroProcesso)||'—'} · Disponibilização: ${c.dataDisponibilizacao?fmtDate(c.dataDisponibilizacao):'—'}</div>
+        </div>
+        <div style="text-align:right;">
+          ${c.dataFinalPrazo? `<div style="color:${atrasado?'var(--danger)':'var(--gold-dark)'}; font-weight:700;">Prazo final: ${fmtDate(c.dataFinalPrazo)}${atrasado?' (VENCIDO)':''}</div>` : '<div class="rsub">Sem prazo identificado</div>'}
+        </div>
+      </div>
+      ${t? `<div class="hint" style="margin-top:8px;"><strong>${escapeHtml(t.tipoAto||'Ato processual')}</strong>${t.responsavelNome? ' — responsável: '+escapeHtml(t.responsavelNome):''}<br>${escapeHtml(t.resumo||'')}</div>`
+        : `<div class="hint" style="margin-top:8px; color:var(--warning);">${escapeHtml(c.avisoTriagem||'Não foi possível analisar automaticamente — confira o texto e classifique manualmente.')}</div>`}
+      <details style="margin-top:6px;"><summary style="cursor:pointer; font-size:12px; color:var(--ink-soft);">Ver texto completo</summary><p style="font-size:12px; color:var(--ink-soft); margin-top:6px;">${escapeHtml(c.texto)}</p></details>
+      <div class="field-row" style="margin-top:10px; align-items:flex-end;">
+        <div class="field"><label>Corrigir prazo (dias úteis)</label><input type="number" id="djen-prazo-${c.id}" value="${t?.prazoDias||''}" style="max-width:100px;"></div>
+        <button class="btn btn-ghost btn-sm" onclick="corrigirPrazoDjen('${c.id}')">Recalcular</button>
+        ${c.status!=='vinculada'? `<button class="btn btn-ghost btn-sm" onclick="abrirVincularDjen('${c.id}')">🔗 Vincular a processo</button>`:''}
+        ${c.status!=='concluida'? `<button class="btn btn-gold btn-sm" onclick="concluirDjen('${c.id}')">✔️ Concluir</button>` : `<button class="btn btn-ghost btn-sm" onclick="reabrirDjen('${c.id}')">↩️ Reabrir</button>`}
+      </div>
+    </div>`;
+  }).join('');
+}
+async function corrigirPrazoDjen(id){
+  const prazoDias = parseInt(document.getElementById('djen-prazo-'+id).value, 10) || null;
+  try{ await apiFetch('/api/djen/capturadas/'+id+'/prazo', {method:'PATCH', body:JSON.stringify({prazoDias})}); await carregarDjenCapturadas(); showToast('Prazo recalculado.'); }
+  catch(e){ showToast(e.message||'Não foi possível atualizar.'); }
+}
+function abrirVincularDjen(id){
+  const processos = meusProcessosVisiveis();
+  const body = `<div class="field"><label>Processo</label><select id="djen-vinc-processo"><option value="">Selecione...</option>${processos.map(p=>`<option value="${p.id}">${escapeHtml(p.numero)||'sem número'} — ${escapeHtml(clienteNome(p.clienteId))}</option>`).join('')}</select></div>`;
+  openModal('Vincular a processo', body, async ()=>{
+    const processoId = document.getElementById('djen-vinc-processo').value;
+    if(!processoId){ showToast('Selecione um processo.'); return; }
+    try{ await apiFetch('/api/djen/capturadas/'+id+'/vincular', {method:'PATCH', body:JSON.stringify({processoId})}); await carregarDjenCapturadas(); closeModal(); showToast('Vinculado.'); }
+    catch(e){ showToast(e.message||'Não foi possível vincular.'); }
+  });
+}
+async function concluirDjen(id){
+  try{ await apiFetch('/api/djen/capturadas/'+id+'/concluir', {method:'PATCH'}); await carregarDjenCapturadas(); showToast('Marcado como concluído.'); }
+  catch(e){ showToast(e.message||'Não foi possível concluir.'); }
+}
+async function reabrirDjen(id){
+  try{ await apiFetch('/api/djen/capturadas/'+id+'/reabrir', {method:'PATCH'}); await carregarDjenCapturadas(); showToast('Reaberto.'); }
+  catch(e){ showToast(e.message||'Não foi possível reabrir.'); }
+}
 function openLembreteForm(id){
   const l = id ? DB.lembretes.find(x=>x.id===id) : {titulo:'',descricao:'',data:todayISO(),feito:false,visivelPara:[]};
   const body = `<div class="field"><label>Título</label><input id="lf-titulo" value="${escapeHtml(l.titulo)}"></div><div class="field"><label>Descrição</label><textarea id="lf-desc">${escapeHtml(l.descricao)}</textarea></div><div class="field"><label>Data</label><input type="date" id="lf-data" value="${l.data}"></div><div class="field"><label>Visível para</label>${visibilidadeSelecaoHtml(l.visivelPara).replace(/prf-vis-chk/g,'lf-vis-chk')}</div>`;
@@ -3722,29 +4140,58 @@ function openLembreteForm(id){
     if(!titulo){ showToast('Informe um título.'); return; }
     const data = { titulo, descricao: document.getElementById('lf-desc').value.trim(), data: document.getElementById('lf-data').value, visivelPara: lerVisibilidadeSelecionada('lf-vis-chk') };
     if(id){
-      await persistMutation('lembretes', arr=>{ const alvo = arr.find(x=>x.id===id); if(alvo) Object.assign(alvo, data); return arr; });
+      // reabrir a data para o futuro tira o lembrete da lixeira automaticamente
+      await persistMutation('lembretes', arr=>{ const alvo = arr.find(x=>x.id===id); if(alvo){ Object.assign(alvo, data); if(alvo.data>=todayISO()) alvo.lixeira=false; } return arr; });
     } else {
-      await persistMutation('lembretes', arr=>{ arr.push({id:uid(), feito:false, criadoPor:CURRENT_USER.id, ...data}); return arr; });
+      await persistMutation('lembretes', arr=>{ arr.push({id:uid(), feito:false, lixeira:false, criadoPor:CURRENT_USER.id, ...data}); return arr; });
     }
     renderLembretes(); renderDashboard(); updateNavBadges(); closeModal(); showToast('Lembrete salvo.');
   });
 }
+async function moverLembreteParaLixeira(id){
+  await persistMutation('lembretes', arr=>{ const l = arr.find(x=>x.id===id); if(l) l.lixeira=true; return arr; });
+  renderLembretes(); renderDashboard(); updateNavBadges(); showToast('Lembrete movido para a lixeira.');
+}
+async function restaurarLembrete(id){
+  await persistMutation('lembretes', arr=>{ const l = arr.find(x=>x.id===id); if(l) l.lixeira=false; return arr; });
+  renderLembretes(); renderDashboard(); updateNavBadges(); showToast('Lembrete restaurado.');
+}
 async function deleteLembrete(id){
-  if(!confirm('Remover este lembrete?')) return;
+  if(!confirm('Excluir definitivamente este lembrete? Essa ação não pode ser desfeita.')) return;
   await persistMutation('lembretes', arr=>arr.filter(l=>l.id!==id));
-  renderLembretes(); renderDashboard(); updateNavBadges(); showToast('Lembrete removido.');
+  renderLembretes(); renderDashboard(); updateNavBadges(); showToast('Lembrete excluído.');
 }
 async function toggleLembrete(id){
   await persistMutation('lembretes', arr=>{ const l = arr.find(x=>x.id===id); if(l) l.feito = !l.feito; return arr; });
   renderLembretes(); renderDashboard(); updateNavBadges();
 }
-function renderLembretes(){
+// Move sozinho, sem precisar de ação do usuário, todo lembrete vencido (data
+// no passado) e ainda não concluído para a lixeira.
+async function arquivarLembretesVencidos(){
+  const hoje = todayISO();
+  const vencidos = DB.lembretes.filter(l=>!l.feito && !l.lixeira && l.data<hoje);
+  if(!vencidos.length) return;
+  await persistMutation('lembretes', arr=>{ arr.forEach(l=>{ if(!l.feito && !l.lixeira && l.data<hoje) l.lixeira=true; }); return arr; });
+}
+let LEMBRETES_TAB = 'ativos';
+function setLembretesTab(tab){
+  LEMBRETES_TAB = tab;
+  document.querySelectorAll('#lemb-tabs .fin-tab').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
+  renderLembretes();
+}
+async function renderLembretes(){
+  await arquivarLembretesVencidos();
   const tbody = document.getElementById('tbl-lembretes'); if(!tbody) return;
   const empty = document.getElementById('empty-lembretes');
-  if(DB.lembretes.length===0){ tbody.innerHTML=''; empty.style.display='block'; return; }
+  const naLixeira = LEMBRETES_TAB==='lixeira';
+  const base = DB.lembretes.filter(l=> naLixeira? l.lixeira : !l.lixeira);
+  if(base.length===0){ tbody.innerHTML=''; empty.textContent = naLixeira? '🗑 A lixeira está vazia.' : undefined; empty.innerHTML = naLixeira? '<div class="big">🗑</div>A lixeira está vazia.' : '<div class="big">🔔</div>Nenhum lembrete cadastrado ainda.'; empty.style.display='block'; return; }
   empty.style.display='none';
-  const list = [...DB.lembretes].sort((a,b)=>a.data.localeCompare(b.data));
-  tbody.innerHTML = list.map(l=>`<tr><td><strong>${escapeHtml(l.titulo)}</strong></td><td style="max-width:280px;color:var(--ink-soft);font-size:12px;">${escapeHtml(l.descricao)||'—'}</td><td>${fmtDate(l.data)}</td><td><span class="tag tag-${l.feito?'cumprido':'pendente'}" style="cursor:pointer;" onclick="toggleLembrete('${l.id}')">${l.feito?'Concluído':'Pendente'}</span></td><td><div class="row-actions"><button class="icon-btn" onclick="openLembreteForm('${l.id}')" title="Editar">✎</button><button class="icon-btn danger" onclick="deleteLembrete('${l.id}')" title="Excluir">🗑</button></div></td></tr>`).join('');
+  const list = [...base].sort((a,b)=>a.data.localeCompare(b.data));
+  tbody.innerHTML = list.map(l=>`<tr><td><strong>${escapeHtml(l.titulo)}</strong></td><td style="max-width:280px;color:var(--ink-soft);font-size:12px;">${escapeHtml(l.descricao)||'—'}</td><td>${fmtDate(l.data)}</td><td>${naLixeira? '<span class="tag">Na lixeira</span>' : `<span class="tag tag-${l.feito?'cumprido':'pendente'}" style="cursor:pointer;" onclick="toggleLembrete('${l.id}')">${l.feito?'Concluído':'Pendente'}</span>`}</td><td><div class="row-actions">${naLixeira?
+    `<button class="icon-btn" onclick="restaurarLembrete('${l.id}')" title="Restaurar">↩️</button><button class="icon-btn danger" onclick="deleteLembrete('${l.id}')" title="Excluir definitivamente">🗑</button>`
+    : `<button class="icon-btn" onclick="openLembreteForm('${l.id}')" title="Editar">✎</button><button class="icon-btn" onclick="moverLembreteParaLixeira('${l.id}')" title="Mover para a lixeira">🗑</button>`
+  }</div></td></tr>`).join('');
 }
 
 /* ============================================================
@@ -3937,7 +4384,7 @@ function updateNavBadges(){
   const atrasados = meusPrazosVisiveis().filter(p => p.status==='pendente' && daysDiff(p.vencimento) < 0).length;
   const b = document.getElementById('badge-prazos'); if(b){ if(atrasados>0){ b.style.display='inline-block'; b.textContent=atrasados; } else b.style.display='none'; }
   const hoje = todayISO();
-  const lembHoje = DB.lembretes.filter(l => !l.feito && l.data <= hoje).length;
+  const lembHoje = DB.lembretes.filter(l => !l.feito && !l.lixeira && l.data <= hoje).length;
   const bl = document.getElementById('badge-lembretes'); if(bl){ if(lembHoje>0){ bl.style.display='inline-block'; bl.textContent=lembHoje; } else bl.style.display='none'; }
 }
 function renderDashboard(){
@@ -3960,7 +4407,7 @@ function renderDashboard(){
   const atrasadosCount = meusPrazosVisiveis().filter(p=>p.status==='pendente' && daysDiff(p.vencimento) < 0).length;
   const proximasAudiencias = audienciasVisiveis().filter(a=>a.status==='agendada' && a.data>=hoje).sort((a,b)=>(a.data+a.hora).localeCompare(b.data+b.hora)).slice(0,6);
   const s = computeFinanceSummary();
-  const lembPend = DB.lembretes.filter(l=>!l.feito).sort((a,b)=>a.data.localeCompare(b.data)).slice(0,6);
+  const lembPend = DB.lembretes.filter(l=>!l.feito && !l.lixeira).sort((a,b)=>a.data.localeCompare(b.data)).slice(0,6);
   const lembHojeCount = DB.lembretes.filter(l=>!l.feito && l.data<=hoje).length;
   grid.innerHTML = `
     <div class="kpi ${atrasadosCount>0?'kpi-danger':''}" style="cursor:pointer;" onclick="goPage('prazos')"><div class="label">Prazos em aberto</div><div class="value">${meusPrazosVisiveis().filter(p=>p.status==='pendente').length}</div><div class="sub">${atrasadosCount>0? atrasadosCount+' atrasado(s)':'nenhum atrasado'}</div></div>
@@ -3992,9 +4439,9 @@ function renderDashboard(){
   })();
   document.getElementById('dash-lembretes').innerHTML = lembPend.length? lembPend.map(l=>`<div class="list-row" style="cursor:pointer;" onclick="goPage('lembretes')"><span class="dot" style="background:${l.data<=hoje?'var(--danger)':'var(--gold)'}"></span><div><div class="rtitle">${escapeHtml(l.titulo)}</div><div class="rsub">${escapeHtml(l.descricao)||''}</div></div><div class="rmeta">${fmtDate(l.data)}</div></div>`).join('') : `<div class="empty" style="cursor:pointer;" onclick="goPage('lembretes')">Nenhum lembrete pendente.</div>`;
   document.getElementById('dash-resumo-mes').innerHTML = `
-    <div class="list-row" style="cursor:pointer;" onclick="goPage('financeiro')"><div class="rtitle">Recebido</div><div class="rmeta" style="color:var(--success); font-weight:700;">${fmtMoney(s.recebidoMes)}</div></div>
-    ${(isMaster()||isSocio())? `<div class="list-row" style="cursor:pointer;" onclick="goPage('financeiro')"><div class="rtitle">Despesas</div><div class="rmeta" style="color:var(--danger); font-weight:700;">${fmtMoney(s.despesasMes)}</div></div><div class="list-row" style="cursor:pointer;" onclick="goPage('financeiro')"><div class="rtitle">Saldo do mês</div><div class="rmeta" style="color:${s.saldoMes>=0?'var(--success)':'var(--danger)'}; font-weight:700;">${fmtMoney(s.saldoMes)}</div></div>`:''}
-    <div class="list-row" style="cursor:pointer;" onclick="goPage('financeiro')"><div class="rtitle">Total a receber</div><div class="rmeta" style="font-weight:700;">${fmtMoney(s.aReceber)}</div></div>
+    <div class="list-row" style="cursor:pointer;" onclick="goPage('financeiro')"><div class="rtitle">Recebido</div><div class="rmeta" style="color:var(--success); font-weight:700;">${vmoney(s.recebidoMes)}</div></div>
+    ${(isMaster()||isSocio())? `<div class="list-row" style="cursor:pointer;" onclick="goPage('financeiro')"><div class="rtitle">Despesas</div><div class="rmeta" style="color:var(--danger); font-weight:700;">${vmoney(s.despesasMes)}</div></div><div class="list-row" style="cursor:pointer;" onclick="goPage('financeiro')"><div class="rtitle">Saldo do mês</div><div class="rmeta" style="color:${s.saldoMes>=0?'var(--success)':'var(--danger)'}; font-weight:700;">${vmoney(s.saldoMes)}</div></div>`:''}
+    <div class="list-row" style="cursor:pointer;" onclick="goPage('financeiro')"><div class="rtitle">Total a receber</div><div class="rmeta" style="font-weight:700;">${vmoney(s.aReceber)}</div></div>
   `;
 }
 
@@ -4005,7 +4452,7 @@ document.getElementById('today-label').textContent = new Date().toLocaleDateStri
   if(AUTH_TOKEN){
     try{
       const usuario = await apiFetch('/api/me');
-      CURRENT_USER = { id:usuario.id, tipo:usuario.tipo, nome:usuario.nome, clienteId:usuario.clienteId||null, vinculoId:usuario.vinculoId||null, mustChange: !!usuario.mustChange };
+      CURRENT_USER = { id:usuario.id, tipo:usuario.tipo, nome:usuario.nome, clienteId:usuario.clienteId||null, vinculoId:usuario.vinculoId||null, mustChange: !!usuario.mustChange, agendaPessoalLiberada: !!usuario.agendaPessoalLiberada };
       await enterApp();
       return;
     }catch(e){ AUTH_TOKEN = null; localStorage.removeItem('ms_token'); }
