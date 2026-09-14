@@ -1296,6 +1296,47 @@ antes de serem considerados definitivos (isso já está avisado na própria
 tela, dentro do código).
 
 
+## 43. Seis correções: pop-up, bug real no DJEN, e dois avisos novos
+
+### Bug real encontrado e corrigido: "${u}" na tela do DJEN
+A causa: o formulário de filtros do DJEN é HTML estático (fica fora do bloco
+`<script>`, junto com o restante da página), mas eu tinha colocado ali um
+trecho de código JavaScript (`${...}.map(...)`) que só funciona **dentro**
+de um script — em HTML puro, o navegador não executa isso, só mostra o
+texto literal. Foi exatamente isso que apareceu na tela. Corrigi trocando
+por HTML fixo (as 27 opções de UF escritas diretamente) e movendo as duas
+chamadas de `ajuda()` e as datas padrão para rodarem via JavaScript de
+verdade, quando a página abre. Conferi que não havia mais nenhuma ocorrência
+desse mesmo problema em nenhuma outra tela do sistema.
+
+### Confirmado: bloqueio geográfico do DJEN é real na prática
+Você recebeu exatamente o erro que eu tinha avisado ser possível. Pesquisei
+de novo: **o Render ainda não tem região no Brasil** (é um pedido antigo da
+comunidade, sem previsão). Isso significa que não é algo que eu resolvo só
+mudando uma configuração — é uma limitação de infraestrutura. Os caminhos
+possíveis, para você decidir:
+1. Hospedar só essa parte da busca (uma função pequena) num provedor com
+   região no Brasil (ex: AWS Lambda em São Paulo, ou uma função na Vercel
+   configurada para `gru1`), e o resto do sistema continua no Render
+   normalmente, chamando essa função como uma ponte.
+2. Contratar uma API paga de terceiros que já resolve esse acesso.
+3. Por enquanto, usar a consulta manual em comunica.pje.jus.br para os casos
+   urgentes, enquanto decide o caminho acima.
+Se quiser, posso te ajudar a montar a opção 1 (é a mais barata) — é só
+avisar.
+
+### Demais correções
+- Removida a frase "Fica assim até você marcar..." do pop-up de pendências.
+- Removido "(comunica.pje.jus.br)" do texto de aviso do DJEN.
+- **Novo**: aviso de parcelas de honorários vencidas e não pagas no pop-up
+  de entrada — só para sócios (para agilizar a cobrança), com link direto
+  para o Financeiro.
+- **Novo**: itens da Agenda Pessoal marcados como "lembrar" (audiência ou
+  prazo) que já venceram ou são de hoje agora aparecem no pop-up de entrada
+  — corrigi o teste que você fez: antes a função nem buscava esses dados,
+  agora busca (para quem tem a agenda liberada) e mostra junto com o resto.
+
+
 ---
 
 Qualquer erro ao subir, me mostre a mensagem exata que aparece (no Render, aba "Logs")

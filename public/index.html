@@ -532,7 +532,7 @@
       <!-- DJEN -->
       <div class="page" id="page-djen">
         <div class="section-head"><div><h2>DJEN — Diário de Justiça Eletrônico Nacional</h2><p>Busca publicações e intimações direto na base oficial do CNJ.</p></div></div>
-        <div class="hint" style="margin-bottom:10px;">Consulta oficial do CNJ (comunica.pje.jus.br). A busca mais confiável é por <strong>OAB + estado</strong> ou <strong>número do processo</strong> — nome e CPF/CNPJ são tentados, mas o próprio CNJ não garante esse filtro (grafia de nome varia entre tribunais).</div>
+        <div class="hint" style="margin-bottom:10px;">Consulta oficial do CNJ. A busca mais confiável é por <strong>OAB + estado</strong> ou <strong>número do processo</strong> — nome e CPF/CNPJ são tentados, mas o próprio CNJ não garante esse filtro (grafia de nome varia entre tribunais).</div>
         <div class="pill-select" style="margin-bottom:14px;" id="djen-tabs">
           <button class="fin-tab active" data-tab="buscar" onclick="setDjenTab('buscar')">🔎 Buscar no DJEN</button>
           <button class="fin-tab" data-tab="capturadas" onclick="setDjenTab('capturadas')">📋 Capturadas</button>
@@ -546,18 +546,18 @@
             </div>
             <div class="field-row">
               <div class="field"><label>OAB (só números)</label><input id="djen-f-oab" placeholder="Ex: 77194"></div>
-              <div class="field"><label>UF da OAB</label><select id="djen-f-uf-oab"><option value="">—</option>${['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(u=>`<option value="${u}">${u}</option>`).join('')}</select></div>
+              <div class="field"><label>UF da OAB</label><select id="djen-f-uf-oab"><option value="">—</option><option value="AC">AC</option><option value="AL">AL</option><option value="AP">AP</option><option value="AM">AM</option><option value="BA">BA</option><option value="CE">CE</option><option value="DF">DF</option><option value="ES">ES</option><option value="GO">GO</option><option value="MA">MA</option><option value="MT">MT</option><option value="MS">MS</option><option value="MG">MG</option><option value="PA">PA</option><option value="PB">PB</option><option value="PR">PR</option><option value="PE">PE</option><option value="PI">PI</option><option value="RJ">RJ</option><option value="RN">RN</option><option value="RS">RS</option><option value="RO">RO</option><option value="RR">RR</option><option value="SC">SC</option><option value="SP">SP</option><option value="SE">SE</option><option value="TO">TO</option></select></div>
               <div class="field"><label>CPF/CNPJ</label><input id="djen-f-cpfcnpj" placeholder="Só números"></div>
             </div>
             <div class="field"><label>Número do processo (CNJ, com ou sem máscara)</label><input id="djen-f-processo" placeholder="0000000-00.0000.0.00.0000"></div>
             <div class="field-row">
-              <div class="field"><label>Abrangência${ajuda('Nacional busca em todos os tribunais. Por estado restringe a um tribunal específico (mais rápido e mais preciso quando você já sabe onde o processo tramita).')}</label><select id="djen-f-abrangencia" onchange="document.getElementById('djen-f-tribunal-box').style.display=this.value==='estado'?'block':'none'"><option value="nacional">Nacional (todos os tribunais)</option><option value="estado">Por estado / tribunal</option></select></div>
+              <div class="field"><label>Abrangência <span id="djen-ajuda-abrangencia"></span></label><select id="djen-f-abrangencia" onchange="document.getElementById('djen-f-tribunal-box').style.display=this.value==='estado'?'block':'none'"><option value="nacional">Nacional (todos os tribunais)</option><option value="estado">Por estado / tribunal</option></select></div>
               <div class="field" id="djen-f-tribunal-box" style="display:none;"><label>Tribunal (sigla)</label><input id="djen-f-tribunal" placeholder="Ex: TJBA, TRF1, TRT5"></div>
             </div>
             <div class="field-row">
-              <div class="field"><label>Período${ajuda('Escolha "Data única" para um dia só, ou "Intervalo" para um período — a data é a de disponibilização no diário, não a de publicação (que o sistema calcula sozinho depois, pelo art. 224 do CPC).')}</label><select id="djen-f-tipo-data" onchange="atualizarCamposDataDjen()"><option value="unica">Data única</option><option value="intervalo">Intervalo (de/até)</option></select></div>
-              <div class="field"><label id="djen-label-data-inicio">Data</label><input type="date" id="djen-f-data-inicio" value="${todayISO()}"></div>
-              <div class="field" id="djen-f-data-fim-box" style="display:none;"><label>Até</label><input type="date" id="djen-f-data-fim" value="${todayISO()}"></div>
+              <div class="field"><label>Período <span id="djen-ajuda-periodo"></span></label><select id="djen-f-tipo-data" onchange="atualizarCamposDataDjen()"><option value="unica">Data única</option><option value="intervalo">Intervalo (de/até)</option></select></div>
+              <div class="field"><label id="djen-label-data-inicio">Data</label><input type="date" id="djen-f-data-inicio"></div>
+              <div class="field" id="djen-f-data-fim-box" style="display:none;"><label>Até</label><input type="date" id="djen-f-data-fim"></div>
             </div>
             <button class="btn btn-gold" onclick="buscarDjen()">🔎 Buscar</button>
             <div id="djen-busca-status" style="margin-top:10px;"></div>
@@ -970,7 +970,7 @@ async function enterApp(){
   renderAll();
   mostrarPopupNotificacoesEntrada();
 }
-function mostrarPopupNotificacoesEntrada(){
+async function mostrarPopupNotificacoesEntrada(){
   if(isCliente()) return; // pop-up é só para a equipe do escritório
   const hoje = todayISO();
   const meusIds = meusClientes().map(c=>c.id);
@@ -978,15 +978,47 @@ function mostrarPopupNotificacoesEntrada(){
   const mensagensNaoLidas = DB.clientes.filter(c=>meusIds.includes(c.id)).map(c=>({
     cliente:c, qtd: DB.mensagens.filter(m=>m.clienteId===c.id && m.autor==='cliente' && !m.lida && !m.lixeira).length,
   })).filter(x=>x.qtd>0);
-  if(!lembretesPendentes.length && !mensagensNaoLidas.length) return;
+
+  // Parcelas de honorários vencidas e ainda não pagas — só para sócio (quem
+  // toma a decisão de cobrança), não para associado nem master.
+  let parcelasVencidas = [];
+  if(isSocio()){
+    (DB.honorarios||[]).forEach(h=>{
+      (h.parcelas||[]).forEach(p=>{
+        if(p.status==='pendente' && p.vencimento<hoje) parcelasVencidas.push({ ...p, clienteNome: clienteNome(h.clienteId), honId:h.id });
+      });
+    });
+    parcelasVencidas.sort((a,b)=>a.vencimento.localeCompare(b.vencimento));
+  }
+
+  // Itens da Agenda Pessoal marcados como "lembrar", já vencidos ou de hoje —
+  // só para quem tem a agenda liberada (sócio sempre; associado se liberado).
+  let agendaPessoalPendente = [];
+  if(isSocio() || (isAssociado() && CURRENT_USER.agendaPessoalLiberada)){
+    try{
+      const registros = await apiFetch('/api/agenda-pessoal');
+      registros.filter(r=>!r.concluido).forEach(r=>{
+        if(r.audienciaLembrete && r.audienciaData && r.audienciaData<=hoje) agendaPessoalPendente.push({ tipo:'Audiência', data:r.audienciaData, titulo:r.clienteNome||r.numeroProcesso||'Agenda pessoal' });
+        if(r.prazoLembrete && r.prazoData && r.prazoData<=hoje) agendaPessoalPendente.push({ tipo:'Prazo', data:r.prazoData, titulo:r.prazoDescricao||r.clienteNome||'Agenda pessoal' });
+      });
+      agendaPessoalPendente.sort((a,b)=>a.data.localeCompare(b.data));
+    }catch(e){ /* silencioso — não trava o login por causa disso */ }
+  }
+
+  if(!lembretesPendentes.length && !mensagensNaoLidas.length && !parcelasVencidas.length && !agendaPessoalPendente.length) return;
   const corpo = `
     ${mensagensNaoLidas.length? `<div style="margin-bottom:14px;"><strong>💬 Mensagens não lidas</strong>
       ${mensagensNaoLidas.map(x=>`<div class="list-row" style="cursor:pointer;" onclick="closeModal(); goPage('mensagens'); abrirThread('${x.cliente.id}','${x.cliente.vinculoId||''}');"><div><div class="rtitle">${escapeHtml(x.cliente.nome)}</div></div><span class="badge" style="background:var(--danger); color:#fff; border-radius:20px; padding:1px 7px; font-size:10px;">${x.qtd}</span></div>`).join('')}
     </div>` : ''}
+    ${parcelasVencidas.length? `<div style="margin-bottom:14px;"><strong>💰 Parcelas vencidas — cobrança pendente</strong>
+      ${parcelasVencidas.map(p=>`<div class="list-row" style="cursor:pointer;" onclick="closeModal(); goPage('financeiro');"><div><div class="rtitle">${escapeHtml(p.clienteNome)}</div><div class="rsub">Parcela ${p.numero}</div></div><div class="rmeta" style="color:var(--danger);">${fmtMoney(p.valor)}<br>${fmtDate(p.vencimento)}</div></div>`).join('')}
+    </div>` : ''}
+    ${agendaPessoalPendente.length? `<div style="margin-bottom:14px;"><strong>🗂️ Agenda pessoal</strong>
+      ${agendaPessoalPendente.map(a=>`<div class="list-row" style="cursor:pointer;" onclick="closeModal(); goPage('agenda-pessoal');"><div><div class="rtitle">${escapeHtml(a.titulo)}</div><div class="rsub">${a.tipo}</div></div><div class="rmeta">${fmtDate(a.data)}</div></div>`).join('')}
+    </div>` : ''}
     ${lembretesPendentes.length? `<div><strong>🔔 Lembretes pendentes</strong>
       ${lembretesPendentes.map(l=>`<div class="list-row" style="cursor:pointer;" onclick="closeModal(); goPage('lembretes');"><span class="dot" style="background:${l.data<hoje?'var(--danger)':'var(--gold)'}"></span><div><div class="rtitle">${escapeHtml(l.titulo)}</div><div class="rsub">${escapeHtml(l.descricao)||''}</div></div><div class="rmeta">${fmtDate(l.data)}</div></div>`).join('')}
     </div>` : ''}
-    <div class="hint" style="margin-top:12px;">Fica assim até você marcar como concluído (lembrete) ou ler a mensagem — ou enviar para a lixeira.</div>
   `;
   openModal('Você tem pendências', corpo, null);
   document.getElementById('modal-save-btn').style.display = 'none';
@@ -3990,7 +4022,15 @@ let DJEN_TAB = 'buscar';
 let DJEN_STATUS_TAB = 'pendente';
 let DJEN_RESULTADOS_ATUAIS = [];
 let DJEN_CAPTURADAS_CACHE = [];
+let DJEN_INICIALIZADO = false;
 function renderDjenPage(){
+  if(!DJEN_INICIALIZADO){
+    DJEN_INICIALIZADO = true;
+    document.getElementById('djen-ajuda-abrangencia').innerHTML = ajuda('Nacional busca em todos os tribunais. Por estado restringe a um tribunal específico (mais rápido e mais preciso quando você já sabe onde o processo tramita).');
+    document.getElementById('djen-ajuda-periodo').innerHTML = ajuda('Escolha "Data única" para um dia só, ou "Intervalo" para um período — a data é a de disponibilização no diário, não a de publicação (que o sistema calcula sozinho depois, pelo art. 224 do CPC).');
+    document.getElementById('djen-f-data-inicio').value = todayISO();
+    document.getElementById('djen-f-data-fim').value = todayISO();
+  }
   setDjenTab(DJEN_TAB);
 }
 function setDjenTab(tab){
