@@ -414,9 +414,10 @@
         <div id="prazos-sub-prazos">
           <div class="filter-bar">
             <input type="text" class="search-box" id="f-prazo-busca" placeholder="Buscar..." oninput="renderPrazos()">
-            <select id="f-prazo-status" onchange="renderPrazos()"><option value="">Todos os status</option><option value="pendente">Pendente</option><option value="cumprido">Cumprido</option><option value="perdido">Perdido</option></select>
+            <select id="f-prazo-status" onchange="renderPrazos()"><option value="">Todos os status</option><option value="pendente">Pendente</option><option value="cumprido">Cumprido</option><option value="perdido">Perdido</option><option value="lixeira">🗑 Lixeira</option></select>
             <select id="f-prazo-ordem" onchange="renderPrazos()"><option value="asc">Mais próximos primeiro</option><option value="desc">Mais distantes primeiro</option></select>
           </div>
+          <div class="hint" style="margin-bottom:8px;">Prazos cumpridos, ou com a data já vencida há pelo menos 1 dia, vão sozinhos para a lixeira.</div>
           <div class="panel" style="padding:0;">
             <table><thead><tr><th>Prazo</th><th>Processo / Cliente</th><th>Vencimento</th><th>Prioridade</th><th>Status</th><th></th></tr></thead>
             <tbody id="tbl-prazos"></tbody></table>
@@ -965,6 +966,8 @@ async function enterApp(){
   buildNav();
   await loadAll();
   await arquivarLembretesVencidos();
+  await arquivarPrazosAntigos();
+  await limparDisponibilidadesAntigas();
   IDS_MENSAGENS_JA_AVISADAS = new Set(DB.mensagens.filter(m=>m.autor==='cliente' && !m.lida).map(m=>m.id));
   goPage(PAGES_BY_ROLE[CURRENT_USER.tipo][0].id);
   renderAll();
@@ -1005,10 +1008,19 @@ async function mostrarPopupNotificacoesEntrada(){
     }catch(e){ /* silencioso — não trava o login por causa disso */ }
   }
 
-  if(!lembretesPendentes.length && !mensagensNaoLidas.length && !parcelasVencidas.length && !agendaPessoalPendente.length) return;
+  // Agendamentos de clientes (visitas marcadas) relevantes para o
+  // responsável — pedidos ainda não confirmados, ou visitas de hoje.
+  const agendamentosRelevantes = (DB.agendamentos||[])
+    .filter(a=> (isMaster() || a.usuarioId===CURRENT_USER.id) && a.status!=='cancelado' && (a.status==='solicitado' || a.data<=hoje))
+    .sort((a,b)=>(a.data+a.hora).localeCompare(b.data+b.hora));
+
+  if(!lembretesPendentes.length && !mensagensNaoLidas.length && !parcelasVencidas.length && !agendaPessoalPendente.length && !agendamentosRelevantes.length) return;
   const corpo = `
     ${mensagensNaoLidas.length? `<div style="margin-bottom:14px;"><strong>💬 Mensagens não lidas</strong>
       ${mensagensNaoLidas.map(x=>`<div class="list-row" style="cursor:pointer;" onclick="closeModal(); goPage('mensagens'); abrirThread('${x.cliente.id}','${x.cliente.vinculoId||''}');"><div><div class="rtitle">${escapeHtml(x.cliente.nome)}</div></div><span class="badge" style="background:var(--danger); color:#fff; border-radius:20px; padding:1px 7px; font-size:10px;">${x.qtd}</span></div>`).join('')}
+    </div>` : ''}
+    ${agendamentosRelevantes.length? `<div style="margin-bottom:14px;"><strong>📅 Visitas agendadas</strong>
+      ${agendamentosRelevantes.map(a=>{ const nome = a.clienteId? clienteNome(a.clienteId) : a.nomePublico; return `<div class="list-row" style="cursor:pointer;" onclick="closeModal(); goPage('agenda');"><div><div class="rtitle">${escapeHtml(nome)}</div><div class="rsub">${a.status==='solicitado'?'Aguardando confirmação':'Confirmada'}</div></div><div class="rmeta">${fmtDate(a.data)}<br>${a.hora}</div></div>`; }).join('')}
     </div>` : ''}
     ${parcelasVencidas.length? `<div style="margin-bottom:14px;"><strong>💰 Parcelas vencidas — cobrança pendente</strong>
       ${parcelasVencidas.map(p=>`<div class="list-row" style="cursor:pointer;" onclick="closeModal(); goPage('financeiro');"><div><div class="rtitle">${escapeHtml(p.clienteNome)}</div><div class="rsub">Parcela ${p.numero}</div></div><div class="rmeta" style="color:var(--danger);">${fmtMoney(p.valor)}<br>${fmtDate(p.vencimento)}</div></div>`).join('')}
@@ -1892,10 +1904,10 @@ async function sincronizarLembretePrazo(pr){
   });
 }
 async function deletePrazo(id){
-  if(!confirm('Remover este prazo? O lembrete vinculado também será removido.')) return;
+  if(!confirm('Excluir definitivamente este prazo? O lembrete vinculado também será removido. Essa ação não pode ser desfeita.')) return;
   await persistMutation('prazos', arr=>arr.filter(p=>p.id!==id));
   await persistMutation('lembretes', arr=>arr.filter(l=>l.prazoId!==id));
-  renderPrazos(); renderDashboard(); renderLembretes(); updateNavBadges(); showToast('Prazo removido.');
+  renderPrazos(); renderDashboard(); renderLembretes(); updateNavBadges(); showToast('Prazo excluído.');
 }
 async function markPrazo(id, status){
   let prazoSalvo;
@@ -1903,24 +1915,56 @@ async function markPrazo(id, status){
   if(prazoSalvo) await sincronizarLembretePrazo(prazoSalvo);
   renderPrazos(); renderDashboard(); renderLembretes(); updateNavBadges(); showToast('Status atualizado.');
 }
+async function moverPrazoParaLixeira(id){
+  await persistMutation('prazos', arr=>{ const p = arr.find(x=>x.id===id); if(p) p.lixeira=true; return arr; });
+  renderPrazos(); renderDashboard(); updateNavBadges(); showToast('Prazo movido para a lixeira.');
+}
+async function restaurarPrazo(id){
+  const hoje = todayISO();
+  let dataAtualizada = false;
+  await persistMutation('prazos', arr=>{
+    const p = arr.find(x=>x.id===id);
+    if(p){
+      p.lixeira=false;
+      if(p.status==='cumprido') p.status='pendente';
+      if(p.vencimento<hoje){ p.vencimento=hoje; dataAtualizada=true; } // sem isso, o arquivamento automático manda de volta na hora
+    }
+    return arr;
+  });
+  renderPrazos(); renderDashboard(); updateNavBadges();
+  showToast(dataAtualizada? 'Prazo restaurado — o vencimento foi atualizado para hoje.' : 'Prazo restaurado.');
+}
+// Move sozinho, sem precisar de ação do usuário, todo prazo já cumprido ou
+// com vencimento passado há pelo menos 1 dia para a lixeira.
+async function arquivarPrazosAntigos(){
+  const hoje = todayISO();
+  const paraArquivar = DB.prazos.filter(p=>!p.lixeira && (p.status==='cumprido' || p.vencimento<hoje));
+  if(!paraArquivar.length) return;
+  await persistMutation('prazos', arr=>{ arr.forEach(p=>{ if(!p.lixeira && (p.status==='cumprido' || p.vencimento<hoje)) p.lixeira=true; }); return arr; });
+}
 function prazoStatusEfetivo(pr){ if(pr.status==='pendente' && daysDiff(pr.vencimento) < 0) return 'atrasado'; return pr.status; }
 function meusPrazosVisiveis(){
   const idsProc = meusProcessosVisiveis().map(p=>p.id);
-  return DB.prazos.filter(pr => !pr.processoId || idsProc.includes(pr.processoId) || isMaster() || isSocio());
+  return DB.prazos.filter(pr => (!pr.processoId || idsProc.includes(pr.processoId) || isMaster() || isSocio()) && !pr.lixeira);
 }
-function renderPrazos(){
+async function renderPrazos(){
+  await arquivarPrazosAntigos();
   const tbody = document.getElementById('tbl-prazos'); if(!tbody) return;
   const empty = document.getElementById('empty-prazos');
   const busca = (document.getElementById('f-prazo-busca')?.value||'').toLowerCase();
   const statusF = document.getElementById('f-prazo-status')?.value||'';
   const ordem = document.getElementById('f-prazo-ordem')?.value||'asc';
-  let list = meusPrazosVisiveis().filter(pr=>{
-    if(statusF && pr.status!==statusF) return false;
+  const naLixeira = statusF==='lixeira';
+  const idsProc = meusProcessosVisiveis().map(p=>p.id);
+  const podeVer = pr => !pr.processoId || idsProc.includes(pr.processoId) || isMaster() || isSocio();
+  let list = DB.prazos.filter(podeVer).filter(pr=>{
+    if(naLixeira) { if(!pr.lixeira) return false; }
+    else { if(pr.lixeira) return false; if(statusF && pr.status!==statusF) return false; }
     if(busca){ const hay = (pr.descricao+' '+(processoLabel(pr.processoId)||'')).toLowerCase(); if(!hay.includes(busca)) return false; }
     return true;
   });
   list.sort((a,b)=> ordem==='asc' ? a.vencimento.localeCompare(b.vencimento) : b.vencimento.localeCompare(a.vencimento));
-  if(list.length===0){ tbody.innerHTML=''; empty.style.display='block'; return; }
+  if(list.length===0){ tbody.innerHTML=''; empty.innerHTML = naLixeira? '<div class="big">🗑</div>A lixeira está vazia.' : '<div class="big">📄</div>Nenhum prazo cadastrado ainda.'; empty.style.display='block'; return; }
   empty.style.display='none';
   const priorLabel = {alta:'Alta', media:'Média', baixa:'Baixa'};
   const priorColor = {alta:'var(--danger)', media:'var(--warning)', baixa:'var(--success)'};
@@ -1935,12 +1979,13 @@ function renderPrazos(){
       <td>${proc? escapeHtml(proc.numero)+'<br><span style="font-size:11.5px;color:var(--ink-soft);">'+escapeHtml(clienteNome(proc.clienteId))+'</span>' : '<span style="color:var(--ink-soft);">—</span>'}</td>
       <td>${fmtDate(pr.vencimento)}<span style="font-size:11px;color:var(--ink-soft);">${ddLabel}</span></td>
       <td><span style="color:${priorColor[pr.prioridade]}; font-weight:700; font-size:12px;">${priorLabel[pr.prioridade]}</span></td>
-      <td><span class="tag tag-${eff}">${statusLabel[eff]}</span></td>
-      <td><div class="row-actions">
-        ${pr.status==='pendente' ? `<button class="icon-btn" onclick="markPrazo('${pr.id}','cumprido')" title="Marcar como cumprido">✔</button>`:''}
+      <td>${naLixeira? '<span class="tag">Na lixeira</span>' : `<span class="tag tag-${eff}">${statusLabel[eff]}</span>`}</td>
+      <td><div class="row-actions">${naLixeira?
+        `<button class="icon-btn" onclick="restaurarPrazo('${pr.id}')" title="Restaurar">↩️</button><button class="icon-btn danger" onclick="deletePrazo('${pr.id}')" title="Excluir definitivamente">🗑</button>`
+        : `${pr.status==='pendente' ? `<button class="icon-btn" onclick="markPrazo('${pr.id}','cumprido')" title="Marcar como cumprido">✔</button>`:''}
         <button class="icon-btn" onclick="openPrazoForm('${pr.id}')" title="Editar">✎</button>
-        <button class="icon-btn danger" onclick="deletePrazo('${pr.id}')" title="Excluir">🗑</button>
-      </div></td>
+        <button class="icon-btn" onclick="moverPrazoParaLixeira('${pr.id}')" title="Mover para a lixeira">🗑</button>`
+      }</div></td>
     </tr>`;
   }).join('');
 }
@@ -3701,7 +3746,8 @@ async function aplicarDisponibilidade(){
   renderAgendaDispLista(); showToast('Disponibilidade aplicada aos dias selecionados.');
 }
 function renderAgendaDispLista(){
-  const meus = DB.disponibilidades.filter(d=> isMaster() || d.usuarioId===CURRENT_USER.id);
+  const hoje = todayISO();
+  const meus = DB.disponibilidades.filter(d=> (isMaster() || d.usuarioId===CURRENT_USER.id) && d.data>=hoje);
   const porDia = {};
   meus.forEach(d=>{ const k = d.data+'|'+d.usuarioId; (porDia[k]=porDia[k]||[]).push(d); });
   const dias = Object.keys(porDia).sort();
@@ -3710,6 +3756,15 @@ function renderAgendaDispLista(){
     const blocos = porDia[k];
     return `<div class="list-row"><div><div class="rtitle">${fmtDate(dia)}${isMaster()&&usuarioId!==CURRENT_USER.id? ' · '+escapeHtml(usuarioNome(usuarioId)):''}</div><div class="rsub">${blocos.map(b=>b.inicio+'–'+b.fim).join(', ')}</div></div><div class="rmeta"><button class="icon-btn danger" onclick="removerDisponibilidadeDiaFor('${dia}','${usuarioId}')" title="Remover">🗑</button></div></div>`;
   }).join('') : `<div class="empty">Nenhuma disponibilidade cadastrada ainda.</div>`;
+}
+// Horários de dias já passados não têm mais nenhuma utilidade (não dá pra
+// agendar num dia que já passou) — apaga de vez, para a lista não crescer
+// pra sempre. Diferente de lembrete/prazo, não faz sentido guardar em lixeira.
+async function limparDisponibilidadesAntigas(){
+  const hoje = todayISO();
+  const temAntigo = DB.disponibilidades.some(d=>d.data<hoje);
+  if(!temAntigo) return;
+  await persistMutation('disponibilidades', arr=>arr.filter(d=>d.data>=hoje));
 }
 async function removerDisponibilidadeDiaFor(dia, usuarioId){
   if(!confirm('Remover toda a disponibilidade deste dia?')) return;
@@ -4193,8 +4248,18 @@ async function moverLembreteParaLixeira(id){
   renderLembretes(); renderDashboard(); updateNavBadges(); showToast('Lembrete movido para a lixeira.');
 }
 async function restaurarLembrete(id){
-  await persistMutation('lembretes', arr=>{ const l = arr.find(x=>x.id===id); if(l) l.lixeira=false; return arr; });
-  renderLembretes(); renderDashboard(); updateNavBadges(); showToast('Lembrete restaurado.');
+  const hoje = todayISO();
+  let dataAtualizada = false;
+  await persistMutation('lembretes', arr=>{
+    const l = arr.find(x=>x.id===id);
+    if(l){
+      l.lixeira=false;
+      if(l.data<hoje){ l.data=hoje; dataAtualizada=true; } // sem isso, o arquivamento automático mandaria de volta pra lixeira na hora
+    }
+    return arr;
+  });
+  renderLembretes(); renderDashboard(); updateNavBadges();
+  showToast(dataAtualizada? 'Lembrete restaurado — a data foi atualizada para hoje.' : 'Lembrete restaurado.');
 }
 async function deleteLembrete(id){
   if(!confirm('Excluir definitivamente este lembrete? Essa ação não pode ser desfeita.')) return;

@@ -1337,6 +1337,40 @@ avisar.
   agora busca (para quem tem a agenda liberada) e mostra junto com o resto.
 
 
+## 44. Bug real na lixeira de lembretes + lixeira de prazos + limpeza de horários
+
+### O bug do "restaurado" que não restaurava
+Causa real: ao clicar "Restaurar", a tela recarrega a lista (`renderLembretes`),
+e essa mesma função **roda de novo o arquivamento automático** logo no
+início — como a data do lembrete continuava no passado, ele era jogado de
+volta pra lixeira na hora seguinte, só que sem nenhum aviso, então a
+mensagem "restaurado" aparecia mas o item já tinha voltado pra lixeira nos
+bastidores. Corrigido: agora, ao restaurar um lembrete com data vencida, a
+data é atualizada para hoje automaticamente (e o aviso deixa isso claro).
+Testei o cenário exato e confirmei que agora fica fora da lixeira de
+verdade.
+
+### Lixeira de Prazos (nova)
+Mesmo padrão dos lembretes: prazos **cumpridos**, ou com o vencimento já
+passado há pelo menos 1 dia, vão sozinhos para a lixeira (opção "🗑
+Lixeira" no filtro de status da tela de Prazos) — com restaurar e excluir
+definitivamente. Testei os três cenários (vencido, cumprido, e futuro
+pendente que não deve arquivar) e o restaurar com data antiga, mesma lógica
+da correção acima.
+
+### Limpeza automática dos "Horários já definidos" (Agenda)
+Esses horários de disponibilidade de dias já passados não têm mais
+nenhuma utilidade (não dá pra agendar num dia que já passou), então agora
+são **apagados de vez** ao entrar no sistema — diferente de lembrete/prazo,
+aqui não faz sentido guardar em lixeira. Testei a lógica de filtro e
+confirmei que só os dias futuros permanecem.
+
+### Agendamentos de cliente no pop-up do responsável
+Visitas agendadas (pedidos ainda não confirmados, ou confirmadas para hoje)
+agora também aparecem no pop-up de entrada do sócio/associado responsável
+por aquele agendamento.
+
+
 ---
 
 Qualquer erro ao subir, me mostre a mensagem exata que aparece (no Render, aba "Logs")
