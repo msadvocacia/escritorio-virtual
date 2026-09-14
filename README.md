@@ -1371,6 +1371,38 @@ agora também aparecem no pop-up de entrada do sócio/associado responsável
 por aquele agendamento.
 
 
+## 45. Resolvido o bloqueio do DJEN: suporte a proxy implementado
+
+Pesquisei as duas opções que você recebeu, e tem uma correção importante:
+**a Solução B (QuotaGuard) só funciona se você escolher a região "São Paulo
+(sa-east-1)" ao assinar** — descobri que o QuotaGuard tem essa opção
+disponível, mas o padrão dele costuma ser uma região dos EUA, que **não**
+resolveria o bloqueio (só te daria um IP fixo, mas americano). A Solução A
+(proxy residencial brasileiro tipo Proxying.io/Froxy) resolve de forma mais
+direta, sem essa pegadinha de região.
+
+Implementei o código para funcionar com **qualquer uma das duas** — é só
+configurar uma variável de ambiente:
+
+- `QUOTAGUARDSTATIC_URL` — se usar o add-on do Render (lembre-se: escolha a
+  região São Paulo/sa-east-1 ao assinar).
+- `DJEN_PROXY_URL` — para qualquer outro provedor (Proxying.io, Froxy, etc.),
+  no formato `http://usuario:senha@host:porta`.
+
+Sem nenhuma das duas configuradas, o sistema continua funcionando
+exatamente como antes (chamada direta, sujeita ao bloqueio).
+
+**Como testei, já que não tenho um proxy brasileiro de verdade pra usar
+aqui**: confirmei que, sem proxy, a chamada vai direto pro DJEN e recebe o
+403 real. Configurando um proxy (mesmo um endereço inexistente, só pra
+teste), a chamada **parou de ir direto** e passou a tentar se conectar
+através do proxy informado — a falha que apareceu foi "não consegui
+conectar ao proxy", não mais o 403 do DJEN. Isso prova que o mecanismo de
+roteamento está funcionando; assim que vocês configurarem um proxy
+brasileiro de verdade, a chamada deve passar a sair por um IP do Brasil e o
+DJEN deve liberar.
+
+
 ---
 
 Qualquer erro ao subir, me mostre a mensagem exata que aparece (no Render, aba "Logs")

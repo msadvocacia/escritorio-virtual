@@ -13,7 +13,7 @@
     pagina, itensPorPagina                 — paginação (usar no máximo 50 por página,
                                               valores maiores podem devolver vazio sem erro)
 
-  IMPORTANTE — duas limitações reais que não temos como contornar por aqui:
+  IMPORTANTE — duas limitações reais que não temos como contornar só no código:
   1) A API não tem parâmetro OFICIAL e confiável para "nome do escritório",
      "nome do advogado" ou "CPF/CNPJ" — o único filtro de pessoa que a
      comunidade confirma funcionar bem é OAB + UF (porque nome varia de
@@ -22,10 +22,37 @@
      ser respeitado pelo servidor) E TAMBÉM filtra o texto retornado
      localmente, como reforço — mas o resultado pode vir incompleto.
   2) A consulta pública, na experiência relatada por quem já integrou,
-     bloqueia (HTTP 403) requisições vindas de fora do Brasil. Se o servidor
-     desse sistema estiver hospedado fora do Brasil, a busca pode falhar por
-     esse motivo — não por erro de código. Avise o usuário nesse caso.
+     bloqueia (HTTP 403) requisições vindas de fora do Brasil.
+
+  SOBRE O ITEM 2 — suporte a proxy brasileiro: se o servidor estiver
+  hospedado fora do Brasil (ex: Render em região dos EUA), configure UMA
+  destas variáveis de ambiente com a URL de um proxy que saia por IP
+  brasileiro, e todas as chamadas ao DJEN passam a sair por ele:
+
+    QUOTAGUARDSTATIC_URL   — preenchida automaticamente se você assinar o
+                             add-on "QuotaGuard Static IP" no próprio Render
+                             (render.com/docs/quotaguard). IMPORTANTE: ao
+                             assinar, escolha a região "São Paulo (sa-east-1)"
+                             — por padrão o QuotaGuard usa uma região dos EUA,
+                             que NÃO resolve o bloqueio.
+    DJEN_PROXY_URL         — alternativa genérica, para qualquer outro
+                             provedor de proxy brasileiro (ex: Proxying.io,
+                             Froxy). Formato: http://usuario:senha@host:porta
+
+  Sem nenhuma das duas configuradas, as chamadas saem direto (sem proxy) —
+  o sistema continua funcionando normalmente para tudo o mais, só a busca no
+  DJEN é que pode falhar com o aviso de bloqueio geográfico.
 */
+
+const { ProxyAgent, fetch: fetchComProxy } = require('undici');
+
+const urlProxy = process.env.QUOTAGUARDSTATIC_URL || process.env.DJEN_PROXY_URL || null;
+const agenteProxy = urlProxy ? new ProxyAgent(urlProxy) : null;
+
+async function fetchDjen(url, opcoes = {}) {
+  if (agenteProxy) return fetchComProxy(url, { ...opcoes, dispatcher: agenteProxy });
+  return fetch(url, opcoes); // sem proxy configurado — sai direto pelo IP do próprio servidor
+}
 
 const BASE_URL = 'https://comunicaapi.pje.jus.br/api/v1';
 let ultimaChamadaEm = 0;
@@ -42,14 +69,16 @@ async function chamarComRetry(url, tentativas = 3) {
     await aguardarIntervaloMinimo();
     let resp;
     try {
-      resp = await fetch(url, { headers: { Accept: 'application/json' } });
+      resp = await fetchDjen(url, { headers: { Accept: 'application/json' } });
     } catch (e) {
       if (i === tentativas - 1) throw new Error('Não foi possível conectar à API do DJEN. Verifique a conexão do servidor.');
       await new Promise((r) => setTimeout(r, 800 * (i + 1)));
       continue;
     }
     if (resp.status === 403) {
-      throw new Error('A API do DJEN recusou a conexão (HTTP 403). Isso costuma acontecer quando o servidor está hospedado fora do Brasil — a consulta pública do DJEN bloqueia acesso de fora do país.');
+      throw new Error(agenteProxy
+        ? 'A API do DJEN recusou a conexão (HTTP 403) mesmo usando o proxy configurado. Confira se a URL do proxy está correta e se a região dele é realmente no Brasil (ex: São Paulo/sa-east-1, não uma região dos EUA).'
+        : 'A API do DJEN recusou a conexão (HTTP 403). Isso costuma acontecer quando o servidor está hospedado fora do Brasil. Configure a variável de ambiente QUOTAGUARDSTATIC_URL (add-on do Render, região São Paulo) ou DJEN_PROXY_URL (outro provedor de proxy brasileiro) para resolver — veja o comentário no topo de src/utils/djen.js.');
     }
     if (resp.status === 500 && i < tentativas - 1) {
       await new Promise((r) => setTimeout(r, 800 * (i + 1)));
