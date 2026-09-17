@@ -584,7 +584,12 @@
         <div id="ap-selecao-usuario" style="display:none;"></div>
         <div id="ap-dashboard" style="display:none;">
           <div id="ap-voltar-master" style="display:none; margin-bottom:10px;"><button class="btn btn-ghost btn-sm" onclick="renderAgendaPessoalPage(true)">← Voltar à lista de usuários</button></div>
-          <div class="kpi-grid" style="margin-bottom:14px;">
+          <div class="pill-select" style="margin-bottom:14px;" id="ap-tabs">
+            <button class="fin-tab active" data-tab="ativos" onclick="setAgendaPessoalTab('ativos')">Ativos</button>
+            <button class="fin-tab" data-tab="lixeira" onclick="setAgendaPessoalTab('lixeira')">🗑 Lixeira</button>
+          </div>
+          <div class="hint" style="margin-bottom:8px;">Registros cuja audiência e/ou prazo já passaram (e ainda não foram concluídos) vão sozinhos para a lixeira.</div>
+          <div class="kpi-grid" style="margin-bottom:14px;" id="ap-kpis">
             <div class="panel"><h3>Próximas audiências</h3><div id="ap-proximas-audiencias"></div></div>
             <div class="panel"><h3>Próximos prazos</h3><div id="ap-proximos-prazos"></div></div>
           </div>
@@ -977,10 +982,21 @@ async function mostrarPopupNotificacoesEntrada(){
   if(isCliente()) return; // pop-up é só para a equipe do escritório
   const hoje = todayISO();
   const meusIds = meusClientes().map(c=>c.id);
-  const lembretesPendentes = DB.lembretes.filter(l=>!l.feito && !l.lixeira && l.data<=hoje).sort((a,b)=>a.data.localeCompare(b.data));
+  // Lembretes "soltos" (sem prazo vinculado) — os que vêm de um prazo entram
+  // na seção própria de Prazos abaixo, para não duplicar a mesma informação.
+  const lembretesPendentes = DB.lembretes.filter(l=>!l.feito && !l.lixeira && !l.prazoId && l.data<=hoje).sort((a,b)=>a.data.localeCompare(b.data));
   const mensagensNaoLidas = DB.clientes.filter(c=>meusIds.includes(c.id)).map(c=>({
     cliente:c, qtd: DB.mensagens.filter(m=>m.clienteId===c.id && m.autor==='cliente' && !m.lida && !m.lixeira).length,
   })).filter(x=>x.qtd>0);
+
+  // Prazos: aparecem a partir de 2 dias antes do vencimento. O próprio
+  // arquivamento automático (arquivarPrazosAntigos, chamado no login) já
+  // move para a lixeira qualquer prazo com vencimento passado — então
+  // "!p.lixeira" já garante que ele some do pop-up no dia seguinte ao
+  // vencimento, esteja ou não marcado como concluído.
+  const prazosProximos = meusPrazosVisiveis()
+    .filter(p=>p.status==='pendente' && p.vencimento<=addDaysISO(hoje,2))
+    .sort((a,b)=>a.vencimento.localeCompare(b.vencimento));
 
   // Parcelas de honorários vencidas e ainda não pagas — só para sócio (quem
   // toma a decisão de cobrança), não para associado nem master.
@@ -994,13 +1010,14 @@ async function mostrarPopupNotificacoesEntrada(){
     parcelasVencidas.sort((a,b)=>a.vencimento.localeCompare(b.vencimento));
   }
 
-  // Itens da Agenda Pessoal marcados como "lembrar", já vencidos ou de hoje —
-  // só para quem tem a agenda liberada (sócio sempre; associado se liberado).
+  // Itens da Agenda Pessoal marcados como "lembrar" — o backend já arquiva
+  // sozinho (lixeira) qualquer um com a data passada e ainda não concluído,
+  // então aqui só filtramos os que sobraram ativos e vencem até hoje.
   let agendaPessoalPendente = [];
   if(isSocio() || (isAssociado() && CURRENT_USER.agendaPessoalLiberada)){
     try{
       const registros = await apiFetch('/api/agenda-pessoal');
-      registros.filter(r=>!r.concluido).forEach(r=>{
+      registros.filter(r=>!r.concluido && !r.lixeira).forEach(r=>{
         if(r.audienciaLembrete && r.audienciaData && r.audienciaData<=hoje) agendaPessoalPendente.push({ tipo:'Audiência', data:r.audienciaData, titulo:r.clienteNome||r.numeroProcesso||'Agenda pessoal' });
         if(r.prazoLembrete && r.prazoData && r.prazoData<=hoje) agendaPessoalPendente.push({ tipo:'Prazo', data:r.prazoData, titulo:r.prazoDescricao||r.clienteNome||'Agenda pessoal' });
       });
@@ -1009,18 +1026,24 @@ async function mostrarPopupNotificacoesEntrada(){
   }
 
   // Agendamentos de clientes (visitas marcadas) relevantes para o
-  // responsável — pedidos ainda não confirmados, ou visitas de hoje.
+  // responsável — qualquer um ainda não cancelado cujo horário ainda não
+  // passou (pendente de confirmação ou já confirmado, tanto faz). Some do
+  // pop-up sozinho assim que a data/hora marcada passa.
+  const agoraHM = new Date().toTimeString().slice(0,5);
   const agendamentosRelevantes = (DB.agendamentos||[])
-    .filter(a=> (isMaster() || a.usuarioId===CURRENT_USER.id) && a.status!=='cancelado' && (a.status==='solicitado' || a.data<=hoje))
+    .filter(a=> (isMaster() || a.usuarioId===CURRENT_USER.id) && a.status!=='cancelado' && (a.data>hoje || (a.data===hoje && a.hora>=agoraHM)))
     .sort((a,b)=>(a.data+a.hora).localeCompare(b.data+b.hora));
 
-  if(!lembretesPendentes.length && !mensagensNaoLidas.length && !parcelasVencidas.length && !agendaPessoalPendente.length && !agendamentosRelevantes.length) return;
+  if(!lembretesPendentes.length && !mensagensNaoLidas.length && !parcelasVencidas.length && !agendaPessoalPendente.length && !agendamentosRelevantes.length && !prazosProximos.length) return;
   const corpo = `
     ${mensagensNaoLidas.length? `<div style="margin-bottom:14px;"><strong>💬 Mensagens não lidas</strong>
       ${mensagensNaoLidas.map(x=>`<div class="list-row" style="cursor:pointer;" onclick="closeModal(); goPage('mensagens'); abrirThread('${x.cliente.id}','${x.cliente.vinculoId||''}');"><div><div class="rtitle">${escapeHtml(x.cliente.nome)}</div></div><span class="badge" style="background:var(--danger); color:#fff; border-radius:20px; padding:1px 7px; font-size:10px;">${x.qtd}</span></div>`).join('')}
     </div>` : ''}
     ${agendamentosRelevantes.length? `<div style="margin-bottom:14px;"><strong>📅 Visitas agendadas</strong>
       ${agendamentosRelevantes.map(a=>{ const nome = a.clienteId? clienteNome(a.clienteId) : a.nomePublico; return `<div class="list-row" style="cursor:pointer;" onclick="closeModal(); goPage('agenda');"><div><div class="rtitle">${escapeHtml(nome)}</div><div class="rsub">${a.status==='solicitado'?'Aguardando confirmação':'Confirmada'}</div></div><div class="rmeta">${fmtDate(a.data)}<br>${a.hora}</div></div>`; }).join('')}
+    </div>` : ''}
+    ${prazosProximos.length? `<div style="margin-bottom:14px;"><strong>📌 Prazos próximos</strong>
+      ${prazosProximos.map(p=>`<div class="list-row" style="cursor:pointer;" onclick="closeModal(); goPage('prazos');"><span class="dot" style="background:${p.vencimento<hoje?'var(--danger)':'var(--gold)'}"></span><div><div class="rtitle">${escapeHtml(p.descricao)}</div></div><div class="rmeta">${fmtDate(p.vencimento)}</div></div>`).join('')}
     </div>` : ''}
     ${parcelasVencidas.length? `<div style="margin-bottom:14px;"><strong>💰 Parcelas vencidas — cobrança pendente</strong>
       ${parcelasVencidas.map(p=>`<div class="list-row" style="cursor:pointer;" onclick="closeModal(); goPage('financeiro');"><div><div class="rtitle">${escapeHtml(p.clienteNome)}</div><div class="rsub">Parcela ${p.numero}</div></div><div class="rmeta" style="color:var(--danger);">${fmtMoney(p.valor)}<br>${fmtDate(p.vencimento)}</div></div>`).join('')}
@@ -3980,31 +4003,41 @@ async function carregarAgendaPessoal(){
   catch(e){ AP_REGISTROS = []; showToast(e.message||'Não foi possível carregar a agenda.'); }
   renderTabelaAgendaPessoal();
 }
+let AP_TAB = 'ativos';
+function setAgendaPessoalTab(tab){
+  AP_TAB = tab;
+  document.querySelectorAll('#ap-tabs .fin-tab').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
+  document.getElementById('ap-kpis').style.display = tab==='lixeira'? 'none':'grid';
+  renderTabelaAgendaPessoal();
+}
 function renderTabelaAgendaPessoal(){
   const tbody = document.getElementById('tbl-agenda-pessoal');
   const empty = document.getElementById('empty-agenda-pessoal');
-  const ativos = AP_REGISTROS.filter(r=>!r.concluido);
-  if(!ativos.length){ tbody.innerHTML=''; empty.style.display='block'; }
+  const naLixeira = AP_TAB==='lixeira';
+  const lista = AP_REGISTROS.filter(r=> naLixeira? r.lixeira : (!r.concluido && !r.lixeira));
+  if(!lista.length){ tbody.innerHTML=''; empty.innerHTML = naLixeira? '<div class="big">🗑</div>A lixeira está vazia.' : '<div class="big">🗂️</div>Nenhum registro ainda.'; empty.style.display='block'; }
   else {
     empty.style.display='none';
-    tbody.innerHTML = ativos.map(r=>`<tr>
+    tbody.innerHTML = lista.map(r=>`<tr>
       <td>${escapeHtml(r.clienteNome)||'—'}</td>
       <td>${escapeHtml(r.numeroProcesso)||'—'}</td>
       <td>${escapeHtml(r.tipoProcesso)||'—'}</td>
       <td>${r.valorCausa? fmtMoney(r.valorCausa) : '—'}</td>
       <td>${r.audienciaData? fmtDate(r.audienciaData)+(r.audienciaHora?' '+r.audienciaHora:'')+(r.audienciaLembrete?' 🔔':'') : '—'}</td>
       <td>${r.prazoData? fmtDate(r.prazoData)+(r.prazoLembrete?' 🔔':'') : '—'}</td>
-      <td><div class="row-actions">
-        <button class="icon-btn" onclick="openAgendaPessoalForm('${r.id}')" title="Editar">✎</button>
+      <td><div class="row-actions">${naLixeira?
+        `<button class="icon-btn" onclick="restaurarAgendaPessoal('${r.id}')" title="Restaurar">↩️</button><button class="icon-btn danger" onclick="excluirAgendaPessoal('${r.id}')" title="Excluir definitivamente">🗑</button>`
+        : `<button class="icon-btn" onclick="openAgendaPessoalForm('${r.id}')" title="Editar">✎</button>
         <button class="icon-btn" onclick="concluirAgendaPessoal('${r.id}')" title="Marcar como concluído">✔️</button>
-        <button class="icon-btn danger" onclick="excluirAgendaPessoal('${r.id}')" title="Excluir">🗑</button>
-      </div></td>
+        <button class="icon-btn" onclick="moverAgendaPessoalLixeira('${r.id}')" title="Mover para a lixeira">🗑</button>`
+      }</div></td>
     </tr>`).join('');
   }
+  if(naLixeira) return; // KPIs de próximas audiências/prazos não fazem sentido dentro da lixeira
   const hoje = todayISO();
-  const aud = AP_REGISTROS.filter(r=>!r.concluido && r.audienciaData).sort((a,b)=>a.audienciaData.localeCompare(b.audienciaData)).slice(0,6);
+  const aud = AP_REGISTROS.filter(r=>!r.concluido && !r.lixeira && r.audienciaData).sort((a,b)=>a.audienciaData.localeCompare(b.audienciaData)).slice(0,6);
   document.getElementById('ap-proximas-audiencias').innerHTML = aud.length? aud.map(r=>`<div class="list-row"><span class="dot" style="background:${r.audienciaData<hoje?'var(--danger)':'var(--gold)'}"></span><div><div class="rtitle">${escapeHtml(r.clienteNome)||'Audiência'}</div><div class="rsub">${escapeHtml(r.numeroProcesso)||''}</div></div><div class="rmeta">${fmtDate(r.audienciaData)}${r.audienciaHora?' '+r.audienciaHora:''}</div></div>`).join('') : '<div class="empty">Nenhuma audiência agendada.</div>';
-  const prazos = AP_REGISTROS.filter(r=>!r.concluido && r.prazoData).sort((a,b)=>a.prazoData.localeCompare(b.prazoData)).slice(0,6);
+  const prazos = AP_REGISTROS.filter(r=>!r.concluido && !r.lixeira && r.prazoData).sort((a,b)=>a.prazoData.localeCompare(b.prazoData)).slice(0,6);
   document.getElementById('ap-proximos-prazos').innerHTML = prazos.length? prazos.map(r=>`<div class="list-row"><span class="dot" style="background:${r.prazoData<hoje?'var(--danger)':'var(--gold)'}"></span><div><div class="rtitle">${escapeHtml(r.prazoDescricao)||'Prazo'}</div><div class="rsub">${escapeHtml(r.clienteNome)||''}</div></div><div class="rmeta">${fmtDate(r.prazoData)}</div></div>`).join('') : '<div class="empty">Nenhum prazo cadastrado.</div>';
 }
 function openAgendaPessoalForm(id){
@@ -4060,6 +4093,17 @@ function openAgendaPessoalForm(id){
       closeModal(); showToast('Registro salvo.');
     }catch(e){ showToast(e.message||'Não foi possível salvar.'); }
   });
+}
+async function moverAgendaPessoalLixeira(id){
+  try{ await apiFetch('/api/agenda-pessoal/'+id+'/lixeira', {method:'PATCH'}); await carregarAgendaPessoal(); showToast('Movido para a lixeira.'); }
+  catch(e){ showToast(e.message||'Não foi possível mover para a lixeira.'); }
+}
+async function restaurarAgendaPessoal(id){
+  try{
+    const r = await apiFetch('/api/agenda-pessoal/'+id+'/restaurar', {method:'PATCH'});
+    await carregarAgendaPessoal();
+    showToast(r.dataAtualizada? 'Restaurado — a data foi atualizada para hoje.' : 'Restaurado.');
+  }catch(e){ showToast(e.message||'Não foi possível restaurar.'); }
 }
 async function concluirAgendaPessoal(id){
   try{ await apiFetch('/api/agenda-pessoal/'+id, {method:'PUT', body: JSON.stringify({concluido:true})}); await carregarAgendaPessoal(); showToast('Marcado como concluído.'); }

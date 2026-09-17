@@ -16,6 +16,26 @@ function podeVerRegistro(user, registro) {
   return registro.usuarioId === user.id;
 }
 
+// Move sozinho, para a lixeira, qualquer registro cuja(s) data(s) relevante(s)
+// já passaram — sem isso, a lista (e o pop-up de entrada) cresceriam para
+// sempre com casos já vencidos. Considera a MAIOR data entre audiência e
+// prazo (se um registro tiver as duas, só arquiva quando ambas já passaram);
+// se não tiver nenhuma data marcada, nunca arquiva sozinho (não há gatilho).
+function precisaArquivar(registro, hojeISO) {
+  if (registro.lixeira || registro.concluido) return false;
+  const datas = [registro.audienciaData, registro.prazoData].filter(Boolean);
+  if (!datas.length) return false;
+  const maiorData = datas.sort().slice(-1)[0];
+  return maiorData < hojeISO;
+}
+async function arquivarAntigos(todos) {
+  const hojeISO = new Date().toISOString().slice(0, 10);
+  let mudou = false;
+  todos.forEach((r) => { if (precisaArquivar(r, hojeISO)) { r.lixeira = true; mudou = true; } });
+  if (mudou) await setCollection('agendaPessoal', todos);
+  return todos;
+}
+
 // Lista de usuários (sócios + associados) para o Master escolher de quem ver
 // a agenda — mostra todos, mesmo que o associado não tenha "liberada" (o
 // acesso do Master não depende dessa liberação, que é só para o próprio
@@ -31,7 +51,8 @@ router.get('/usuarios', requireAuth, requireRole('master'), async (req, res) => 
 // Lista os registros — do próprio usuário, ou (se ?usuarioId= for passado e
 // quem pede for o Master) de um usuário específico.
 router.get('/', requireAuth, async (req, res) => {
-  const todos = await getCollection('agendaPessoal', []);
+  let todos = await getCollection('agendaPessoal', []);
+  todos = await arquivarAntigos(todos);
   if (req.user.tipo === 'master' && req.query.usuarioId) {
     return res.json(todos.filter((r) => r.usuarioId === req.query.usuarioId));
   }
@@ -65,7 +86,7 @@ router.post('/', requireAuth, async (req, res) => {
     valorCausa: valorCausa || null,
     audienciaData: audienciaData || null, audienciaHora: audienciaHora || null, audienciaLembrete: !!audienciaLembrete,
     prazoDescricao: prazoDescricao || '', prazoData: prazoData || null, prazoLembrete: !!prazoLembrete,
-    obs: obs || '', concluido: false,
+    obs: obs || '', concluido: false, lixeira: false,
   };
   const todos = await getCollection('agendaPessoal', []);
   todos.push(novo);
@@ -91,6 +112,33 @@ router.delete('/:id', requireAuth, async (req, res) => {
   if (!podeVerRegistro(req.user, registro)) return res.status(403).json({ erro: 'Sem acesso a este registro.' });
   await setCollection('agendaPessoal', todos.filter((r) => r.id !== req.params.id));
   res.json({ ok: true });
+});
+
+// Move manualmente para a lixeira (além do arquivamento automático por data).
+router.patch('/:id/lixeira', requireAuth, async (req, res) => {
+  const todos = await getCollection('agendaPessoal', []);
+  const registro = todos.find((r) => r.id === req.params.id);
+  if (!registro) return res.status(404).json({ erro: 'Registro não encontrado.' });
+  if (!podeVerRegistro(req.user, registro)) return res.status(403).json({ erro: 'Sem acesso a este registro.' });
+  registro.lixeira = true;
+  await setCollection('agendaPessoal', todos);
+  res.json(registro);
+});
+
+// Restaura da lixeira — se a(s) data(s) já tiverem passado, empurra para
+// hoje, senão o arquivamento automático mandaria de volta na hora seguinte.
+router.patch('/:id/restaurar', requireAuth, async (req, res) => {
+  const todos = await getCollection('agendaPessoal', []);
+  const registro = todos.find((r) => r.id === req.params.id);
+  if (!registro) return res.status(404).json({ erro: 'Registro não encontrado.' });
+  if (!podeVerRegistro(req.user, registro)) return res.status(403).json({ erro: 'Sem acesso a este registro.' });
+  const hojeISO = new Date().toISOString().slice(0, 10);
+  registro.lixeira = false;
+  let dataAtualizada = false;
+  if (registro.audienciaData && registro.audienciaData < hojeISO) { registro.audienciaData = hojeISO; dataAtualizada = true; }
+  if (registro.prazoData && registro.prazoData < hojeISO) { registro.prazoData = hojeISO; dataAtualizada = true; }
+  await setCollection('agendaPessoal', todos);
+  res.json({ ...registro, dataAtualizada });
 });
 
 module.exports = router;

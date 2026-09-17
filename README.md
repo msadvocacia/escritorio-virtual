@@ -3,6 +3,11 @@
 Esta é a versão do sistema rodando em **Node.js + Express + MongoDB**, feita para você
 hospedar no **Render** (ou em qualquer outro lugar, incluindo uma máquina em casa).
 
+> **Hospedando na Locaweb (ou outro servidor no Brasil) por causa do DJEN?**
+> Siga o guia à parte em [`DEPLOY_LOCAWEB.md`](./DEPLOY_LOCAWEB.md) — passo a
+> passo específico para servidor Linux (Cloud Server/VPS), que resolve o
+> bloqueio geográfico do DJEN sem precisar de proxy nenhum.
+
 Ela substitui a versão anterior (que rodava só dentro do Claude) por uma aplicação
 de verdade, com login validado no servidor e senhas protegidas com **bcrypt** —
 ninguém mais recebe o hash de senha de ninguém, ao contrário da versão anterior.
@@ -1401,6 +1406,62 @@ conectar ao proxy", não mais o 403 do DJEN. Isso prova que o mecanismo de
 roteamento está funcionando; assim que vocês configurarem um proxy
 brasileiro de verdade, a chamada deve passar a sair por um IP do Brasil e o
 DJEN deve liberar.
+
+
+## 46. Preparado o caminho para hospedar na Locaweb (resolve o DJEN sem proxy)
+
+Como decidiram ir direto para um servidor brasileiro em vez de pagar por
+proxy, preparei tudo para essa migração:
+
+- **`DEPLOY_LOCAWEB.md`** — guia passo a passo completo, desde qual produto
+  contratar na Locaweb (Cloud Server/VPS com Ubuntu) até deixar o sistema
+  rodando com domínio e HTTPS.
+- **`scripts/setup-locaweb.sh`** — script que faz a instalação inicial do
+  servidor sozinho (Node.js, PM2, Nginx, firewall) — só colar e rodar.
+
+**Uma coisa importante que preciso deixar clara**: diferente do Render (que
+publicava sozinho a cada atualização), a Locaweb é um servidor Linux de
+verdade — alguém precisa rodar os comandos por SSH (copiar e colar, nada
+complexo, mas não é automático). Eu não tenho como acessar remotamente o
+servidor de vocês para configurar sozinho; deixei tudo pronto para ser o
+mais simples possível de executar.
+
+Com a aplicação inteira rodando fisicamente no Brasil, **o bloqueio do DJEN
+deixa de existir sem precisar de nenhum proxy** — nem `QUOTAGUARDSTATIC_URL`
+nem `DJEN_PROXY_URL`, já que o próprio servidor sai com IP brasileiro.
+
+O banco de dados (MongoDB Atlas) não muda de lugar — só a aplicação migra.
+
+
+## 47. Quatro correções no pop-up: agendamentos, lixeira da Agenda Pessoal, prazos e deduplicação
+
+### Bug real no pop-up de agendamentos
+O filtro só considerava visitas de hoje/passadas ou "aguardando confirmação"
+— uma visita já **confirmada** para uma data futura nunca aparecia. Corrigido:
+mostra qualquer visita não cancelada cujo horário ainda não passou, e some
+sozinha assim que a data/hora marcada passa. Testado com os 4 cenários
+(futuro, hoje-já-passou, hoje-ainda-vai-acontecer, cancelado).
+
+### Lixeira na Agenda Pessoal (nova)
+Registro com audiência e/ou prazo vencidos, e ainda não concluído, vai
+sozinho para a lixeira — só arquiva quando **todas** as datas marcadas já
+passaram (se tiver audiência vencida mas prazo futuro, continua ativo).
+Nova aba "🗑 Lixeira" na tela, com restaurar (que também atualiza a data
+para hoje, senão o arquivamento automático mandaria de volta na hora
+seguinte) e excluir definitivamente. Testado via requisições reais ao
+servidor.
+
+### Prazos no pop-up, 2 dias antes de vencer
+Nova seção "📌 Prazos próximos" na entrada do sistema. Reaproveitei o
+arquivamento automático que os Prazos já tinham — por isso "parar de
+aparecer no dia seguinte ao vencimento" já vem de graça da mesma lógica,
+concluído ou não.
+
+### Deduplicação
+Cada prazo gera um lembrete vinculado nos bastidores — antes isso aparecia
+duas vezes no pop-up (como "prazo" e como "lembrete solto"). A seção de
+Lembretes agora ignora os que têm prazo vinculado, já que esses aparecem só
+na seção de Prazos.
 
 
 ---
