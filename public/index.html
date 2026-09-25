@@ -450,13 +450,22 @@
           </div>
         </div>
         <div class="kpi-grid" id="fin-kpi-grid"></div>
-        <div class="panel" id="fin-parcelas-panel"><h3>Parcelas em aberto — ordem cronológica</h3><div class="hint" style="margin-bottom:8px;">O que vai entrar, e em quais datas, considerando as parcelas ainda pendentes.</div><div id="fin-parcelas-cronologicas"></div></div>
-        <div class="panel" id="fin-repasses-panel">
-          <h3>Repasses por processo</h3>
+        <div class="panel" id="fin-breakdown-panel" style="display:none;"></div>
+        <div class="pill-select" style="margin-bottom:10px;" id="fin-top-tabs">
+          <button class="fin-tab active" data-tab="parcelas" onclick="setFinTopTab('parcelas')">Parcelas em aberto</button>
+          <button class="fin-tab" data-tab="repasses" onclick="setFinTopTab('repasses')">Repasses por processo</button>
+        </div>
+        <div class="panel" id="fin-parcelas-panel">
+          <div class="hint" style="margin-bottom:8px;">O que vai entrar, e em quais datas, considerando as parcelas ainda pendentes.</div>
+          <input type="text" id="fin-parcelas-busca" placeholder="Buscar por cliente ou processo..." oninput="renderParcelasCronologicas()" style="margin-bottom:8px;">
+          <div id="fin-parcelas-cronologicas"></div>
+        </div>
+        <div class="panel" id="fin-repasses-panel" style="display:none;">
           <div class="pill-select" style="margin:8px 0 12px;" id="repasse-tabs">
             <button class="fin-tab active" data-tab="pendentes" onclick="setRepasseTab('pendentes')">Pendentes</button>
             <button class="fin-tab" data-tab="repassados" onclick="setRepasseTab('repassados')">Repassados</button>
           </div>
+          <input type="text" id="fin-repasses-busca" placeholder="Buscar por cliente, processo ou profissional..." oninput="renderRepasses()" style="margin-bottom:8px;">
           <div id="fin-repasses"></div>
         </div>
         <div class="pill-select" style="margin-bottom:16px;" id="fin-tabs">
@@ -468,10 +477,12 @@
             <button class="fin-tab active" data-tab="abertos" onclick="setHonorarioTab('abertos')">Em aberto</button>
             <button class="fin-tab" data-tab="pagos" onclick="setHonorarioTab('pagos')">Pagos</button>
           </div>
+          <input type="text" id="fin-honorarios-busca" placeholder="Buscar por cliente, processo ou descrição..." oninput="renderHonorariosTable()" style="margin-bottom:8px;">
           <div class="panel" style="padding:0;"><table><thead><tr><th>Cliente / Processo</th><th>Descrição</th><th>Valor total</th><th>Forma</th><th>Situação</th><th></th></tr></thead><tbody id="tbl-honorarios"></tbody></table>
           <div class="empty" id="empty-honorarios" style="display:none;"><div class="big">💰</div>Nenhum honorário nesta situação.</div></div>
         </div>
         <div id="fin-despesas" style="display:none;">
+          <input type="text" id="fin-despesas-busca" placeholder="Buscar por descrição ou categoria..." oninput="renderDespesasTable()" style="margin-bottom:8px;">
           <div class="panel" style="padding:0;"><table><thead><tr><th>Descrição</th><th>Categoria</th><th>Data</th><th>Valor</th><th></th></tr></thead><tbody id="tbl-despesas"></tbody></table>
           <div class="empty" id="empty-despesas" style="display:none;"><div class="big">🧾</div>Nenhuma despesa cadastrada ainda.</div></div>
         </div>
@@ -2161,9 +2172,14 @@ async function renderAudiencias(){
    FINANCEIRO (honorários avulsos + os que vêm de processos + repasses)
    ============================================================ */
 function setFinTab(tab){
-  document.querySelectorAll('.fin-tab').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
+  document.querySelectorAll('#fin-tabs .fin-tab').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
   document.getElementById('fin-honorarios').style.display = tab==='honorarios' ? 'block':'none';
   document.getElementById('fin-despesas').style.display = tab==='despesas' ? 'block':'none';
+}
+function setFinTopTab(tab){
+  document.querySelectorAll('#fin-top-tabs .fin-tab').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
+  document.getElementById('fin-parcelas-panel').style.display = tab==='parcelas' ? 'block':'none';
+  document.getElementById('fin-repasses-panel').style.display = tab==='repasses' ? 'block':'none';
 }
 function partesSplit(splitTipo){
   switch(splitTipo){
@@ -2298,9 +2314,16 @@ function setHonorarioTab(tab){
 function renderHonorariosTable(){
   const tbody = document.getElementById('tbl-honorarios'); if(!tbody) return;
   const empty = document.getElementById('empty-honorarios');
+  const busca = (document.getElementById('fin-honorarios-busca')?.value||'').toLowerCase().trim();
   const todos = meusHonorarios();
-  const list = todos.filter(h=> HONORARIO_TAB==='pagos' ? honorarioSituacao(h)==='pago' : honorarioSituacao(h)!=='pago');
-  if(list.length===0){ tbody.innerHTML=''; empty.style.display='block'; return; }
+  let list = todos.filter(h=> HONORARIO_TAB==='pagos' ? honorarioSituacao(h)==='pago' : honorarioSituacao(h)!=='pago');
+  if(busca){
+    list = list.filter(h=>{
+      const hay = (clienteNome(h.clienteId)+' '+(h.processoId?processoLabel(h.processoId)||'':'')+' '+(h.descricao||'')).toLowerCase();
+      return hay.includes(busca);
+    });
+  }
+  if(list.length===0){ tbody.innerHTML=''; empty.innerHTML = busca? '<div class="big">🔎</div>Nenhum honorário encontrado.' : '<div class="big">💰</div>Nenhum honorário nesta situação.'; empty.style.display='block'; return; }
   empty.style.display='none';
   const situLabel = {pago:'Pago', pendente:'Pendente', parcial:'Parcial'};
   const situTag = {pago:'pago', pendente:'pendente', parcial:'parcial'};
@@ -2379,25 +2402,28 @@ function renderDespesasTable(){
   const empty = document.getElementById('empty-despesas');
   if(!(isMaster()||isSocio())){ tbody.innerHTML=''; empty.style.display='block'; return; }
   if(DB.despesas.length===0){ tbody.innerHTML=''; empty.style.display='block'; return; }
+  const busca = (document.getElementById('fin-despesas-busca')?.value||'').toLowerCase().trim();
+  let list = [...DB.despesas].sort((a,b)=>b.data.localeCompare(a.data));
+  if(busca) list = list.filter(d=>(d.descricao+' '+(d.categoria||'')).toLowerCase().includes(busca));
+  if(list.length===0){ tbody.innerHTML=''; empty.innerHTML = busca? '<div class="big">🔎</div>Nenhuma despesa encontrada.' : '<div class="big">🧾</div>Nenhuma despesa cadastrada ainda.'; empty.style.display='block'; return; }
   empty.style.display='none';
-  const list = [...DB.despesas].sort((a,b)=>b.data.localeCompare(a.data));
   tbody.innerHTML = list.map(d=>`<tr><td><strong>${escapeHtml(d.descricao)}</strong></td><td>${escapeHtml(d.categoria)||'—'}</td><td>${fmtDate(d.data)}</td><td><strong style="color:var(--danger);">${fmtMoney(d.valor)}</strong></td><td><div class="row-actions"><button class="icon-btn" onclick="openDespesaForm('${d.id}')" title="Editar">✎</button><button class="icon-btn danger" onclick="deleteDespesa('${d.id}')" title="Excluir">🗑</button></div></td></tr>`).join('');
 }
 function computeFinanceSummary(periodo){
   const hoje = todayISO(); const mesAtual = hoje.slice(0,7);
   const dentroPeriodo = (dataStr) => !periodo || (dataStr>=periodo.inicio && dataStr<=periodo.fim);
   const podeVerCaixa = isMaster()||isSocio();
-  let aReceber=0, recebidoMes=0, atrasadoReceber=0, recebidoPeriodo=0;
+  let aReceber=0, aReceberLiquidoEscritorio=0, recebidoMes=0, atrasadoReceber=0, recebidoPeriodo=0;
   const list = meusHonorarios();
   list.forEach(h=>{
     // fração que efetivamente entra no caixa do escritório (abate a parte do associado, quando houver)
     const fracao = podeVerCaixa ? fracaoEscritorio(h) : 1;
     if(h.forma==='avista'){
-      if(h.avistaStatus==='pendente') aReceber+=h.valorTotal;
+      if(h.avistaStatus==='pendente'){ aReceber+=h.valorTotal; aReceberLiquidoEscritorio+=h.valorTotal*fracao; }
       if(h.avistaStatus==='pago' && h.avistaPagoEm){ if(h.avistaPagoEm.slice(0,7)===mesAtual) recebidoMes+=h.valorTotal*fracao; if(dentroPeriodo(h.avistaPagoEm)) recebidoPeriodo+=h.valorTotal*fracao; }
     } else {
       (h.parcelas||[]).forEach(p=>{
-        if(p.status==='pendente'){ aReceber+=p.valor; if(p.vencimento<hoje) atrasadoReceber+=p.valor; }
+        if(p.status==='pendente'){ aReceber+=p.valor; aReceberLiquidoEscritorio+=p.valor*fracao; if(p.vencimento<hoje) atrasadoReceber+=p.valor; }
         if(p.status==='pago' && p.pagoEm){ if(p.pagoEm.slice(0,7)===mesAtual) recebidoMes+=p.valor*fracao; if(dentroPeriodo(p.pagoEm)) recebidoPeriodo+=p.valor*fracao; }
       });
     }
@@ -2408,7 +2434,34 @@ function computeFinanceSummary(periodo){
   const totalDespesas = despesasList.reduce((s,d)=>s+d.valor,0);
   const totalRecebidoHistorico = list.reduce((s,h)=> s + valorRecebidoHonorario(h) * (podeVerCaixa? fracaoEscritorio(h) : 1), 0);
   const caixaAcumulado = totalRecebidoHistorico - totalDespesas;
-  return { aReceber, recebidoMes, despesasMes, totalDespesas, saldoMes: recebidoMes-despesasMes, atrasadoReceber, caixaAcumulado, recebidoPeriodo, despesasPeriodo, saldoPeriodo: recebidoPeriodo-despesasPeriodo };
+  return { aReceber, aReceberLiquidoEscritorio, recebidoMes, despesasMes, totalDespesas, saldoMes: recebidoMes-despesasMes, atrasadoReceber, caixaAcumulado, recebidoPeriodo, despesasPeriodo, saldoPeriodo: recebidoPeriodo-despesasPeriodo };
+}
+// Quanto cada "papel" recebeu de verdade, historicamente (ou dentro de um
+// período, se informado): sócio (taxa fixa de sócio nos splits que têm essa
+// parte), escritório (taxa institucional) e cada associado individualmente.
+// A parte de "sócio" nos splits associado_*_socio_*_escritorio_* é um valor
+// agregado (o sistema não registra QUAL sócio específico, só que existe essa
+// fatia) — diferente da parte de associado, que é rastreada por usuário.
+function computeFinanceBreakdown(periodo){
+  const dentroPeriodo = (dataStr) => !periodo || (dataStr>=periodo.inicio && dataStr<=periodo.fim);
+  let recebidoSocio=0, recebidoEscritorio=0;
+  const porAssociado = {};
+  meusHonorarios().forEach(h=>{
+    const partes = partesSplit(h.splitTipo);
+    const ids = idsProfissionaisRegistro(h);
+    const registrar = (valor, dataPagamento) => {
+      if(!dentroPeriodo(dataPagamento)) return;
+      recebidoSocio += valor * (partes.socio||0);
+      recebidoEscritorio += valor * (partes.escritorio||0);
+      if(ids.length && partes.profissional){
+        const porId = (valor*partes.profissional)/ids.length;
+        ids.forEach(id=>{ porAssociado[id] = (porAssociado[id]||0) + porId; });
+      }
+    };
+    if(h.forma==='avista'){ if(h.avistaStatus==='pago' && h.avistaPagoEm) registrar(h.valorTotal, h.avistaPagoEm); }
+    else { (h.parcelas||[]).forEach(p=>{ if(p.status==='pago' && p.pagoEm) registrar(p.valor, p.pagoEm); }); }
+  });
+  return { recebidoSocio, recebidoEscritorio, porAssociado };
 }
 async function confirmarRepasse(honId){
   await persistMutation('honorarios', arr=>{
@@ -2421,17 +2474,20 @@ async function confirmarRepasse(honId){
 }
 function renderParcelasCronologicas(){
   const box = document.getElementById('fin-parcelas-cronologicas'); if(!box) return;
+  const busca = (document.getElementById('fin-parcelas-busca')?.value||'').toLowerCase().trim();
   const itens = [];
   meusHonorarios().forEach(h=>{
     (h.parcelas||[]).forEach(p=>{
       if(p.status!=='pago'){ itens.push({ vencimento:p.vencimento, valor:p.valor, cliente:clienteNome(h.clienteId), processo:h.processoId?processoLabel(h.processoId):'', numero:p.numero, total:(h.parcelas||[]).length, honId:h.id, parcId:p.id }); }
     });
   });
-  itens.sort((a,b)=> (a.vencimento||'').localeCompare(b.vencimento||''));
-  if(itens.length===0){ box.innerHTML = `<div class="empty">Nenhuma parcela pendente no momento.</div>`; return; }
+  let filtrados = itens;
+  if(busca) filtrados = itens.filter(it=>(it.cliente+' '+it.processo).toLowerCase().includes(busca));
+  filtrados.sort((a,b)=> (a.vencimento||'').localeCompare(b.vencimento||''));
+  if(filtrados.length===0){ box.innerHTML = `<div class="empty">${busca? 'Nenhuma parcela encontrada.' : 'Nenhuma parcela pendente no momento.'}</div>`; return; }
   const hoje = todayISO();
   box.innerHTML = `<table><thead><tr><th>Vencimento</th><th>Cliente / Processo</th><th>Parcela</th><th>Valor</th></tr></thead><tbody>
-    ${itens.map(it=>{
+    ${filtrados.map(it=>{
       const atrasada = it.vencimento && it.vencimento < hoje;
       return `<tr>
         <td><span class="tag ${atrasada?'tag-perdido':'tag-pendente'}">${fmtDate(it.vencimento)}</span></td>
@@ -2450,9 +2506,16 @@ function setRepasseTab(tab){
 }
 function renderRepasses(){
   const box = document.getElementById('fin-repasses');
+  const busca = (document.getElementById('fin-repasses-busca')?.value||'').toLowerCase().trim();
   const todosRelevantes = meusHonorarios().filter(h=>idsProfissionaisRegistro(h).length);
-  const relevantes = todosRelevantes.filter(h=> REPASSE_TAB==='repassados' ? h.repasseStatus==='confirmado' : h.repasseStatus!=='confirmado');
-  if(relevantes.length===0){ box.innerHTML = `<div class="empty">Nenhum repasse ${REPASSE_TAB==='repassados'?'já repassado':'pendente'} no momento.</div>`; return; }
+  let relevantes = todosRelevantes.filter(h=> REPASSE_TAB==='repassados' ? h.repasseStatus==='confirmado' : h.repasseStatus!=='confirmado');
+  if(busca){
+    relevantes = relevantes.filter(h=>{
+      const hay = (clienteNome(h.clienteId)+' '+(h.processoId?processoLabel(h.processoId)||'':'')+' '+idsProfissionaisRegistro(h).map(usuarioNome).join(' ')).toLowerCase();
+      return hay.includes(busca);
+    });
+  }
+  if(relevantes.length===0){ box.innerHTML = `<div class="empty">Nenhum repasse ${busca? 'encontrado' : (REPASSE_TAB==='repassados'?'já repassado':'pendente')}.</div>`; return; }
   box.innerHTML = relevantes.map(h=>{
     const ids = idsProfissionaisRegistro(h);
     const recebido = valorRecebidoHonorario(h);
@@ -3740,13 +3803,95 @@ function renderFinanceiro(){
     return;
   }
   atualizarBotoesValoresOcultos();
+  const b = computeFinanceBreakdown();
+  const nomesAssociadosComValor = Object.keys(b.porAssociado).filter(id=>b.porAssociado[id]>0.004);
   kpiGrid.innerHTML = `
-    <div class="kpi kpi-warning"><div class="label">A receber (total dos clientes)</div><div class="value">${vmoney(s.aReceber)}</div><div class="sub">${s.atrasadoReceber>0? vmoney(s.atrasadoReceber)+' em atraso':'nenhum valor em atraso'}</div></div>
-    <div class="kpi kpi-success"><div class="label">Recebido no mês${podeVerCaixa?' (parte do escritório)':''}</div><div class="value">${vmoney(s.recebidoMes)}</div><div class="sub">${podeVerCaixa? 'já descontada a parte dos associados':'honorários pagos neste mês'}</div></div>
-    ${podeVerCaixa? `<div class="kpi kpi-danger"><div class="label">Despesas no mês</div><div class="value">${vmoney(s.despesasMes)}</div><div class="sub">total ${vmoney(s.totalDespesas)} acumulado</div></div>
-    <div class="kpi"><div class="label">Saldo do mês</div><div class="value" style="color:${s.saldoMes>=0?'var(--success)':'var(--danger)'}">${vmoney(s.saldoMes)}</div><div class="sub">parte do escritório − despesas</div></div>
-    <div class="kpi kpi-info"><div class="label">Caixa do escritório (acumulado)</div><div class="value" style="color:${s.caixaAcumulado>=0?'var(--success)':'var(--danger)'}">${vmoney(s.caixaAcumulado)}</div><div class="sub">parte do escritório recebida historicamente − despesas totais</div></div>` : ''}
+    <div class="kpi kpi-warning" style="cursor:pointer;" onclick="abrirDetalheKpi('a-receber')"><div class="label">A receber (total dos clientes)</div><div class="value">${vmoney(s.aReceber)}</div><div class="sub">${s.atrasadoReceber>0? vmoney(s.atrasadoReceber)+' em atraso':'nenhum valor em atraso'}</div></div>
+    <div class="kpi kpi-warning" style="cursor:pointer;" onclick="abrirDetalheKpi('a-receber-liquido')"><div class="label">A receber (líquido do escritório)${ajuda('Mesmas parcelas pendentes acima, mas já descontando a parte que pertence a cada associado — considera só a fatia do(s) sócio(s) e do escritório em cada contrato. É o valor real que vai entrar no caixa quando os clientes pagarem.')}</div><div class="value">${vmoney(s.aReceberLiquidoEscritorio)}</div><div class="sub">já descontada a parte dos associados</div></div>
+    <div class="kpi kpi-success" style="cursor:pointer;" onclick="abrirDetalheKpi('recebido-mes')"><div class="label">Recebido no mês${podeVerCaixa?' (parte do escritório)':''}</div><div class="value">${vmoney(s.recebidoMes)}</div><div class="sub">${podeVerCaixa? 'já descontada a parte dos associados':'honorários pagos neste mês'}</div></div>
+    ${podeVerCaixa? `<div class="kpi kpi-danger" style="cursor:pointer;" onclick="abrirDetalheKpi('despesas-mes')"><div class="label">Despesas no mês</div><div class="value">${vmoney(s.despesasMes)}</div><div class="sub">total ${vmoney(s.totalDespesas)} acumulado</div></div>
+    <div class="kpi" style="cursor:pointer;" onclick="abrirDetalheKpi('saldo-mes')"><div class="label">Saldo do mês</div><div class="value" style="color:${s.saldoMes>=0?'var(--success)':'var(--danger)'}">${vmoney(s.saldoMes)}</div><div class="sub">parte do escritório − despesas</div></div>
+    <div class="kpi kpi-info" style="cursor:pointer;" onclick="abrirDetalheKpi('caixa-acumulado')"><div class="label">Caixa do escritório (acumulado)</div><div class="value" style="color:${s.caixaAcumulado>=0?'var(--success)':'var(--danger)'}">${vmoney(s.caixaAcumulado)}</div><div class="sub">parte do escritório recebida historicamente − despesas totais</div></div>` : ''}
   `;
+  const breakdownPanel = document.getElementById('fin-breakdown-panel');
+  if(breakdownPanel){
+    if(!podeVerCaixa){ breakdownPanel.style.display='none'; }
+    else {
+      breakdownPanel.style.display='block';
+      breakdownPanel.innerHTML = `<h3>Quem recebeu quanto (histórico acumulado)${ajuda('Divide o total já recebido dos clientes conforme a porcentagem de cada contrato: a fatia fixa de sócio (nos contratos que têm essa fatia separada da taxa institucional), a taxa institucional do escritório, e a parte de cada associado.')}</h3>
+        <div class="list-row"><div><div class="rtitle">Sócio(s)</div><div class="rsub">fatia de sócio nos contratos que têm essa divisão específica</div></div><div class="rmeta" style="font-weight:700;">${vmoney(b.recebidoSocio)}</div></div>
+        <div class="list-row"><div><div class="rtitle">Escritório (taxa institucional)</div><div class="rsub">MS Advocacia</div></div><div class="rmeta" style="font-weight:700;">${vmoney(b.recebidoEscritorio)}</div></div>
+        ${nomesAssociadosComValor.map(id=>`<div class="list-row"><div><div class="rtitle">${escapeHtml(usuarioNome(id))}</div><div class="rsub">associado</div></div><div class="rmeta" style="font-weight:700;">${vmoney(b.porAssociado[id])}</div></div>`).join('')}
+      `;
+    }
+  }
+}
+let DETALHE_KPI_ATUAL = null;
+// Monta, item a item, a lista que compõe o valor de uma caixa do resumo
+// financeiro — para poder "auditar" (ver de onde vem cada centavo) e
+// exportar em timbrado.
+function abrirDetalheKpi(tipo){
+  const hoje = todayISO(); const mesAtual = hoje.slice(0,7);
+  const podeVerCaixa = isMaster()||isSocio();
+  const list = meusHonorarios();
+  let titulo = '', itens = [];
+  if(tipo==='a-receber' || tipo==='a-receber-liquido'){
+    const liquido = tipo==='a-receber-liquido';
+    titulo = liquido? 'A receber (líquido do escritório)' : 'A receber (total dos clientes)';
+    list.forEach(h=>{
+      const fracao = liquido? fracaoEscritorio(h) : 1;
+      const base = clienteNome(h.clienteId)+(h.processoId? ' · '+(processoLabel(h.processoId)||'') : '');
+      if(h.forma==='avista'){ if(h.avistaStatus==='pendente') itens.push({data:null, desc:base, valor:h.valorTotal*fracao}); }
+      else (h.parcelas||[]).forEach(p=>{ if(p.status==='pendente') itens.push({data:p.vencimento, desc:base+' — parcela '+p.numero, valor:p.valor*fracao}); });
+    });
+  } else if(tipo==='recebido-mes'){
+    titulo = 'Recebido no mês'+(podeVerCaixa? ' (parte do escritório)' : '');
+    list.forEach(h=>{
+      const fracao = podeVerCaixa? fracaoEscritorio(h) : 1;
+      const base = clienteNome(h.clienteId)+(h.processoId? ' · '+(processoLabel(h.processoId)||'') : '');
+      if(h.forma==='avista'){ if(h.avistaStatus==='pago' && h.avistaPagoEm && h.avistaPagoEm.slice(0,7)===mesAtual) itens.push({data:h.avistaPagoEm, desc:base, valor:h.valorTotal*fracao}); }
+      else (h.parcelas||[]).forEach(p=>{ if(p.status==='pago' && p.pagoEm && p.pagoEm.slice(0,7)===mesAtual) itens.push({data:p.pagoEm, desc:base+' — parcela '+p.numero, valor:p.valor*fracao}); });
+    });
+  } else if(tipo==='despesas-mes'){
+    titulo = 'Despesas no mês';
+    DB.despesas.filter(d=>d.data.slice(0,7)===mesAtual).forEach(d=>itens.push({data:d.data, desc:d.descricao+(d.categoria? ' ('+d.categoria+')':''), valor:-d.valor}));
+  } else if(tipo==='saldo-mes'){
+    titulo = 'Saldo do mês (recebido do escritório − despesas)';
+    list.forEach(h=>{
+      const fracao = fracaoEscritorio(h);
+      const base = clienteNome(h.clienteId)+(h.processoId? ' · '+(processoLabel(h.processoId)||'') : '');
+      if(h.forma==='avista'){ if(h.avistaStatus==='pago' && h.avistaPagoEm && h.avistaPagoEm.slice(0,7)===mesAtual) itens.push({data:h.avistaPagoEm, desc:base, valor:h.valorTotal*fracao}); }
+      else (h.parcelas||[]).forEach(p=>{ if(p.status==='pago' && p.pagoEm && p.pagoEm.slice(0,7)===mesAtual) itens.push({data:p.pagoEm, desc:base+' — parcela '+p.numero, valor:p.valor*fracao}); });
+    });
+    DB.despesas.filter(d=>d.data.slice(0,7)===mesAtual).forEach(d=>itens.push({data:d.data, desc:'Despesa: '+d.descricao, valor:-d.valor}));
+  } else if(tipo==='caixa-acumulado'){
+    titulo = 'Caixa do escritório (acumulado)';
+    list.forEach(h=>{
+      const fracao = fracaoEscritorio(h);
+      const base = clienteNome(h.clienteId)+(h.processoId? ' · '+(processoLabel(h.processoId)||'') : '');
+      if(h.forma==='avista'){ if(h.avistaStatus==='pago' && h.avistaPagoEm) itens.push({data:h.avistaPagoEm, desc:base, valor:h.valorTotal*fracao}); }
+      else (h.parcelas||[]).forEach(p=>{ if(p.status==='pago' && p.pagoEm) itens.push({data:p.pagoEm, desc:base+' — parcela '+p.numero, valor:p.valor*fracao}); });
+    });
+    DB.despesas.forEach(d=>itens.push({data:d.data, desc:'Despesa: '+d.descricao, valor:-d.valor}));
+  } else return;
+  itens.sort((a,b)=>(a.data||'').localeCompare(b.data||''));
+  const total = itens.reduce((s,it)=>s+it.valor,0);
+  DETALHE_KPI_ATUAL = {titulo, itens, total};
+  const corpo = `
+    <div class="panel" style="padding:0; max-height:400px; overflow-y:auto;">
+      <table><thead><tr><th>Data</th><th>Descrição</th><th>Valor</th></tr></thead><tbody>
+      ${itens.length? itens.map(it=>`<tr><td>${it.data?fmtDate(it.data):'—'}</td><td>${escapeHtml(it.desc)}</td><td style="color:${it.valor<0?'var(--danger)':'inherit'};">${fmtMoney(it.valor)}</td></tr>`).join('') : '<tr><td colspan="3" style="text-align:center; color:var(--ink-soft);">Nenhum item neste período.</td></tr>'}
+      </tbody></table>
+    </div>
+    <div style="text-align:right; margin-top:10px; font-weight:700; font-size:15px;">Total: ${fmtMoney(total)}</div>
+    <button type="button" class="btn btn-dark btn-block" style="margin-top:10px;" onclick="baixarDetalheKpiWord()">📥 Baixar este detalhamento em Word (timbrado)</button>
+  `;
+  openModal(titulo, corpo, null);
+  document.getElementById('modal-save-btn').style.display='none';
+}
+function baixarDetalheKpiWord(){
+  if(!DETALHE_KPI_ATUAL) return;
+  baixarArquivoPost('/api/documentos/detalhe-financeiro', DETALHE_KPI_ATUAL, 'Detalhamento - '+DETALHE_KPI_ATUAL.titulo+'.docx');
 }
 function abrirSelecaoPeriodoRelatorio(){
   const body = `<div class="field"><label>Selecione o período (clique no dia de início e depois no dia de fim)</label><div id="rel-calendar"></div></div><div class="hint" id="rel-periodo-label">Nenhum período selecionado.</div>

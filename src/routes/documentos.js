@@ -653,4 +653,37 @@ router.post('/contrato-associado', requireAuth, requireRole('master', 'socio'), 
   }
 });
 
+// Detalhamento auditável de uma caixa do resumo financeiro (Financeiro →
+// clicar num KPI) — recebe a lista já calculada pelo frontend (mesma lógica
+// de fracaoEscritorio já usada no resumo) e só formata em timbrado.
+router.post('/detalhe-financeiro', requireAuth, requireRole('master', 'socio'), async (req, res) => {
+  const { titulo, itens, total } = req.body || {};
+  if (!titulo || !Array.isArray(itens)) return res.status(400).json({ erro: 'Dados inválidos para o detalhamento.' });
+  try {
+    const cabecalho = ['Data', 'Descrição', 'Valor'];
+    const linhas = itens.map((it) => [
+      it.data ? it.data.split('-').reverse().join('/') : '—',
+      it.desc || '',
+      T.fmtMoney(it.valor),
+    ]);
+    const corpo = [
+      D.paragraph(D.run('DETALHAMENTO FINANCEIRO', { bold: true, sizeHalfPt: 28 }), { center: true, justify: false }),
+      D.paragraph(D.run(titulo, { bold: true, sizeHalfPt: 24 }), { center: true, justify: false }),
+      D.blank(),
+      D.paragraph(D.run(`Emitido em ${T.fmtDateExtenso(todayISO())}.`, { italic: true })),
+      D.blank(),
+      D.tabela(cabecalho, linhas, { largurasCm: [3, 10, 4] }),
+      D.blank(),
+      D.paragraph(D.run(`Total: ${T.fmtMoney(total || 0)}`, { bold: true, sizeHalfPt: 26 }), { justify: false }),
+    ].join('');
+    const buffer = gerarDocxComCorpo(corpo, { margemInferiorTwips: 1843 });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="Detalhamento - ${titulo.replace(/[^\w\- ]/g, '')}.docx"`);
+    res.send(buffer);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ erro: 'Não foi possível gerar o detalhamento.' });
+  }
+});
+
 module.exports = router;

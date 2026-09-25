@@ -1429,6 +1429,44 @@ texto**: percentual (inclui o parágrafo certo), fixo sem marcar a caixa
 (nenhum parágrafo único), fixo marcando a caixa (inclui o parágrafo do MS)
 — todos bateram exatamente como esperado.
 
+## 49. Financeiro: correção crítica de valores + auditoria por clique + reorganização
+
+### Bug corrigido: "A receber" misturava o valor bruto com o líquido
+"A receber (total dos clientes)" somava o valor cheio das parcelas
+pendentes, mesmo quando parte daquilo pertence a um associado — criando uma
+falsa impressão de superávit ao comparar com "Recebido" (que já descontava
+essa parte corretamente). Mantive essa caixa como está — o rótulo "total dos
+clientes" é honesto, é o total que os clientes devem mesmo — e **criei uma
+caixa nova, "A receber (líquido do escritório)"**, que aplica a mesma fração
+sócio+escritório já usada no resto do sistema.
+
+### Novo: detalhamento por quem recebe
+Painel novo mostrando, do total já recebido historicamente: quanto foi para
+o(s) sócio(s) (fatia fixa nos contratos que têm essa divisão específica),
+quanto para o escritório (taxa institucional), e quanto para cada associado
+individualmente. **Testei a matemática com números concretos**: a soma das
+três partes bate exatamente com o total do contrato, sem perder nem
+duplicar centavo algum.
+
+### Novo: auditoria por clique, com timbrado
+Clicar em qualquer caixa do resumo (A receber, Recebido no mês, Despesas,
+Saldo, Caixa acumulado) abre a lista detalhada de tudo que compõe aquele
+valor — data, descrição, valor — com botão para baixar em Word timbrado.
+Testei a geração do documento pelo servidor real e conferi o conteúdo linha
+por linha.
+
+### Reorganização da tela
+"Parcelas em aberto" e "Repasses por processo" viraram abas lado a lado (uma
+de cada vez), com "Honorários/Despesas" sempre visível logo abaixo — sem
+precisar rolar a página toda para chegar lá. De brinde, corrigi um bug
+pré-existente onde trocar de aba em "Honorários/Despesas" bagunçava
+visualmente as outras abas da página (o seletor de botões não estava
+isolado por seção).
+
+### Filtros de busca
+Adicionados em Parcelas, Repasses, Honorários e Despesas.
+
+
 ---
 
 Qualquer erro ao subir, me mostre a mensagem exata que aparece (no Render, aba "Logs")
