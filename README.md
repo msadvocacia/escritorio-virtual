@@ -3,11 +3,6 @@
 Esta é a versão do sistema rodando em **Node.js + Express + MongoDB**, feita para você
 hospedar no **Render** (ou em qualquer outro lugar, incluindo uma máquina em casa).
 
-> **Hospedando na Locaweb (ou outro servidor no Brasil) por causa do DJEN?**
-> Siga o guia à parte em [`DEPLOY_LOCAWEB.md`](./DEPLOY_LOCAWEB.md) — passo a
-> passo específico para servidor Linux (Cloud Server/VPS), que resolve o
-> bloqueio geográfico do DJEN sem precisar de proxy nenhum.
-
 Ela substitui a versão anterior (que rodava só dentro do Claude) por uma aplicação
 de verdade, com login validado no servidor e senhas protegidas com **bcrypt** —
 ninguém mais recebe o hash de senha de ninguém, ao contrário da versão anterior.
@@ -173,7 +168,6 @@ na tela "Processos" da equipe), o sistema:
   exato dos campos que o Datajud devolve (a estrutura pode variar ligeiramente entre
   tribunais).
 
-
 ## 9. Impressão fiel ao timbrado real (arquivo Word)
 
 Na tela de Clientes, ao clicar em "Procuração" ou "Contrato", agora existe um botão
@@ -209,7 +203,6 @@ intacto.
   confirmou que prefere salvar em PDF manualmente na hora de imprimir, mantive
   assim — sem essa complexidade extra.
 
-
 ## 10. Sistema lento? Como deixar mais rápido
 
 Se o sistema estiver demorando para responder, isso é quase sempre uma das três coisas abaixo — nenhuma delas é um "bug" no código, são características dos planos gratuitos:
@@ -238,8 +231,6 @@ Encontrei e corrigi os seguintes problemas reportados, todos testados de ponta a
 - **Calculadora de prazo**: adicionada — informe a data de publicação e a quantidade de dias, escolha dias úteis ou corridos, e o vencimento é calculado automaticamente. *(Não considera feriados nacionais/estaduais/municipais — confira antes de confiar cegamente.)*
 - **Mensagem de erro do Datajud**: deixei mais clara para quem ainda não configurou a chave.
 
-
-
 ## 12. Correções desta atualização (a pedido do usuário)
 
 - **Instagram sempre voltava para o link errado**: achei a causa — o botão "Salvar"
@@ -257,7 +248,6 @@ Encontrei e corrigi os seguintes problemas reportados, todos testados de ponta a
   tela, disponível para sócio/associado/master, onde dá pra atualizar telefone e
   endereço (e a senha, no botão ao lado). Nome, RG, CPF e situação ativo/inativo
   continuam só com o administrador ou sócio, como pedido.
-
 
 ## 13. Atualização: Codilo no lugar do Datajud, lembretes seletivos e consulta restrita ao cliente
 
@@ -316,8 +306,6 @@ qual é o nome exato do arquivo que vocês editaram, que eu confirmo.
    a equipe inteira (comportamento de antes, preservado). O administrador master
    sempre vê todos os lembretes, independentemente da seleção.
 
-
-
 ## 14. Codilo descontinuada → trocado para BuscaProcessos
 
 A Codilo saiu do ar, então troquei de novo — desta vez para a **BuscaProcessos**
@@ -354,8 +342,6 @@ real, me manda o retorno bruto da BuscaProcessos que eu ajusto a extração.
 simples (o que está com Groq, funcionando). Só troquei a parte que busca o
 texto da movimentação no tribunal.
 
-
-
 ## 15. Visual estilo PROJUDI, reformatação de documentos, e abas no Financeiro
 
 - **Consulta de processo com visual de tabela** (como o PROJUDI): mudei só a
@@ -383,7 +369,6 @@ texto da movimentação no tribunal.
   (pendente + parcialmente pago, padrão) / Pagos. As listas gigantescas viraram
   bem mais fáceis de navegar.
 
-
 ## 16. Parcelas cronológicas, login, vínculo de processo, ocultar valores e relatório
 
 - **Parcelas pendentes em ordem cronológica**: novo painel no Financeiro, mostrando data, cliente e valor de cada parcela ainda não paga, ordenadas por vencimento.
@@ -394,7 +379,6 @@ texto da movimentação no tribunal.
 - **Relatório financeiro reestruturado**: título em Times New Roman 14, corpo em 11,5 com espaçamento 1,5, rótulos em caixa alta e negrito, valores em negrito, "REPASSES POR PROCESSO" em caixa alta e negrito, com uma tabela de verdade (Cliente em ordem alfabética / Profissional / Valor em negrito / Status) e o somatório de repassado e aguardando ao final.
 
   Encontrei e corrigi dois bugs reais nesse processo, ambos antes de entregar: um de texto duplicado na tabela (mesmo tipo de bug que já tinha corrigido antes em outro lugar do sistema, só que dessa vez na função nova de tabela), e um erro de cálculo nos totais (a soma de "R$ 1.400,00" estava dando errado por causa do separador de milhar — corrigi para somar os números direto, sem depender do texto já formatado). Testei gerando um relatório com clientes de propósito fora de ordem alfabética para confirmar a ordenação, e conferi que os totais batem exatamente com as linhas da tabela.
-
 
 ## 17. Novo: Cálculo Jurídico (item no menu lateral)
 
@@ -449,7 +433,6 @@ implementar uma de cada vez quando você pedir.
   coletiva, decisão judicial determinando índice próprio, médias variáveis,
   etc.).
 
-
 ## 18. Administrativo/Servidor Público + Parâmetros de Cálculo editáveis
 
 ### Sobre "busca automática de atualizações"
@@ -491,7 +474,6 @@ precisam de atualização manual, isso já está resolvido desde o início.
 Testei os parâmetros editáveis (edição, reflexo imediato no cálculo, bloqueio
 de associado) e o cálculo de planos econômicos com valores conhecidos antes de
 entregar.
-
 
 ## 19. Novo: Módulo 17 — Retroativos PCCR (Mudança de Nível / Gratificação)
 
@@ -547,7 +529,6 @@ usar isso em produção. Se algo não bater, me mostre onde e eu ajusto.
   — o cálculo aparece na tela, mas ainda não tem o botão de baixar em .docx
   como procuração/contrato/recibo/relatório já têm. Posso adicionar isso a
   seguir, se você quiser.
-
 
 ## 20. Validação contra o caso real (Cássio Alves) — resultado detalhado
 
@@ -615,7 +596,6 @@ tiver mais detalhes de como o RM Cálculos faz essa conta especificamente (ou
 puder me passar mais um caso de teste), consigo continuar refinando essa parte
 específica.
 
-
 ## 21. Resolvido: Previdência Própria (RPPS), não INSS nacional
 
 Você me deu a informação que faltava: o município do Cássio Alves tem
@@ -663,7 +643,6 @@ desta pista de 11,79% para este caso específico — cadastre a alíquota certa 
 cada ente (conforme a lei municipal/estadual) antes de calcular para outros
 clientes.
 
-
 ## 22. Ajustes finos em Procuração e Contrato
 
 - **Contrato**: margem inferior aumentada em 0,5cm (o texto estava grudando no
@@ -710,7 +689,6 @@ clientes.
   e "(CONTRATANTE)" embaixo, e cada advogado vinculado ao processo com nome,
   "(OAB/UF - número)" e "(CONTRATADO)" embaixo. Testei com 2 advogados
   vinculados e confirmei que os dois blocos saem certinhos.
-
 
 ## 23. Upload de PDF no módulo 17 (ficha financeira + tabela de níveis)
 
@@ -760,7 +738,6 @@ sistema avisa claramente ("não consegui reconhecer o formato") e você pode
 preencher manualmente, ou me mandar um exemplo desse outro formato (com PDF
 de texto real, não escaneado) para eu ajustar o leitor.
 
-
 ## 24. Procuração e Contrato: endereço profissional e telefone individual do advogado
 
 - Na qualificação do **Outorgado/Contratado** (o advogado), a frase mudou de
@@ -771,7 +748,6 @@ de texto real, não escaneado) para eu ajustar o leitor.
   (o campo "telefone" do próprio usuário), não mais o telefone geral do
   escritório. Testei com um advogado com telefone diferente do escritório e
   confirmei que o número certo aparece tanto na procuração quanto no contrato.
-
 
 ## 25. Balões de ajuda em todos os módulos + reformulação completa do PCCR
 
@@ -821,7 +797,6 @@ do campo e aparece uma explicação em linguagem simples do que preencher ali.
 - Em ambos os casos, os dados lidos **sempre aparecem para você conferir**
   antes de entrar no cálculo — nunca é automático de ponta a ponta.
 
-
 ## 26. Corrigido com o documento real: orientação da tabela de níveis
 
 Você mandou a Lei de Recomposição Salarial real de Jequié (2026), com as
@@ -848,7 +823,6 @@ inclusive testei um caso de ponta a ponta pela rota completa de upload.
 
 Também ajustei o limite que decide se um PDF "parece escaneado" — estava
 muito alto e recusaria por engano até documentos pequenos e legítimos.
-
 
 ## 27. Estimativa por 2 contracheques + descoberta real importante sobre o parser
 
@@ -895,7 +869,6 @@ automatizado com segurança. **O caminho recomendado continua sendo importar
 a ficha financeira completa** (ou os contracheques específicos de cada
 período), que já refletem a situação real de cada servidor.
 
-
 ## 28. Tabela de níveis corrigida com o documento real + férias recorrentes por ano
 
 ### Corrigido de verdade: leitura da tabela de níveis (Lei 2.509/2026 de Jequié)
@@ -928,7 +901,6 @@ No período "de/até", o campo de férias agora é um "mês de referência" — 
 você informar julho/2019, o sistema aplica o reflexo de 1/3 de férias em
 julho de **todos os anos** dentro do período (2019, 2020, 2021...), sem
 precisar cadastrar cada ano separadamente.
-
 
 ## 29. Corrigidos os dois problemas dos prints: detalhamento por verba + documento Word
 
@@ -974,7 +946,6 @@ Testei e confirmei com certeza (isso não depende de imagem): todos os
 valores da tabela, a aritmética do resumo A/B/C, e que o texto não quebra
 mais.
 
-
 ## 30. Cabe em retrato, sem paisagem — reproduzindo o truque do modelo de referência
 
 Você tinha razão: o modelo "RM Cálculos" cabe tudo em retrato porque usa dois
@@ -991,7 +962,6 @@ paisagem do passo anterior — não precisa mais.
 Testei de novo com o mesmo caso: **todos os valores numa linha só, sem
 quebrar, em página retrato normal** — confirmei pelo texto extraído do PDF
 gerado.
-
 
 ## 31. Três ajustes finos no documento de retroativo — confirmados sem imagem
 
@@ -1012,7 +982,6 @@ estiver sutilmente errado visualmente (cores, espaçamento fino), me avisa.
    Art. 12-A da Lei 7.713-88.)" logo depois de "Sem incidência", exatamente
    como pedido — só aparece quando o IRRF realmente não incide.
 
-
 ## 32. Cabeçalho corrigido: grade 3x3 alinhada (não mais empilhado)
 
 Entendi errado da primeira vez — você queria os campos lado a lado em 3
@@ -1024,7 +993,6 @@ lado a lado, alinhados, exatamente como no seu exemplo.
 
 Também corrigi o tamanho da nota do IRRF para exatamente 10pt (confirmei no
 XML: `sz=20`, que é 10pt).
-
 
 ## 33. Novo: Contrato de Associação de Advogado
 
@@ -1042,7 +1010,6 @@ documento no timbrado, usando o texto exato que vocês passaram.
   sozinha ("representada por seu sócio" / "representada por seus sócios",
   com "e" entre eles quando há mais de um) e todo o texto das 5 cláusulas
   saiu idêntico ao modelo que vocês enviaram.
-
 
 ## 34. Confirmado: negrito e caixa alta batendo com o arquivo original
 
@@ -1068,13 +1035,11 @@ Se algo tiver ficado diferente do arquivo real de vocês mesmo assim, me
 mandem de novo o .docx (não só o texto) que eu comparo direto, campo a
 campo, como fiz agora.
 
-
 ## 35. Nome do associado também em caixa alta e negrito
 
 Ajustado a pedido: na qualificação do CONTRATADO(A) ASSOCIADO(A), o nome
 agora aparece em caixa alta e negrito, igual ao padrão já usado para o
 sócio representante do CONTRATANTE. Testei e confirmei no XML gerado.
-
 
 ## 36. Três correções: negrito completo no contrato, visibilidade entre sócios, atalho de audiência
 
@@ -1106,7 +1071,6 @@ clicável "VIDEOCONFERÊNCIA, através de SALA VIRTUAL" que preenche o campo
 sozinho com um clique — o campo continua digitável normalmente para
 qualquer outro local.
 
-
 ## 37. Bug grave corrigido: nada estava salvando (prazo, audiência, processo)
 
 Encontrei a causa raiz, e preciso ser totalmente transparente: **fui eu quem
@@ -1137,7 +1101,6 @@ Como a mesma função é usada por praticamente todo "criar novo" no sistema,
 essa correção resolve os três casos que você reportou (prazo, audiência,
 processo) de uma vez.
 
-
 ## 38. Parágrafo único condicional na Cláusula 6ª do contrato
 
 Adicionado exatamente como pedido: logo abaixo da Cláusula 6ª (Dos
@@ -1155,7 +1118,6 @@ contrato:
 Testei os dois cenários gerando o contrato de verdade e conferindo o texto
 completo — bate exatamente com o que você passou, incluindo o percentual
 dinâmico.
-
 
 ## 39. Trava obrigatória: todo cálculo precisa de cliente/processo vinculado
 
@@ -1178,7 +1140,6 @@ tela de resultado fica vazia, sem erro) — a trava funciona. A tela de
 "Parâmetros de Cálculo" (que é configuração, não um cálculo em si) não tem
 essa trava, propositalmente.
 
-
 ## 40. Novo tipo de vínculo em "Honorários e vínculo"
 
 Adicionado: **Profissional(is) 40% / Sócio 40% / Escritório 20%**, ao lado
@@ -1186,7 +1147,6 @@ das opções que já existiam. Atualizei nos 4 lugares que precisavam ficar
 consistentes (rótulo exibido, opção no formulário, e o cálculo da divisão de
 verdade tanto no front quanto no back) — testei e confirmei que a soma das
 partes fecha em 100%. Nenhuma outra mudança feita.
-
 
 ## 41. Rodada grande: lixeiras, pop-ups, ordenação, bug do olhinho e Agenda Pessoal
 
@@ -1239,7 +1199,6 @@ uma lista de várias audiências/prazos por processo). Se você precisar
 registrar mais de uma audiência ou prazo para o mesmo cliente/processo,
 por enquanto crie um segundo registro. Se isso for importante, me avise
 que eu transformo em listas por registro.
-
 
 ## 42. Novo módulo: DJEN (Diário de Justiça Eletrônico Nacional)
 
@@ -1300,7 +1259,6 @@ cada tribunal, então prazos perto dessas datas merecem conferência humana
 antes de serem considerados definitivos (isso já está avisado na própria
 tela, dentro do código).
 
-
 ## 43. Seis correções: pop-up, bug real no DJEN, e dois avisos novos
 
 ### Bug real encontrado e corrigido: "${u}" na tela do DJEN
@@ -1341,7 +1299,6 @@ avisar.
   — corrigi o teste que você fez: antes a função nem buscava esses dados,
   agora busca (para quem tem a agenda liberada) e mostra junto com o resto.
 
-
 ## 44. Bug real na lixeira de lembretes + lixeira de prazos + limpeza de horários
 
 ### O bug do "restaurado" que não restaurava
@@ -1375,7 +1332,6 @@ Visitas agendadas (pedidos ainda não confirmados, ou confirmadas para hoje)
 agora também aparecem no pop-up de entrada do sócio/associado responsável
 por aquele agendamento.
 
-
 ## 45. Resolvido o bloqueio do DJEN: suporte a proxy implementado
 
 Pesquisei as duas opções que você recebeu, e tem uma correção importante:
@@ -1407,32 +1363,6 @@ roteamento está funcionando; assim que vocês configurarem um proxy
 brasileiro de verdade, a chamada deve passar a sair por um IP do Brasil e o
 DJEN deve liberar.
 
-
-## 46. Preparado o caminho para hospedar na Locaweb (resolve o DJEN sem proxy)
-
-Como decidiram ir direto para um servidor brasileiro em vez de pagar por
-proxy, preparei tudo para essa migração:
-
-- **`DEPLOY_LOCAWEB.md`** — guia passo a passo completo, desde qual produto
-  contratar na Locaweb (Cloud Server/VPS com Ubuntu) até deixar o sistema
-  rodando com domínio e HTTPS.
-- **`scripts/setup-locaweb.sh`** — script que faz a instalação inicial do
-  servidor sozinho (Node.js, PM2, Nginx, firewall) — só colar e rodar.
-
-**Uma coisa importante que preciso deixar clara**: diferente do Render (que
-publicava sozinho a cada atualização), a Locaweb é um servidor Linux de
-verdade — alguém precisa rodar os comandos por SSH (copiar e colar, nada
-complexo, mas não é automático). Eu não tenho como acessar remotamente o
-servidor de vocês para configurar sozinho; deixei tudo pronto para ser o
-mais simples possível de executar.
-
-Com a aplicação inteira rodando fisicamente no Brasil, **o bloqueio do DJEN
-deixa de existir sem precisar de nenhum proxy** — nem `QUOTAGUARDSTATIC_URL`
-nem `DJEN_PROXY_URL`, já que o próprio servidor sai com IP brasileiro.
-
-O banco de dados (MongoDB Atlas) não muda de lugar — só a aplicação migra.
-
-
 ## 47. Quatro correções no pop-up: agendamentos, lixeira da Agenda Pessoal, prazos e deduplicação
 
 ### Bug real no pop-up de agendamentos
@@ -1463,6 +1393,41 @@ duas vezes no pop-up (como "prazo" e como "lembrete solto"). A seção de
 Lembretes agora ignora os que têm prazo vinculado, já que esses aparecem só
 na seção de Prazos.
 
+## 48. Cinco pedidos: lixeira em audiências, honorário do escritório, parcelas editáveis, busca em mensagens e parágrafo MS
+
+### Lixeira em Audiências (Prazos já tinha)
+Mesmo padrão de Lembretes e Prazos: audiência com a data já passada vai
+sozinha para a lixeira, com aba "🗑 Lixeira", restaurar (atualiza a data
+para hoje) e excluir definitivamente.
+
+### Honorário avulso vinculado a "Escritório"
+Nova opção "🏢 Escritório (sem cliente vinculado)" no formulário de
+honorário avulso — funciona igual a uma despesa, sem precisar de cliente
+nem processo, contando no caixa do escritório do mesmo jeito. Testei salvar
+e recuperar pela API real — funcionou. O nome "Escritório (MS Advocacia)"
+aparece automaticamente em toda tela que já mostra o nome do cliente,
+porque corrigi isso numa única função central usada pelo sistema inteiro.
+
+### Parcelas editáveis no PIX/dinheiro
+Antes, a modalidade "Parcelado (dinheiro)" só gerava parcelas com valor
+igual, sem poder editar. Agora funciona como o cartão já funcionava: os
+valores vêm pré-preenchidos com a divisão igual (ponto de partida), mas
+cada parcela pode ser editada individualmente (valor e data).
+
+### Filtro de busca em Mensagens
+Campo de busca por nome do cliente, acima da lista de conversas.
+
+### Parágrafo "MS" opcional no contrato
+Removida a inclusão automática do parágrafo sobre honorários de êxito em
+Mandado de Segurança quando a cobrança é por valor fixo. Agora existe uma
+checkbox "Parágrafo MS nos honorários" na tela de geração do contrato — só
+inclui esse parágrafo quando marcada. A cobrança por percentual continua
+com o parágrafo dela automaticamente, sem mudança.
+
+**Testei os 3 cenários gerando o documento de verdade e conferindo o
+texto**: percentual (inclui o parágrafo certo), fixo sem marcar a caixa
+(nenhum parágrafo único), fixo marcando a caixa (inclui o parágrafo do MS)
+— todos bateram exatamente como esperado.
 
 ---
 

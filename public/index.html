@@ -426,6 +426,11 @@
         </div>
 
         <div id="prazos-sub-audiencias" style="display:none;">
+          <div class="pill-select" style="margin-bottom:10px;" id="aud-tabs">
+            <button class="fin-tab active" data-tab="ativas" onclick="setAudienciasTab('ativas')">Ativas</button>
+            <button class="fin-tab" data-tab="lixeira" onclick="setAudienciasTab('lixeira')">🗑 Lixeira</button>
+          </div>
+          <div class="hint" style="margin-bottom:8px;">Audiências com a data já passada vão sozinhas para a lixeira.</div>
           <div class="panel" style="padding:0;">
             <table><thead><tr><th>Processo / Cliente</th><th>Data e horário</th><th>Local</th><th>Status</th><th></th></tr></thead>
             <tbody id="tbl-audiencias"></tbody></table>
@@ -515,7 +520,10 @@
       <div class="page" id="page-mensagens">
         <div class="section-head"><div><h2>Mensagens</h2><p>Canal direto entre cliente e responsável.</p></div></div>
         <div class="grid-2">
-          <div class="panel" id="msg-lista-box"><h3>Conversas</h3><div id="msg-lista"></div></div>
+          <div class="panel" id="msg-lista-box"><h3>Conversas</h3>
+            <input type="text" id="msg-busca" placeholder="Buscar por nome do cliente..." oninput="renderMensagens()" style="margin-bottom:8px;">
+            <div id="msg-lista"></div>
+          </div>
           <div class="panel"><h3 id="msg-thread-title">Selecione uma conversa</h3>
             <div style="text-align:right; margin-bottom:4px;"><button class="btn btn-ghost btn-sm" id="msg-lixeira-btn" onclick="toggleThreadLixeira()" style="display:none;">🗑 Ver lixeira</button></div>
             <div class="msg-thread" id="msg-thread"></div>
@@ -972,6 +980,7 @@ async function enterApp(){
   await loadAll();
   await arquivarLembretesVencidos();
   await arquivarPrazosAntigos();
+  await arquivarAudienciasAntigas();
   await limparDisponibilidadesAntigas();
   IDS_MENSAGENS_JA_AVISADAS = new Set(DB.mensagens.filter(m=>m.autor==='cliente' && !m.lida).map(m=>m.id));
   goPage(PAGES_BY_ROLE[CURRENT_USER.tipo][0].id);
@@ -1204,7 +1213,7 @@ function meusProcessosVisiveis(){
 }
 function clienteDoUsuarioLogado(){ return DB.clientes.find(c=>c.id===CURRENT_USER.clienteId); }
 function usuarioNome(id){ const u = DB.usuarios.find(x=>x.id===id); return u? u.nome : '—'; }
-function clienteNome(id){ const c = DB.clientes.find(x=>x.id===id); return c? c.nome : '—'; }
+function clienteNome(id){ if(id==='__escritorio__') return 'Escritório (MS Advocacia)'; const c = DB.clientes.find(x=>x.id===id); return c? c.nome : '—'; }
 function processoLabel(id){ const p = DB.processos.find(x=>x.id===id); return p? p.numero : null; }
 
 /* ============ MODAL ============ */
@@ -1697,9 +1706,14 @@ function montarHonorarioDoProcesso(data, honorarioExistente){
   if(data.formaPagamento==='avista_dinheiro'){
     novoHonorario = { ...base, forma:'avista', avistaStatus:'pendente', avistaPagoEm:null, parcelas:[] };
   } else if(data.formaPagamento==='parcelado_dinheiro'){
-    const n = parseInt(document.getElementById('pf-parcelas')?.value)||2;
-    const primeira = document.getElementById('pf-primeira')?.value||todayISO();
-    novoHonorario = { ...base, forma:'parcelado_dinheiro', parcelas: buildParcelasPreview(data.honorarioValor, n, primeira) };
+    const n = parseInt(document.getElementById('pf-dinheiro-n')?.value)||2;
+    const parcelas = [];
+    for(let i=0;i<n;i++){
+      const val = parseFloat(document.getElementById('pf-dinheiro-valor-'+i)?.value)||0;
+      const dt = document.getElementById('pf-dinheiro-data-'+i)?.value || todayISO();
+      parcelas.push({id:uid(), numero:i+1, vencimento:dt, valor:val, status:'pendente', pagoEm:null});
+    }
+    novoHonorario = { ...base, forma:'parcelado_dinheiro', parcelas };
   } else {
     // cartao
     const n = parseInt(document.getElementById('pf-cartao-n')?.value)||1;
@@ -1730,22 +1744,13 @@ function atualizarPreviewPagamentoProcesso(honorarioExistente){
   const valor = parseFloat(document.getElementById('pf-valor').value)||0;
   if(forma==='avista_dinheiro'){ box.innerHTML = `<div class="hint">Pagamento único de ${fmtMoney(valor)}.</div>`; return; }
   if(forma==='parcelado_dinheiro'){
-    // Mantém a quantidade/data já digitada pelo usuário nesta tela; só usa o
-    // honorário existente como valor inicial na primeira renderização.
-    const nAtual = document.getElementById('pf-parcelas')?.value;
-    const primeiraAtual = document.getElementById('pf-primeira')?.value;
+    const nAtual = document.getElementById('pf-dinheiro-n')?.value;
     const nInicial = nAtual || (honorarioExistente && honorarioExistente.forma==='parcelado_dinheiro' ? honorarioExistente.parcelas.length : 2);
-    const primeiraInicial = primeiraAtual || (honorarioExistente && honorarioExistente.parcelas && honorarioExistente.parcelas[0] ? honorarioExistente.parcelas[0].vencimento : todayISO());
     box.innerHTML = `
-      <div class="field-row">
-        <div class="field"><label>Nº de parcelas</label><input type="number" min="2" id="pf-parcelas" value="${nInicial}" oninput="atualizarPreviewPagamentoProcesso()"></div>
-        <div class="field"><label>Vencimento da 1ª parcela</label><input type="date" id="pf-primeira" value="${primeiraInicial}" oninput="atualizarPreviewPagamentoProcesso()"></div>
-      </div>
-      <div class="installments-preview" id="pf-parc-preview"></div>`;
-    const n = parseInt(document.getElementById('pf-parcelas').value)||2;
-    const primeira = document.getElementById('pf-primeira').value;
-    const parcelas = buildParcelasPreview(valor, n, primeira);
-    document.getElementById('pf-parc-preview').innerHTML = parcelas.map(p=>`<div class="irow"><span>Parcela ${p.numero} — ${fmtDate(p.vencimento)}</span><strong>${fmtMoney(p.valor)}</strong></div>`).join('');
+      <div class="field"><label>Nº de parcelas</label><input type="number" min="2" id="pf-dinheiro-n" value="${nInicial}" oninput="atualizarCamposDinheiro(null)"></div>
+      <div id="pf-dinheiro-campos"></div>
+      <div class="hint">Os valores já vêm divididos igualmente, mas você pode editar cada parcela (ex: entrada maior, valores redondos).</div>`;
+    atualizarCamposDinheiro(forma==='parcelado_dinheiro'? honorarioExistente : null);
     return;
   }
   // cartão: valores livres por parcela
@@ -1765,6 +1770,22 @@ function atualizarCamposCartao(honorarioExistente){
   for(let i=0;i<n;i++){
     const ex = existentes[i];
     html += `<div class="field-row"><div class="field"><label>Parcela ${i+1} — vencimento</label><input type="date" id="pf-cartao-data-${i}" value="${ex?ex.vencimento:todayISO()}"></div><div class="field"><label>Valor recebido</label><input type="number" step="0.01" id="pf-cartao-valor-${i}" value="${ex?ex.valor:''}" placeholder="0,00"></div></div>`;
+  }
+  box.innerHTML = html;
+}
+function atualizarCamposDinheiro(honorarioExistente){
+  const n = parseInt(document.getElementById('pf-dinheiro-n').value)||2;
+  const box = document.getElementById('pf-dinheiro-campos');
+  const existentes = (honorarioExistente && honorarioExistente.forma==='parcelado_dinheiro') ? honorarioExistente.parcelas : [];
+  // Pré-preenche com divisão igual (ponto de partida), usando o valor total
+  // já digitado — o usuário edita à vontade depois (ex: entrada maior).
+  const valor = parseFloat(document.getElementById('pf-valor')?.value)||0;
+  const sugestao = buildParcelasPreview(valor, n, existentes[0]?.vencimento || todayISO());
+  let html = '';
+  for(let i=0;i<n;i++){
+    const ex = existentes[i];
+    const sug = sugestao[i];
+    html += `<div class="field-row"><div class="field"><label>Parcela ${i+1} — vencimento</label><input type="date" id="pf-dinheiro-data-${i}" value="${ex?ex.vencimento:(sug?sug.vencimento:todayISO())}"></div><div class="field"><label>Valor</label><input type="number" step="0.01" id="pf-dinheiro-valor-${i}" value="${ex?ex.valor:(sug?sug.valor:'')}"></div></div>`;
   }
   box.innerHTML = html;
 }
@@ -2071,20 +2092,53 @@ async function sincronizarLembreteAudiencia(a){
   });
 }
 async function deleteAudiencia(id){
-  if(!confirm('Remover esta audiência? O lembrete vinculado também será removido.')) return;
+  if(!confirm('Excluir definitivamente esta audiência? O lembrete vinculado também será removido. Essa ação não pode ser desfeita.')) return;
   await persistMutation('audiencias', arr=>arr.filter(a=>a.id!==id));
   await persistMutation('lembretes', arr=>arr.filter(l=>l.audienciaId!==id));
-  renderAudiencias(); renderDashboard(); renderLembretes(); showToast('Audiência removida.');
+  renderAudiencias(); renderDashboard(); renderLembretes(); showToast('Audiência excluída.');
+}
+async function moverAudienciaParaLixeira(id){
+  await persistMutation('audiencias', arr=>{ const a = arr.find(x=>x.id===id); if(a) a.lixeira=true; return arr; });
+  renderAudiencias(); renderDashboard(); showToast('Audiência movida para a lixeira.');
+}
+async function restaurarAudiencia(id){
+  const hoje = todayISO();
+  let dataAtualizada = false;
+  await persistMutation('audiencias', arr=>{
+    const a = arr.find(x=>x.id===id);
+    if(a){ a.lixeira=false; if(a.data<hoje){ a.data=hoje; dataAtualizada=true; } }
+    return arr;
+  });
+  renderAudiencias(); renderDashboard();
+  showToast(dataAtualizada? 'Audiência restaurada — a data foi atualizada para hoje.' : 'Audiência restaurada.');
+}
+// Move sozinho, sem precisar de ação do usuário, toda audiência com a data
+// já passada para a lixeira — mesmo padrão de lembretes e prazos.
+async function arquivarAudienciasAntigas(){
+  const hoje = todayISO();
+  const temAntigo = DB.audiencias.some(a=>!a.lixeira && a.data<hoje);
+  if(!temAntigo) return;
+  await persistMutation('audiencias', arr=>{ arr.forEach(a=>{ if(!a.lixeira && a.data<hoje) a.lixeira=true; }); return arr; });
 }
 function audienciasVisiveis(){
   const idsProc = meusProcessosVisiveis().map(p=>p.id);
-  return DB.audiencias.filter(a=>idsProc.includes(a.processoId));
+  return DB.audiencias.filter(a=>idsProc.includes(a.processoId) && !a.lixeira);
 }
-function renderAudiencias(){
+let AUDIENCIAS_TAB = 'ativas';
+function setAudienciasTab(tab){
+  AUDIENCIAS_TAB = tab;
+  document.querySelectorAll('#aud-tabs .fin-tab').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
+  renderAudiencias();
+}
+async function renderAudiencias(){
+  await arquivarAudienciasAntigas();
   const tbody = document.getElementById('tbl-audiencias'); if(!tbody) return;
   const empty = document.getElementById('empty-audiencias');
-  const list = audienciasVisiveis().sort((a,b)=>(a.data+a.hora).localeCompare(b.data+b.hora));
-  if(list.length===0){ tbody.innerHTML=''; empty.style.display='block'; return; }
+  const naLixeira = AUDIENCIAS_TAB==='lixeira';
+  const idsProc = meusProcessosVisiveis().map(p=>p.id);
+  let list = DB.audiencias.filter(a=>idsProc.includes(a.processoId) && !!a.lixeira===naLixeira);
+  list.sort((a,b)=>(a.data+a.hora).localeCompare(b.data+b.hora));
+  if(list.length===0){ tbody.innerHTML=''; empty.innerHTML = naLixeira? '<div class="big">🗑</div>A lixeira está vazia.' : '<div class="big">⚖️</div>Nenhuma audiência cadastrada ainda.'; empty.style.display='block'; return; }
   empty.style.display='none';
   const statusLabel = {agendada:'Agendada', realizada:'Realizada', cancelada:'Cancelada'};
   const statusTag = {agendada:'pendente', realizada:'cumprido', cancelada:'cancelado'};
@@ -2094,11 +2148,11 @@ function renderAudiencias(){
       <td><strong>${proc? escapeHtml(proc.numero):'—'}</strong><br><span style="font-size:11.5px;color:var(--ink-soft);">${proc? escapeHtml(clienteNome(proc.clienteId)):''}</span></td>
       <td>${fmtDate(a.data)} · ${a.hora}</td>
       <td>${escapeHtml(a.local)||'—'}</td>
-      <td><span class="tag tag-${statusTag[a.status]}">${statusLabel[a.status]}</span></td>
-      <td><div class="row-actions">
-        <button class="icon-btn" onclick="openAudienciaForm('${a.id}')" title="Editar">✎</button>
-        <button class="icon-btn danger" onclick="deleteAudiencia('${a.id}')" title="Excluir">🗑</button>
-      </div></td>
+      <td>${naLixeira? '<span class="tag">Na lixeira</span>' : `<span class="tag tag-${statusTag[a.status]}">${statusLabel[a.status]}</span>`}</td>
+      <td><div class="row-actions">${naLixeira?
+        `<button class="icon-btn" onclick="restaurarAudiencia('${a.id}')" title="Restaurar">↩️</button><button class="icon-btn danger" onclick="deleteAudiencia('${a.id}')" title="Excluir definitivamente">🗑</button>`
+        : `<button class="icon-btn" onclick="openAudienciaForm('${a.id}')" title="Editar">✎</button><button class="icon-btn" onclick="moverAudienciaParaLixeira('${a.id}')" title="Mover para a lixeira">🗑</button>`
+      }</div></td>
     </tr>`;
   }).join('');
 }
@@ -2165,8 +2219,8 @@ function openHonorarioForm(id){
   const isParcelado = h.forma==='parcelado';
   const body = `
     <div class="field-row">
-      <div class="field"><label>Cliente</label><select id="hf-cliente"><option value="">— selecione —</option>${meusClientes().map(c=>`<option value="${c.id}" ${c.id===h.clienteId?'selected':''}>${escapeHtml(c.nome)}</option>`).join('')}</select></div>
-      <div class="field"><label>Processo (opcional)</label><select id="hf-processo"><option value="">— nenhum —</option>${meusProcessosVisiveis().map(p=>`<option value="${p.id}" ${p.id===h.processoId?'selected':''}>${escapeHtml(p.numero)}</option>`).join('')}</select></div>
+      <div class="field"><label>Cliente${ajuda('Escolha "Escritório" para um honorário avulso que não pertence a nenhum cliente específico — ele entra no caixa do escritório do mesmo jeito que uma despesa, sem precisar vincular a ninguém.')}</label><select id="hf-cliente" onchange="const proc=document.getElementById('hf-processo'); if(this.value==='__escritorio__'){proc.value=''; proc.disabled=true;} else {proc.disabled=false;}"><option value="">— selecione —</option><option value="__escritorio__" ${h.clienteId==='__escritorio__'?'selected':''}>🏢 Escritório (sem cliente vinculado)</option>${meusClientes().map(c=>`<option value="${c.id}" ${c.id===h.clienteId?'selected':''}>${escapeHtml(c.nome)}</option>`).join('')}</select></div>
+      <div class="field"><label>Processo (opcional)</label><select id="hf-processo" ${h.clienteId==='__escritorio__'?'disabled':''}><option value="">— nenhum —</option>${meusProcessosVisiveis().map(p=>`<option value="${p.id}" ${p.id===h.processoId?'selected':''}>${escapeHtml(p.numero)}</option>`).join('')}</select></div>
     </div>
     <div class="field"><label>Descrição</label><input id="hf-desc" value="${escapeHtml(h.descricao)}"></div>
     <div class="field"><label>Valor total</label><input type="number" step="0.01" id="hf-total" value="${h.valorTotal}" oninput="updateParcelasPreview()"></div>
@@ -2185,7 +2239,7 @@ function openHonorarioForm(id){
     const valorTotal = parseFloat(document.getElementById('hf-total').value)||0;
     if(!clienteId || !valorTotal){ showToast('Selecione o cliente e informe o valor.'); return; }
     const forma = document.querySelector('input[name="hf-forma"]:checked').value;
-    let data = { clienteId, processoId: document.getElementById('hf-processo').value, descricao: document.getElementById('hf-desc').value.trim(), valorTotal, forma };
+    let data = { clienteId, processoId: clienteId==='__escritorio__' ? '' : document.getElementById('hf-processo').value, descricao: document.getElementById('hf-desc').value.trim(), valorTotal, forma };
     if(forma==='parcelado'){
       const n = parseInt(document.getElementById('hf-parcelas').value)||2;
       const primeira = document.getElementById('hf-primeira').value;
@@ -3867,11 +3921,13 @@ function renderMensagens(){
     renderThread();
   } else {
     listaPanel.style.display='block';
-    const clientesRelacionados = meusClientes();
+    const busca = (document.getElementById('msg-busca')?.value||'').toLowerCase().trim();
+    let clientesRelacionados = meusClientes();
+    if(busca) clientesRelacionados = clientesRelacionados.filter(c=>c.nome.toLowerCase().includes(busca));
     listaBox.innerHTML = clientesRelacionados.length? clientesRelacionados.map(c=>{
       const naoLidas = DB.mensagens.filter(m=>m.clienteId===c.id && m.autor==='cliente' && !m.lida && !m.lixeira).length;
       return `<div class="list-row" style="cursor:pointer;" onclick="abrirThread('${c.id}','${c.vinculoId}')"><div><div class="rtitle">${escapeHtml(c.nome)}</div></div>${naoLidas>0? `<span class="rmeta"><span class="badge" style="background:var(--danger); color:#fff; border-radius:20px; padding:1px 7px; font-size:10px;">${naoLidas}</span></span>`:''}</div>`;
-    }).join('') : `<div class="empty">Nenhum cliente vinculado.</div>`;
+    }).join('') : `<div class="empty">${busca? 'Nenhum cliente encontrado.' : 'Nenhum cliente vinculado.'}</div>`;
   }
 }
 function abrirThread(clienteId, usuarioId){ THREAD_ATIVA = {clienteId, usuarioId}; THREAD_MOSTRAR_LIXEIRA=false; renderThread(); }
@@ -4462,7 +4518,8 @@ function baixarContratoWord(clienteId){
   const valor = document.getElementById('con-valor').value;
   const percentual = document.getElementById('con-perc').value;
   const parcelas = document.getElementById('con-parcelas').value;
-  baixarArquivoPost('/api/documentos/contrato', { clienteId, advogadoIds: advSelecionados, tipoProcesso, tipoValor, valor, percentual, parcelas }, 'Contrato - '+(c?c.nome:'cliente')+'.docx');
+  const paragrafoMS = document.getElementById('con-paragrafo-ms').checked;
+  baixarArquivoPost('/api/documentos/contrato', { clienteId, advogadoIds: advSelecionados, tipoProcesso, tipoValor, valor, percentual, parcelas, paragrafoMS }, 'Contrato - '+(c?c.nome:'cliente')+'.docx');
 }
 function openContratoForm(clienteId){
   const c = DB.clientes.find(x=>x.id===clienteId); if(!c) return;
@@ -4479,6 +4536,7 @@ function openContratoForm(clienteId){
     <div id="con-valor-fixo-box"><div class="field"><label>Valor dos honorários (R$)</label><input type="number" step="0.01" id="con-valor" placeholder="0,00"></div></div>
     <div id="con-valor-perc-box" style="display:none;"><div class="field"><label>Percentual (%)</label><input type="number" step="0.01" id="con-perc" placeholder="Ex: 20"></div></div>
     <div class="field"><label>Número de parcelas (1 = à vista)</label><input type="number" min="1" id="con-parcelas" value="1"></div>
+    <div class="field"><label><input type="checkbox" id="con-paragrafo-ms" style="width:auto; margin-right:6px;"> Parágrafo MS nos honorários${ajuda('Inclui, no fim da cláusula de honorários, o parágrafo específico para ações de Mandado de Segurança (honorários de êxito sobre valores levantados/liberados, inclusive astreintes, dada a ausência de sucumbência nessa modalidade). Marque só quando o caso for mesmo um MS.')}</label></div>
     <button type="button" class="btn btn-dark btn-block" style="margin-top:10px;" onclick="baixarContratoWord('${clienteId}')">📥 Baixar em Word (.docx) — usa o timbrado real</button>
   `;
   openModal('Contrato de honorários — '+c.nome, body, ()=>{
