@@ -12,36 +12,43 @@ function todayISO() {
   return new Date().toISOString().slice(0, 10);
 }
 
-// Os 10 critérios de avaliação de cada missão — cada um vai de 0 a 10; a nota
-// final da missão é a média. O "conjunto de opções" de cada critério é o
-// mesmo (baixa/razoável/alta/altíssima/ignorado), convertido em pontos na
-// hora de calcular (baixa dificuldade = nota alta, dificuldade altíssima =
-// nota baixa — ver ESCALA_DIFICULDADE abaixo).
-const CRITERIOS_AVALIACAO = [
-  { chave: 'entendimento', label: 'Dificuldade de entendimento da tarefa' },
-  { chave: 'execucao', label: 'Dificuldade na execução' },
-  { chave: 'escrita', label: 'Dificuldade na escrita/redação' },
-  { chave: 'pesquisa', label: 'Dificuldade na pesquisa jurídica' },
-  { chave: 'prazo', label: 'Cumprimento do prazo estabelecido' },
-  { chave: 'autonomia', label: 'Autonomia (precisou de ajuda constante?)' },
-  { chave: 'qualidade', label: 'Qualidade técnica do material entregue' },
-  { chave: 'organizacao', label: 'Organização e clareza da entrega' },
-  { chave: 'proatividade', label: 'Proatividade (trouxe dúvidas, sugestões?)' },
-  { chave: 'comunicacao', label: 'Comunicação com o tutor durante a missão' },
-];
-// Dificuldade ALTA = nota BAIXA (foi difícil pra ele) — exceto "prazo",
-// "qualidade" e "proatividade", que já são medidos como qualidade (quanto
-// melhor, maior a nota), não como dificuldade.
-const CRITERIOS_INVERTIDOS = new Set(['entendimento', 'execucao', 'escrita', 'pesquisa', 'autonomia']);
+// Os critérios de avaliação de cada designação — cada um vai de 0 a 10; a
+// nota final é a média dos respondidos. Ficam guardados em config (coleção
+// já usada para outras configurações do escritório), então sócio/master
+// podem adicionar ou remover critérios pela tela; esta lista aqui é só o
+// PADRÃO inicial, usado até alguém customizar.
+function criteriosPadrao() {
+  return [
+    { chave: 'entendimento', label: 'Dificuldade de entendimento da tarefa', invertido: true },
+    { chave: 'execucao', label: 'Dificuldade na execução', invertido: true },
+    { chave: 'escrita', label: 'Dificuldade na escrita/redação', invertido: true },
+    { chave: 'pesquisa', label: 'Dificuldade na pesquisa jurídica', invertido: true },
+    { chave: 'prazo', label: 'Cumprimento do prazo estabelecido', invertido: false },
+    { chave: 'autonomia', label: 'Autonomia (precisou de ajuda constante?)', invertido: true },
+    { chave: 'qualidade', label: 'Qualidade técnica do material entregue', invertido: false },
+    { chave: 'organizacao', label: 'Organização e clareza da entrega', invertido: false },
+    { chave: 'proatividade', label: 'Proatividade (trouxe dúvidas, sugestões?)', invertido: false },
+    { chave: 'comunicacao', label: 'Comunicação com o tutor durante a designação', invertido: false },
+  ];
+}
+async function criteriosAtuais() {
+  const config = await getCollection('config', {});
+  if (Array.isArray(config.criteriosAvaliacaoEstagio) && config.criteriosAvaliacaoEstagio.length) {
+    return config.criteriosAvaliacaoEstagio;
+  }
+  return criteriosPadrao();
+}
+// "invertido" = dificuldade ALTA vira nota BAIXA (foi difícil pra ele);
+// critérios não invertidos são de qualidade (quanto melhor, maior a nota).
 const ESCALA_DIFICULDADE = { baixa: 10, razoavel: 7, alta: 4, altissima: 1, ignorado: null };
 const ESCALA_QUALIDADE = { baixa: 1, razoavel: 4, alta: 7, altissima: 10, ignorado: null };
 
-function calcularNotaFinal(respostas) {
+function calcularNotaFinal(respostas, criterios) {
   const notas = [];
-  CRITERIOS_AVALIACAO.forEach((c) => {
+  criterios.forEach((c) => {
     const resp = respostas[c.chave];
     if (!resp || resp === 'ignorado') return;
-    const escala = CRITERIOS_INVERTIDOS.has(c.chave) ? ESCALA_DIFICULDADE : ESCALA_QUALIDADE;
+    const escala = c.invertido ? ESCALA_DIFICULDADE : ESCALA_QUALIDADE;
     const nota = escala[resp];
     if (nota != null) notas.push(nota);
   });
@@ -108,6 +115,26 @@ router.post('/', requireAuth, async (req, res) => {
       await setCollection('processos', processos);
     }
   }
+
+  // Toda delegação nova também vira um lembrete para cada estagiário
+  // envolvido — assim aparece na tela de Lembretes dele normalmente, sem
+  // precisar de nenhuma lógica especial lá.
+  const lembretes = await getCollection('lembretes', []);
+  idsEstagiariosValidos.forEach((estagiarioId) => {
+    lembretes.push({
+      id: uid(),
+      titulo: `Nova delegação: ${titulo}`,
+      descricao: descricao || 'Confira os detalhes no módulo Delegações.',
+      data: todayISO(),
+      feito: false,
+      lixeira: false,
+      visivelPara: [estagiarioId],
+      criadoPor: req.user.id,
+      delegacaoId: nova.id,
+    });
+  });
+  await setCollection('lembretes', lembretes);
+
   res.status(201).json(nova);
 });
 
@@ -202,7 +229,8 @@ router.patch('/:id/avaliar', requireAuth, async (req, res) => {
   const d = todas.find((x) => x.id === req.params.id);
   if (!d) return res.status(404).json({ erro: 'Missão não encontrada.' });
   if (!podeVerDelegacao(req.user, d)) return res.status(403).json({ erro: 'Sem acesso a esta missão.' });
-  const notaFinal = calcularNotaFinal(respostas || {});
+  const criterios = await criteriosAtuais();
+  const notaFinal = calcularNotaFinal(respostas || {}, criterios);
   d.status = cumprida ? 'concluida' : 'nao_cumprida';
   d.avaliacao = {
     cumprida, respostas: respostas || {}, notaFinal, observacao: observacao || '',
@@ -212,8 +240,44 @@ router.patch('/:id/avaliar', requireAuth, async (req, res) => {
   res.json(d);
 });
 
-router.get('/criterios', requireAuth, (req, res) => {
-  res.json({ criterios: CRITERIOS_AVALIACAO, criteriosInvertidos: Array.from(CRITERIOS_INVERTIDOS) });
+// Devolve a designação para correção — volta pro estagiário poder ajustar e
+// reenviar, sem precisar criar uma delegação nova do zero.
+router.patch('/:id/devolver', requireAuth, async (req, res) => {
+  if (!isMaster(req.user) && !isSocio(req.user) && !isAssociado(req.user)) {
+    return res.status(403).json({ erro: 'Só quem delegou/tutor pode devolver para correção.' });
+  }
+  const { motivo } = req.body || {};
+  const todas = await getCollection('delegacoes', []);
+  const d = todas.find((x) => x.id === req.params.id);
+  if (!d) return res.status(404).json({ erro: 'Missão não encontrada.' });
+  if (!podeVerDelegacao(req.user, d)) return res.status(403).json({ erro: 'Sem acesso a esta missão.' });
+  d.status = 'pendente';
+  d.avaliacao = null;
+  d.apontamentos.push({
+    id: uid(), autorId: req.user.id,
+    texto: `↩️ Devolvida para correção${motivo ? ': ' + motivo : '.'}`,
+    data: new Date().toISOString(),
+  });
+  await setCollection('delegacoes', todas);
+  res.json(d);
+});
+
+router.get('/criterios', requireAuth, async (req, res) => {
+  res.json({ criterios: await criteriosAtuais() });
+});
+
+// Sócio/master podem adicionar ou remover critérios do score — igual a como
+// já podem editar outros dados de configuração do escritório.
+router.put('/criterios', requireAuth, async (req, res) => {
+  if (!isMaster(req.user) && !isSocio(req.user)) return res.status(403).json({ erro: 'Só sócio ou administrador podem alterar os critérios de avaliação.' });
+  const { criterios } = req.body || {};
+  if (!Array.isArray(criterios) || !criterios.length) return res.status(400).json({ erro: 'Informe ao menos um critério.' });
+  const validos = criterios.filter((c) => c && c.chave && c.label).map((c) => ({ chave: String(c.chave), label: String(c.label), invertido: !!c.invertido }));
+  if (!validos.length) return res.status(400).json({ erro: 'Nenhum critério válido informado.' });
+  const config = await getCollection('config', {});
+  config.criteriosAvaliacaoEstagio = validos;
+  await setCollection('config', config);
+  res.json({ criterios: validos });
 });
 
 module.exports = router;

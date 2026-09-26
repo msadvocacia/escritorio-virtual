@@ -81,16 +81,18 @@ function usuariosVisiveis(user, usuarios) {
 
 function prazosVisiveis(user, prazos, processos, clientes) {
   if (isMaster(user) || isSocio(user)) return prazos;
+  // Estagiário: só o que for LIBERADO explicitamente para ele, item por item
+  // — mesmo dentro de um processo que ele já acompanha, um sócio/associado
+  // decide quais prazos específicos ele participa.
+  if (isEstagiario(user)) return prazos.filter((pr) => Array.isArray(pr.estagiariosLiberados) && pr.estagiariosLiberados.includes(user.id));
   const idsProc = processosVisiveis(user, processos, clientes).map((p) => p.id);
-  // Estagiário: só o que tiver processo vinculado (nunca o prazo "solto",
-  // sem processo, que os demais funcionários veem por padrão).
-  if (isEstagiario(user)) return prazos.filter((pr) => pr.processoId && idsProc.includes(pr.processoId));
   return prazos.filter((pr) => !pr.processoId || idsProc.includes(pr.processoId));
 }
 
 function audienciasVisiveis(user, audiencias, processos, clientes) {
-  const idsProc = processosVisiveis(user, processos, clientes).map((p) => p.id);
   if (isMaster(user) || isSocio(user)) return audiencias;
+  if (isEstagiario(user)) return audiencias.filter((a) => Array.isArray(a.estagiariosLiberados) && a.estagiariosLiberados.includes(user.id));
+  const idsProc = processosVisiveis(user, processos, clientes).map((p) => p.id);
   return audiencias.filter((a) => idsProc.includes(a.processoId));
 }
 

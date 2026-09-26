@@ -1623,6 +1623,56 @@ mais, nem menos).
   posso ajustar depois.
 
 
+## 53. Dezesseis correções: segurança crítica, navegação, e o restante do módulo Estágio
+
+### Segurança crítica
+- **Vazamento do master corrigido**: o navegador estava autopreenchendo nome/
+  CPF/senha do formulário de novo usuário com credenciais salvas (um
+  comportamento clássico de autopreenchimento de login) — corrigido com os
+  atributos `autocomplete` corretos em cada campo.
+- **Estagiário não vê mais a divisão interna de honorários** em Processos
+  (nomes de sócio/associado + percentual do split), nem tem os botões de
+  criar/editar/apagar/gerar documento — confirmei que o backend já bloqueava
+  essas tentativas mesmo antes desta correção visual.
+- **Prazos e audiências agora exigem liberação explícita, item por item**,
+  para o estagiário — mesmo dentro de um processo que ele já acompanha via
+  delegação. Testei: com um prazo liberado e outro não, ele viu exatamente 1.
+  Essa participação entra automaticamente no relatório final, numa seção
+  própria — testei e confirmei o texto exato no documento gerado.
+- Adicionada a opção **"Usuários específicos"** no "visível para" do
+  estagiário, restringindo estritamente aos tutores marcados.
+
+### Navegação e visual
+- Clique no submenu da barra lateral agora **rola a tela até a seção**
+  (antes só trocava a aba, sem mover a visão).
+- Submenu do Financeiro reordenado: Parcelas/Repasses antes de Honorários/
+  Despesas.
+- Paginação (Parcelas e Repasses) agora aparece **em cima e embaixo**.
+
+### Módulo Estágio — o restante
+- **Bug do botão "Enviar" nos apontamentos**: a causa real era o painel de
+  apontamentos fechando sozinho toda vez que a lista atualizava (o `<details>`
+  volta a ficar fechado quando reconstruído do zero) — corrigido preservando
+  o estado aberto, e adicionei confirmação visual que não existia.
+- **Critérios de avaliação agora são editáveis** por sócio/master (botão
+  "⚙️ Critérios de avaliação" na tela de Estágio) — pode adicionar, remover e
+  marcar se o critério é de dificuldade (conta ao contrário) ou de qualidade.
+  Testei: critérios customizados substituindo os padrão, e a nota calculada
+  corretamente com eles.
+- **Avaliação renomeada** de "Avaliar missão" para "Avaliação da designação",
+  com as opções agora em caixas clicáveis lado a lado (Baixo/Razoável/Alto/
+  Altíssimo/Não avaliar) em vez de menu suspenso.
+- **Nova delegação agora**: cria um lembrete automático (aparece no módulo
+  Lembretes do estagiário normalmente) e no pop-up de entrada; contador
+  vermelho na aba "Delegações" mostrando quantas estão pendentes/aguardando
+  avaliação.
+- **Histórico de missões no Score** agora é clicável, abrindo os detalhes
+  completos: o que foi pedido, por quem, quando, o que foi entregue e quando.
+- **Devolver para correção**: o tutor pode devolver uma designação entregue,
+  com um motivo opcional, sem precisar criar uma nova do zero — volta pro
+  estagiário poder ajustar e reenviar.
+
+
 ---
 
 Qualquer erro ao subir, me mostre a mensagem exata que aparece (no Render, aba "Logs")

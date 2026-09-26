@@ -717,6 +717,10 @@ router.post('/estagio/relatorio', requireAuth, requireRole('master', 'socio', 'a
   const notas = concluidas.map((d) => d.avaliacao?.notaFinal).filter((n) => n != null);
   const notaMedia = notas.length ? Math.round((notas.reduce((s, n) => s + n, 0) / notas.length) * 10) / 10 : null;
   const cargaHoraria = (concluidas.length + naoCumpridas.length) * 4; // média de 4h por missão, conforme definido
+  const todosPrazos = await getCollection('prazos', []);
+  const prazosParticipados = todosPrazos.filter((p) => Array.isArray(p.estagiariosLiberados) && p.estagiariosLiberados.includes(estagiarioId));
+  const todasAudiencias = await getCollection('audiencias', []);
+  const audienciasParticipadas = todasAudiencias.filter((a) => Array.isArray(a.estagiariosLiberados) && a.estagiariosLiberados.includes(estagiarioId));
 
   try {
     const corpo = [
@@ -735,6 +739,13 @@ router.post('/estagio/relatorio', requireAuth, requireRole('master', 'socio', 'a
       D.paragraph(`Ainda em andamento: ${minhas.length - concluidas.length - naoCumpridas.length}`),
       D.paragraph([D.run('Nota média final: ', { bold: true }), D.run(notaMedia != null ? `${notaMedia} / 10` : 'sem missões avaliadas ainda', { bold: true })]),
       D.blank(),
+      ...(prazosParticipados.length || audienciasParticipadas.length ? [
+        D.paragraph(D.run('PARTICIPAÇÃO EM PRAZOS E AUDIÊNCIAS', { bold: true, sizeHalfPt: 24 })),
+        D.blank(),
+        ...prazosParticipados.map((p) => D.paragraph(`Prazo: ${p.descricao} — vencimento em ${p.vencimento.split('-').reverse().join('/')}`)),
+        ...audienciasParticipadas.map((a) => D.paragraph(`Audiência em ${a.data.split('-').reverse().join('/')}${a.local ? ' — ' + a.local : ''}`)),
+        D.blank(),
+      ] : []),
       D.paragraph(D.run('HISTÓRICO DE MISSÕES DELEGADAS', { bold: true, sizeHalfPt: 24 })),
       D.blank(),
       ...minhas.flatMap((d) => {

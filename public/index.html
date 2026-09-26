@@ -389,7 +389,7 @@
       <!-- PROCESSOS -->
       <div class="page" id="page-processos">
         <div class="section-head"><div><h2>Processos e Recursos</h2><p>Cadastro de processos, vínculo com associado e honorários.</p></div>
-          <button class="btn btn-gold" onclick="openProcessoForm()">+ Novo processo</button>
+          <button class="btn btn-gold" id="btn-novo-processo" onclick="openProcessoForm()">+ Novo processo</button>
         </div>
         <div class="pill-select" style="margin-bottom:14px;">
           <button class="proc-tab active" data-tab="ativos" onclick="setProcTab('ativos')">Ativos</button>
@@ -604,7 +604,10 @@
       <!-- ESTÁGIO (master/sócio/associado) -->
       <div class="page" id="page-estagio">
         <div class="section-head"><div><h2>Estágio</h2><p>Delegue missões, acompanhe entregas e avalie o desempenho dos estagiários.</p></div>
-          <button class="btn btn-gold" onclick="abrirNovaDelegacaoForm()">+ Nova delegação</button>
+          <div style="display:flex; gap:8px;">
+            <button class="btn btn-ghost" onclick="abrirGerenciarCriterios()">⚙️ Critérios de avaliação</button>
+            <button class="btn btn-gold" onclick="abrirNovaDelegacaoForm()">+ Nova delegação</button>
+          </div>
         </div>
         <div class="panel" id="estagio-estagiarios-panel" style="margin-bottom:16px;"><h3>Estagiários</h3><div id="estagio-estagiarios-lista"></div></div>
         <div class="pill-select" style="margin-bottom:14px;" id="estagio-status-tabs">
@@ -1045,6 +1048,7 @@ async function enterApp(){
   goPage(PAGES_BY_ROLE[CURRENT_USER.tipo][0].id);
   renderAll();
   mostrarPopupNotificacoesEntrada();
+  atualizarBadgeDelegacoes();
 }
 async function mostrarPopupNotificacoesEntrada(){
   if(isCliente()) return; // pop-up é só para a equipe do escritório
@@ -1120,7 +1124,7 @@ async function mostrarPopupNotificacoesEntrada(){
       ${agendaPessoalPendente.map(a=>`<div class="list-row" style="cursor:pointer;" onclick="closeModal(); goPage('agenda-pessoal');"><div><div class="rtitle">${escapeHtml(a.titulo)}</div><div class="rsub">${a.tipo}</div></div><div class="rmeta">${fmtDate(a.data)}</div></div>`).join('')}
     </div>` : ''}
     ${lembretesPendentes.length? `<div><strong>🔔 Lembretes pendentes</strong>
-      ${lembretesPendentes.map(l=>`<div class="list-row" style="cursor:pointer;" onclick="closeModal(); goPage('lembretes');"><span class="dot" style="background:${l.data<hoje?'var(--danger)':'var(--gold)'}"></span><div><div class="rtitle">${escapeHtml(l.titulo)}</div><div class="rsub">${escapeHtml(l.descricao)||''}</div></div><div class="rmeta">${fmtDate(l.data)}</div></div>`).join('')}
+      ${lembretesPendentes.map(l=>`<div class="list-row" style="cursor:pointer;" onclick="closeModal(); goPage('${l.delegacaoId?'delegacoes':'lembretes'}');"><span class="dot" style="background:${l.data<hoje?'var(--danger)':'var(--gold)'}"></span><div><div class="rtitle">${escapeHtml(l.titulo)}</div><div class="rsub">${escapeHtml(l.descricao)||''}</div></div><div class="rmeta">${fmtDate(l.data)}</div></div>`).join('')}
     </div>` : ''}
   `;
   openModal('Você tem pendências', corpo, null);
@@ -1214,18 +1218,18 @@ const PAGES_BY_ROLE = {
 // cada aba/filtro que existir dentro da página.
 const SUBMENU_MAP = {
   financeiro: [
-    { label:'Honorários', acao:"setFinTab('honorarios')" },
-    { label:'Despesas', acao:"setFinTab('despesas')" },
-    { label:'Parcelas em aberto', acao:"setFinTopTab('parcelas')" },
-    { label:'Repasses por processo', acao:"setFinTopTab('repasses')" },
+    { label:'Parcelas em aberto', acao:"setFinTopTab('parcelas')", alvo:'fin-parcelas-panel' },
+    { label:'Repasses por processo', acao:"setFinTopTab('repasses')", alvo:'fin-repasses-panel' },
+    { label:'Honorários', acao:"setFinTab('honorarios')", alvo:'fin-honorarios' },
+    { label:'Despesas', acao:"setFinTab('despesas')", alvo:'fin-despesas' },
   ],
   prazos: [
-    { label:'Prazos', acao:"setPrazoSecaoTab('prazos')" },
-    { label:'Audiências', acao:"setPrazoSecaoTab('audiencias')" },
+    { label:'Prazos', acao:"setPrazoSecaoTab('prazos')", alvo:'prazos-sub-prazos' },
+    { label:'Audiências', acao:"setPrazoSecaoTab('audiencias')", alvo:'prazos-sub-audiencias' },
   ],
   djen: [
-    { label:'Buscar no DJEN', acao:"setDjenTab('buscar')" },
-    { label:'Capturadas', acao:"setDjenTab('capturadas')" },
+    { label:'Buscar no DJEN', acao:"setDjenTab('buscar')", alvo:'djen-painel-buscar' },
+    { label:'Capturadas', acao:"setDjenTab('capturadas')", alvo:'djen-painel-capturadas' },
   ],
 };
 let NAV_SUBMENU_ABERTO = null;
@@ -1243,14 +1247,20 @@ function buildNav(){
     const sub = SUBMENU_MAP[p.id];
     const setaHtml = sub? `<span class="nav-expand-arrow">▾</span>` : '';
     const principal = `<div class="nav-item" id="nav-${p.id}" onclick="goPage('${p.id}')">${ICONS[p.icon]}<span>${p.label}</span><span class="badge" id="badge-${p.id}" style="display:none;"></span>${setaHtml}</div>`;
-    const subHtml = sub? `<div class="nav-sub" id="nav-sub-${p.id}" style="display:none;">${sub.map(s=>`<div class="nav-sub-item" onclick="event.stopPropagation(); irParaSubitemNav('${p.id}', \`${s.acao}\`)">${escapeHtml(s.label)}</div>`).join('')}</div>` : '';
+    const subHtml = sub? `<div class="nav-sub" id="nav-sub-${p.id}" style="display:none;">${sub.map(s=>`<div class="nav-sub-item" onclick="event.stopPropagation(); irParaSubitemNav('${p.id}', \`${s.acao}\`, '${s.alvo}')">${escapeHtml(s.label)}</div>`).join('')}</div>` : '';
     return principal + subHtml;
   }).join('');
 }
-function irParaSubitemNav(id, acaoJs){
+function irParaSubitemNav(id, acaoJs, alvoId){
   goPage(id);
   // pequeno atraso pra garantir que a página (e seus elementos) já renderizaram antes de aplicar a ação
-  setTimeout(()=>{ try{ new Function(acaoJs)(); }catch(e){} }, 30);
+  setTimeout(()=>{
+    try{ new Function(acaoJs)(); }catch(e){}
+    if(alvoId){
+      const el = document.getElementById(alvoId);
+      if(el) el.scrollIntoView({behavior:'smooth', block:'start'});
+    }
+  }, 30);
 }
 function goPage(id){
   document.querySelectorAll('.page').forEach(el=>el.classList.remove('active'));
@@ -1394,11 +1404,11 @@ function openUsuarioForm(id){
   const tutoresDisponiveis = DB.usuarios.filter(x=>x.tipo==='socio'||x.tipo==='associado');
   const body = `
     <div class="field-row">
-      <div class="field"><label>Nome completo</label><input id="uf-nome" value="${escapeHtml(u.nome)}"></div>
+      <div class="field"><label>Nome completo</label><input id="uf-nome" value="${escapeHtml(u.nome)}" autocomplete="off"></div>
       <div class="field"><label>Perfil</label><select id="uf-tipo" onchange="atualizarCamposFormUsuario()">${tiposPermitidos.map(t=>`<option value="${t}" ${u.tipo===t?'selected':''}>${{socio:'Sócio',associado:'Associado',estagiario:'Estagiário'}[t]}</option>`).join('')}</select></div>
     </div>
     <div class="field-row">
-      <div class="field"><label>Login</label><input id="uf-login" value="${escapeHtml(u.login)}" placeholder="ex: joao.silva" ${id?'disabled':''}></div>
+      <div class="field"><label>Login</label><input id="uf-login" value="${escapeHtml(u.login)}" placeholder="ex: joao.silva" ${id?'disabled':''} autocomplete="off"></div>
       <div class="field" id="uf-oab-box"><label>OAB</label><input id="uf-oab" value="${escapeHtml(u.oab)}" placeholder="OAB/BA 00000"></div>
     </div>
     <div class="field-row">
@@ -1414,7 +1424,7 @@ function openUsuarioForm(id){
       </div>
       <div class="field-row">
         <div class="field"><label>RG</label><input id="uf-rg" value="${escapeHtml(u.rg)}"></div>
-        <div class="field"><label>CPF</label><input id="uf-cpf" value="${escapeHtml(u.cpf)}"></div>
+        <div class="field"><label>CPF</label><input id="uf-cpf" value="${escapeHtml(u.cpf)}" autocomplete="off"></div>
       </div>
     </fieldset>
     <div id="uf-estagiario-box" style="display:none;">
@@ -1424,10 +1434,11 @@ function openUsuarioForm(id){
             <option value="estudante" ${u.formacaoEstagiario==='estudante'?'selected':''}>Estudante de Direito</option>
             <option value="bacharel" ${u.formacaoEstagiario==='bacharel'?'selected':''}>Bacharel em Direito</option>
           </select></div>
-          <div class="field"><label>Visível para${ajuda('Quem mais no escritório pode ver que este estagiário existe e acompanhar as delegações dele — além de quem for tutor direto, que sempre vê.')}</label><select id="uf-estagiario-visivel">
+          <div class="field"><label>Visível para${ajuda('Quem mais no escritório pode ver que este estagiário existe e acompanhar as delegações dele — além de quem for tutor direto, que sempre vê. Escolha "Usuários específicos" para restringir só aos tutores marcados abaixo, mesmo que existam outros sócios/associados.')}</label><select id="uf-estagiario-visivel">
             <option value="todos" ${u.estagiarioVisivelPara==='todos'?'selected':''}>Todos (sócios e associados)</option>
             <option value="socio" ${u.estagiarioVisivelPara==='socio'?'selected':''}>Só sócios</option>
             <option value="associado" ${u.estagiarioVisivelPara==='associado'?'selected':''}>Só associados</option>
+            <option value="especificos" ${u.estagiarioVisivelPara==='especificos'?'selected':''}>Usuários específicos (só os tutores marcados abaixo)</option>
           </select></div>
         </div>
         <div class="field"><label><input type="checkbox" id="uf-remunerado" style="width:auto; margin-right:6px;" ${u.remunerado?'checked':''}> Estágio remunerado${ajuda('O valor ou percentual da remuneração é definido depois, processo por processo, ao delegar uma missão vinculada a um caso — não é um valor fixo aqui no cadastro.')}</label></div>
@@ -1438,7 +1449,7 @@ function openUsuarioForm(id){
         </div>
       </fieldset>
     </div>
-    ${!id? `<div class="field"><label>Senha inicial</label><input type="password" id="uf-senha" placeholder="Defina uma senha temporária"></div>` : ''}
+    ${!id? `<div class="field"><label>Senha inicial</label><input type="password" id="uf-senha" placeholder="Defina uma senha temporária" autocomplete="new-password"></div>` : ''}
     <div class="field" id="uf-agenda-box"><label><input type="checkbox" id="uf-agenda-pessoal" style="width:auto; margin-right:6px;" ${u.tipo==='socio'||u.tipo==='estagiario'||u.agendaPessoalLiberada?'checked':''} ${u.tipo==='socio'||u.tipo==='estagiario'?'disabled':''}> Agenda pessoal${ajuda('Libera a aba "Agenda Pessoal" para este usuário — um mini-painel só dele, para anotar clientes, processos, audiências e prazos particulares. Sócios e estagiários sempre têm acesso; para associados, você decide aqui.')}</label></div>
     <div class="field" id="uf-estagio-visualizar-box" style="display:none;"><label><input type="checkbox" id="uf-visualizar-estagio" style="width:auto; margin-right:6px;" ${u.visualizarEstagio?'checked':''}> Visualizar Estágio${ajuda('Libera o módulo "Estágio" para este usuário — onde é possível delegar missões a estagiários, acompanhar entregas e avaliar o desempenho.')}</label></div>
     <div class="field"><label>Situação</label><select id="uf-ativo"><option value="true" ${u.ativo!==false?'selected':''}>Ativo</option><option value="false" ${u.ativo===false?'selected':''}>Inativo</option></select></div>
@@ -1985,6 +1996,8 @@ async function toggleAtivoProcesso(id){
 function renderProcessos(){
   const tbody = document.getElementById('tbl-processos'); if(!tbody) return;
   const empty = document.getElementById('empty-processos');
+  const btnNovo = document.getElementById('btn-novo-processo');
+  if(btnNovo) btnNovo.style.display = isEstagiario()? 'none' : 'inline-flex';
   const busca = (document.getElementById('f-proc-busca')?.value||'').toLowerCase();
   const statusF = document.getElementById('f-proc-status')?.value||'';
   let list = meusProcessosVisiveis().filter(p=>{
@@ -1998,18 +2011,22 @@ function renderProcessos(){
   if(list.length===0){ tbody.innerHTML=''; empty.innerHTML = PROC_TAB==='arquivo'? '<div class="big">🗄️</div>Nenhum processo arquivado.' : '<div class="big">🗂️</div>Nenhum processo cadastrado ainda.'; empty.style.display='block'; return; }
   empty.style.display='none';
   const statusLabel = {andamento:'Em andamento', recurso:'Em recurso', encerrado:'Encerrado'};
+  // Estagiário só enxerga o que é seguro: nunca a composição de sócio/
+  // associado nem o percentual de divisão de honorários (dado sensível e
+  // interno do escritório) — e não tem nenhuma ação de escrita (criar,
+  // editar, apagar, gerar procuração/contrato), só consulta.
   tbody.innerHTML = list.map(p=>`
     <tr>
       <td><strong>${escapeHtml(p.numero)}</strong><br><span style="font-size:11px;color:var(--ink-soft);">${escapeHtml(p.tipo)||''}</span></td>
       <td>${escapeHtml(clienteNome(p.clienteId))}</td>
-      <td>${escapeHtml(nomesProfissionais(p))}${p.splitTipo && p.splitTipo!=='nenhum'? '<br><span style="font-size:10.5px;color:var(--ink-soft);">'+splitLabel(p.splitTipo)+'</span>':''}</td>
+      <td>${isEstagiario()? '—' : escapeHtml(nomesProfissionais(p))+(p.splitTipo && p.splitTipo!=='nenhum'? '<br><span style="font-size:10.5px;color:var(--ink-soft);">'+splitLabel(p.splitTipo)+'</span>':'')}</td>
       <td><span class="tag tag-${p.status}">${statusLabel[p.status]}</span></td>
-      <td><div class="row-actions">
+      <td><div class="row-actions">${isEstagiario()? '' : `
         <button class="icon-btn" onclick="openAtualizacaoProcesso('${p.id}')" title="Adicionar andamento">📝</button>
         <button class="icon-btn" onclick="openProcessoForm('${p.id}')" title="Editar">✎</button>
         <button class="icon-btn" onclick="toggleAtivoProcesso('${p.id}')" title="${p.ativo===false?'Reativar':'Mover para o arquivo morto'}">${p.ativo===false?'♻️':'🗄️'}</button>
         <button class="icon-btn danger" onclick="deleteProcesso('${p.id}')" title="Excluir">🗑</button>
-      </div></td>
+      `}</div></td>
     </tr>`).join('');
 }
 
@@ -2072,13 +2089,18 @@ function openPrazoForm(id){
     <div class="field"><label>Status</label><select id="prf-status"><option value="pendente" ${pr.status==='pendente'?'selected':''}>Pendente</option><option value="cumprido" ${pr.status==='cumprido'?'selected':''}>Cumprido</option><option value="perdido" ${pr.status==='perdido'?'selected':''}>Perdido</option></select></div>
     <div class="field"><label>Avisar-me quantos dias antes do vencimento?</label><input type="number" min="0" id="prf-alerta" value="${pr.alertaDias!=null?pr.alertaDias:3}"></div>
     <div class="field"><label>Visível para</label>${visibilidadeSelecaoHtml(pr.visivelPara)}</div>
+    <div class="field"><label>Liberar para estagiário(s)${ajuda('Só os estagiários marcados aqui vão ver este prazo específico — mesmo que já acompanhem o processo por uma delegação. Também entra automaticamente no relatório final deles.')}</label>
+      <div style="display:flex; flex-direction:column; gap:4px; margin-top:4px;">
+        ${meusEstagiarios().map(e=>`<label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" class="prf-estag-chk" value="${e.id}" style="width:auto;" ${(pr.estagiariosLiberados||[]).includes(e.id)?'checked':''}> ${escapeHtml(e.nome)}</label>`).join('') || '<span class="hint">Nenhum estagiário cadastrado.</span>'}
+      </div>
+    </div>
     <div class="hint">Este prazo cria automaticamente um lembrete na aba Lembretes, na data calculada acima.</div>
     <div class="field"><label>Observações</label><textarea id="prf-obs">${escapeHtml(pr.obs)}</textarea></div>
   `;
   openModal(id? 'Editar prazo' : 'Novo prazo', body, async ()=>{
     const descricao = document.getElementById('prf-desc').value.trim();
     if(!descricao){ showToast('Descreva o prazo.'); return; }
-    const data = { descricao, processoId: document.getElementById('prf-processo').value, vencimento: document.getElementById('prf-venc').value, prioridade: document.getElementById('prf-prior').value, status: document.getElementById('prf-status').value, obs: document.getElementById('prf-obs').value.trim(), alertaDias: parseInt(document.getElementById('prf-alerta').value)||0, visivelPara: lerVisibilidadeSelecionada('prf-vis-chk') };
+    const data = { descricao, processoId: document.getElementById('prf-processo').value, vencimento: document.getElementById('prf-venc').value, prioridade: document.getElementById('prf-prior').value, status: document.getElementById('prf-status').value, obs: document.getElementById('prf-obs').value.trim(), alertaDias: parseInt(document.getElementById('prf-alerta').value)||0, visivelPara: lerVisibilidadeSelecionada('prf-vis-chk'), estagiariosLiberados: Array.from(document.querySelectorAll('.prf-estag-chk:checked')).map(el=>el.value) };
     let prazoSalvo;
     try{
       if(id){
@@ -2146,6 +2168,7 @@ async function arquivarPrazosAntigos(){
 }
 function prazoStatusEfetivo(pr){ if(pr.status==='pendente' && daysDiff(pr.vencimento) < 0) return 'atrasado'; return pr.status; }
 function meusPrazosVisiveis(){
+  if(isEstagiario()) return DB.prazos.filter(pr=>!pr.lixeira); // backend já manda só os liberados explicitamente
   const idsProc = meusProcessosVisiveis().map(p=>p.id);
   return DB.prazos.filter(pr => (!pr.processoId || idsProc.includes(pr.processoId) || isMaster() || isSocio()) && !pr.lixeira);
 }
@@ -2214,13 +2237,18 @@ function openAudienciaForm(id){
       <option value="cancelada" ${a.status==='cancelada'?'selected':''}>Cancelada</option>
     </select></div>
     <div class="field"><label>Avisar-me quantos dias antes?</label><input type="number" min="0" id="af-alerta" value="${a.alertaDias!=null?a.alertaDias:2}"></div>
+    <div class="field"><label>Liberar para estagiário(s)${ajuda('Só os estagiários marcados aqui vão ver e poder participar desta audiência específica. Também entra automaticamente no relatório final deles.')}</label>
+      <div style="display:flex; flex-direction:column; gap:4px; margin-top:4px;">
+        ${meusEstagiarios().map(e=>`<label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" class="af-estag-chk" value="${e.id}" style="width:auto;" ${(a.estagiariosLiberados||[]).includes(e.id)?'checked':''}> ${escapeHtml(e.nome)}</label>`).join('') || '<span class="hint">Nenhum estagiário cadastrado.</span>'}
+      </div>
+    </div>
     <div class="hint">Esta audiência cria automaticamente um lembrete na aba Lembretes.</div>
     <div class="field"><label>Observações</label><textarea id="af-obs">${escapeHtml(a.obs)}</textarea></div>
   `;
   openModal(id? 'Editar audiência' : 'Nova audiência', body, async ()=>{
     const processoId = document.getElementById('af-processo').value;
     if(!processoId){ showToast('Selecione o processo.'); return; }
-    const data = { processoId, data: document.getElementById('af-data').value, hora: document.getElementById('af-hora').value, local: document.getElementById('af-local').value.trim(), status: document.getElementById('af-status').value, alertaDias: parseInt(document.getElementById('af-alerta').value)||0, obs: document.getElementById('af-obs').value.trim() };
+    const data = { processoId, data: document.getElementById('af-data').value, hora: document.getElementById('af-hora').value, local: document.getElementById('af-local').value.trim(), status: document.getElementById('af-status').value, alertaDias: parseInt(document.getElementById('af-alerta').value)||0, obs: document.getElementById('af-obs').value.trim(), estagiariosLiberados: Array.from(document.querySelectorAll('.af-estag-chk:checked')).map(el=>el.value) };
     let salvo;
     try{
       if(id){
@@ -2279,6 +2307,7 @@ async function arquivarAudienciasAntigas(){
   await persistMutation('audiencias', arr=>{ arr.forEach(a=>{ if(!a.lixeira && a.data<hoje) a.lixeira=true; }); return arr; });
 }
 function audienciasVisiveis(){
+  if(isEstagiario()) return DB.audiencias.filter(a=>!a.lixeira); // backend já manda só as liberadas explicitamente
   const idsProc = meusProcessosVisiveis().map(p=>p.id);
   return DB.audiencias.filter(a=>idsProc.includes(a.processoId) && !a.lixeira);
 }
@@ -2682,7 +2711,8 @@ function renderParcelasCronologicas(){
   const totalPaginas = Math.max(1, Math.ceil(filtrados.length/porPagina));
   if(FIN_PARCELAS_PAGINA>totalPaginas) FIN_PARCELAS_PAGINA = totalPaginas;
   const pagina = filtrados.slice((FIN_PARCELAS_PAGINA-1)*porPagina, FIN_PARCELAS_PAGINA*porPagina);
-  box.innerHTML = `<table><thead><tr><th>Vencimento</th><th>Cliente / Processo</th><th>Parcela</th><th>Valor</th></tr></thead><tbody>
+  const paginacaoParcelas = gerarControlesPaginacao(FIN_PARCELAS_PAGINA, totalPaginas, 'irParaPaginaParcelas');
+  box.innerHTML = paginacaoParcelas + `<table><thead><tr><th>Vencimento</th><th>Cliente / Processo</th><th>Parcela</th><th>Valor</th></tr></thead><tbody>
     ${pagina.map(it=>{
       const atrasada = it.vencimento && it.vencimento < hoje;
       return `<tr>
@@ -2692,7 +2722,7 @@ function renderParcelasCronologicas(){
         <td><strong>${fmtMoney(it.valor)}</strong></td>
       </tr>`;
     }).join('')}
-  </tbody></table>` + gerarControlesPaginacao(FIN_PARCELAS_PAGINA, totalPaginas, 'irParaPaginaParcelas');
+  </tbody></table>` + paginacaoParcelas;
 }
 let REPASSE_TAB = 'pendentes';
 function setRepasseTab(tab){
@@ -2743,7 +2773,9 @@ function renderRepasses(){
         <span class="tag tag-${h.repasseStatus==='confirmado'?'confirmado':'solicitado'}">${h.repasseStatus==='confirmado'?'Repassado':'Aguardando repasse'}</span>
         ${podeConfirmar? `<br><button class="btn btn-ghost btn-sm" style="margin-top:4px;" onclick="confirmarRepasse('${h.id}')">${h.repasseStatus==='confirmado'?'Desfazer':'Confirmar repasse'}</button>`:''}
       </div></div>`;
-  }).join('') + gerarControlesPaginacao(FIN_REPASSES_PAGINA, totalPaginas, 'irParaPaginaRepasses');
+  }).join('');
+  const paginacaoRepasses = gerarControlesPaginacao(FIN_REPASSES_PAGINA, totalPaginas, 'irParaPaginaRepasses');
+  box.innerHTML = paginacaoRepasses + box.innerHTML + paginacaoRepasses;
 }
 function computeAssociadoTotals(){
   const hoje = todayISO(); const mesAtual = hoje.slice(0,7);
@@ -4716,6 +4748,11 @@ let DJEN_INICIALIZADO = false;
    avaliação com pontuação (visão de quem delega: master/sócio/associado)
    ============================================================ */
 let DELEGACOES_CACHE = [];
+// Guarda quais cartões de delegação estão com o "Apontamentos e arquivos"
+// aberto, para não fechar sozinho toda vez que a lista atualiza (ex: logo
+// depois de enviar um apontamento) — sem isso, parecia que o botão "Enviar"
+// não fazia nada, quando na real o card só recolhia de novo.
+let DELEGACOES_ABERTAS = new Set();
 let ESTAGIO_STATUS_TAB = '';
 function meusEstagiarios(){
   // Sócio/master veem todo mundo (respeitando "visível para"); associado só
@@ -4723,6 +4760,7 @@ function meusEstagiarios(){
   return DB.usuarios.filter(u=>{
     if(u.tipo!=='estagiario') return false;
     if(isMaster()) return true;
+    if(u.estagiarioVisivelPara==='especificos') return (u.tutoresIds||[]).includes(CURRENT_USER.id);
     if(isSocio()) return u.estagiarioVisivelPara!=='associado' ? true : (u.tutoresIds||[]).includes(CURRENT_USER.id);
     if(isAssociado()) return (u.tutoresIds||[]).includes(CURRENT_USER.id) || u.estagiarioVisivelPara==='associado' || u.estagiarioVisivelPara==='todos';
     return false;
@@ -4790,7 +4828,7 @@ function renderCardDelegacao(d, comAvaliacao){
     </div>
     ${d.descricao? `<p style="margin-top:8px; font-size:13px; color:var(--ink-soft);">${escapeHtml(d.descricao)}</p>` : ''}
     ${d.avaliacao? `<div class="hint" style="margin-top:8px;"><strong>Nota: ${d.avaliacao.notaFinal!=null? d.avaliacao.notaFinal+'/10':'—'}</strong>${d.avaliacao.observacao? ' — '+escapeHtml(d.avaliacao.observacao):''}</div>` : ''}
-    <details style="margin-top:10px;"><summary style="cursor:pointer; font-size:12.5px; color:var(--gold-dark);">Apontamentos e arquivos (${d.apontamentos.length} msg, ${d.arquivos.length} arquivo(s))</summary>
+    <details style="margin-top:10px;" ${DELEGACOES_ABERTAS.has(d.id)?'open':''} ontoggle="if(this.open) DELEGACOES_ABERTAS.add('${d.id}'); else DELEGACOES_ABERTAS.delete('${d.id}');"><summary style="cursor:pointer; font-size:12.5px; color:var(--gold-dark);">Apontamentos e arquivos (${d.apontamentos.length} msg, ${d.arquivos.length} arquivo(s))</summary>
       <div style="margin-top:8px;">
         ${d.apontamentos.map(a=>`<div class="list-row"><div><div class="rtitle" style="font-size:12px;">${escapeHtml(usuarioNome(a.autorId))}</div><div class="rsub">${escapeHtml(a.texto)}</div></div><div class="rmeta">${new Date(a.data).toLocaleString('pt-BR')}${podeApagarApontamento? `<br><span style="cursor:pointer; text-decoration:underline; color:var(--danger); font-size:11px;" onclick="apagarApontamentoDelegacao('${d.id}','${a.id}')">apagar</span>`:''}</div></div>`).join('') || '<div class="empty" style="padding:8px;">Nenhum apontamento ainda.</div>'}
         <div style="display:flex; gap:8px; margin-top:8px;"><input type="text" id="apont-input-${d.id}" placeholder="Escrever apontamento..." onkeydown="if(event.key==='Enter')enviarApontamentoDelegacao('${d.id}')"><button class="btn btn-ghost btn-sm" onclick="enviarApontamentoDelegacao('${d.id}')">Enviar</button></div>
@@ -4801,9 +4839,10 @@ function renderCardDelegacao(d, comAvaliacao){
         </div>
       </div>
     </details>
-    ${podeAvaliar? `<div style="margin-top:10px; display:flex; gap:8px;">
+    ${podeAvaliar? `<div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
       <button class="btn btn-gold btn-sm" onclick="abrirAvaliacaoMissao('${d.id}', true)">✔️ Marcar como cumprida</button>
       <button class="btn btn-ghost btn-sm" onclick="abrirAvaliacaoMissao('${d.id}', false)">✖️ Marcar como não cumprida</button>
+      ${d.status==='entregue'? `<button class="btn btn-ghost btn-sm" onclick="devolverDelegacaoParaCorrecao('${d.id}')">↩️ Devolver para correção</button>`:''}
     </div>` : ''}
   </div>`;
 }
@@ -4867,11 +4906,13 @@ function atualizarProcessosDelegacao(){
 async function enviarApontamentoDelegacao(id){
   const input = document.getElementById('apont-input-'+id);
   const texto = input.value.trim(); if(!texto) return;
+  DELEGACOES_ABERTAS.add(id); // garante que o card continua aberto depois de atualizar a lista
   try{
     await apiFetch('/api/delegacoes/'+id+'/apontamento', { method:'POST', body: JSON.stringify({texto}) });
     input.value='';
     if(document.getElementById('page-estagio').classList.contains('active')) await renderEstagioPage();
     else await renderDelegacoesEstagiario();
+    showToast('Apontamento enviado.');
   }catch(e){ showToast(e.message||'Não foi possível enviar.'); }
 }
 async function apagarApontamentoDelegacao(id, apontId){
@@ -4923,29 +4964,103 @@ async function apagarArquivoDelegacao(id, arquivoId){
   }catch(e){ showToast(e.message||'Não foi possível apagar.'); }
 }
 let CRITERIOS_AVALIACAO_CACHE = null;
+function devolverDelegacaoParaCorrecao(id){
+  const body = `<div class="field"><label>Motivo (opcional)</label><textarea id="devolver-motivo" placeholder="O que precisa ser corrigido/refeito?"></textarea></div>`;
+  openModal('Devolver para correção', body, async ()=>{
+    try{
+      await apiFetch('/api/delegacoes/'+id+'/devolver', { method:'PATCH', body: JSON.stringify({motivo: document.getElementById('devolver-motivo').value.trim()}) });
+      await renderEstagioPage(); closeModal(); showToast('Devolvida para correção.');
+    }catch(e){ showToast(e.message||'Não foi possível devolver.'); }
+  });
+}
 async function abrirAvaliacaoMissao(id, cumprida){
   if(!CRITERIOS_AVALIACAO_CACHE){
     try{ CRITERIOS_AVALIACAO_CACHE = await apiFetch('/api/delegacoes/criterios'); }
     catch(e){ showToast('Não foi possível carregar os critérios de avaliação.'); return; }
   }
-  const opcoesDificuldade = [['baixa','Baixa'],['razoavel','Razoável'],['alta','Alta'],['altissima','Altíssima'],['ignorado','Não avaliar']];
+  const opcoesDificuldade = [['baixa','Baixo'],['razoavel','Razoável'],['alta','Alto'],['altissima','Altíssimo'],['ignorado','Não avaliar']];
   const body = `
-    <div class="hint" style="margin-bottom:10px;">${cumprida? '✔️ Marcando como cumprida' : '✖️ Marcando como não cumprida'} — avalie os critérios abaixo (opcional, mas gera a nota final e entra no relatório do estagiário).</div>
+    <div class="hint" style="margin-bottom:10px;">${cumprida? '✔️ Marcando como cumprida' : '✖️ Marcando como não cumprida'} — avalie os critérios abaixo (opcional, mas gera a nota final e entra no relatório do estagiário). Clique numa opção por linha.</div>
     ${CRITERIOS_AVALIACAO_CACHE.criterios.map(c=>`
-      <div class="field"><label>${escapeHtml(c.label)}</label>
-        <select id="aval-${c.chave}">${opcoesDificuldade.map(([v,l])=>`<option value="${v}" ${v==='ignorado'?'selected':''}>${l}</option>`).join('')}</select>
+      <div class="field">
+        <label style="margin-bottom:4px; display:block;">${escapeHtml(c.label)}</label>
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          ${opcoesDificuldade.map(([v,l],i)=>`<label class="criterio-opcao" style="flex:1; min-width:80px; text-align:center; padding:6px 4px; border:1px solid var(--linha); border-radius:6px; cursor:pointer; font-size:11.5px; user-select:none;">
+            <input type="radio" name="aval-${c.chave}" value="${v}" ${i===opcoesDificuldade.length-1?'checked':''} style="display:none;" onchange="atualizarSelecaoCriterio(this)">${l}
+          </label>`).join('')}
+        </div>
       </div>
     `).join('')}
     <div class="field"><label>Observação (opcional)</label><textarea id="aval-observacao" placeholder="Como foi a entrega, o que pode melhorar..."></textarea></div>
   `;
-  openModal('Avaliar missão', body, async ()=>{
+  openModal('Avaliação da designação', body, async ()=>{
     const respostas = {};
-    CRITERIOS_AVALIACAO_CACHE.criterios.forEach(c=>{ respostas[c.chave] = document.getElementById('aval-'+c.chave).value; });
+    CRITERIOS_AVALIACAO_CACHE.criterios.forEach(c=>{
+      const marcado = document.querySelector(`input[name="aval-${c.chave}"]:checked`);
+      respostas[c.chave] = marcado? marcado.value : 'ignorado';
+    });
     try{
       await apiFetch('/api/delegacoes/'+id+'/avaliar', { method:'PATCH', body: JSON.stringify({cumprida, respostas, observacao: document.getElementById('aval-observacao').value.trim()}) });
       await renderEstagioPage(); closeModal(); showToast('Avaliação registrada.');
     }catch(e){ showToast(e.message||'Não foi possível avaliar.'); }
   });
+  // Marca visualmente a opção selecionada de cada linha (a última, "Não avaliar", já vem marcada por padrão)
+  document.querySelectorAll('.criterio-opcao input:checked').forEach(el=>atualizarSelecaoCriterio(el));
+}
+function atualizarSelecaoCriterio(input){
+  const nome = input.name;
+  document.querySelectorAll(`input[name="${nome}"]`).forEach(el=>{
+    el.closest('.criterio-opcao').style.background = el.checked? 'var(--gold)' : '';
+    el.closest('.criterio-opcao').style.color = el.checked? '#000' : '';
+    el.closest('.criterio-opcao').style.borderColor = el.checked? 'var(--gold)' : 'var(--linha)';
+  });
+}
+async function abrirGerenciarCriterios(){
+  try{ CRITERIOS_AVALIACAO_CACHE = await apiFetch('/api/delegacoes/criterios'); }
+  catch(e){ showToast('Não foi possível carregar os critérios.'); return; }
+  renderModalCriterios();
+}
+function renderModalCriterios(){
+  const criterios = CRITERIOS_AVALIACAO_CACHE.criterios;
+  const body = `
+    <div class="hint" style="margin-bottom:10px;">Estes são os critérios usados na avaliação de cada designação. Critérios marcados como "dificuldade" contam ao contrário (dificuldade alta = nota baixa); os demais são de qualidade (quanto melhor, maior a nota).</div>
+    <div id="criterios-lista-edicao">
+      ${criterios.map((c,i)=>`<div class="field-row" style="align-items:center;">
+        <div class="field" style="flex:2;"><input value="${escapeHtml(c.label)}" data-chave="${escapeHtml(c.chave)}" class="criterio-label-input"></div>
+        <div class="field" style="flex:0 0 140px;"><label style="font-size:11px; display:flex; align-items:center; gap:4px;"><input type="checkbox" class="criterio-invertido-chk" data-chave="${escapeHtml(c.chave)}" style="width:auto;" ${c.invertido?'checked':''}> É dificuldade?</label></div>
+        <button class="icon-btn danger" style="flex:0;" onclick="removerCriterioEdicao(${i})" title="Remover">🗑</button>
+      </div>`).join('')}
+    </div>
+    <button type="button" class="btn btn-ghost btn-sm" onclick="adicionarCriterioEdicao()">+ Adicionar critério</button>
+  `;
+  openModal('Critérios de avaliação', body, async ()=>{
+    const linhas = document.querySelectorAll('#criterios-lista-edicao .field-row');
+    const novos = Array.from(linhas).map(linha=>{
+      const inputLabel = linha.querySelector('.criterio-label-input');
+      const chkInvertido = linha.querySelector('.criterio-invertido-chk');
+      return { chave: inputLabel.dataset.chave, label: inputLabel.value.trim(), invertido: chkInvertido.checked };
+    }).filter(c=>c.label);
+    if(!novos.length){ showToast('Informe ao menos um critério.'); return; }
+    try{
+      await apiFetch('/api/delegacoes/criterios', { method:'PUT', body: JSON.stringify({criterios: novos}) });
+      CRITERIOS_AVALIACAO_CACHE = null; // força recarregar na próxima avaliação
+      closeModal(); showToast('Critérios atualizados.');
+    }catch(e){ showToast(e.message||'Não foi possível salvar os critérios.'); }
+  });
+}
+function adicionarCriterioEdicao(){
+  const box = document.getElementById('criterios-lista-edicao');
+  const novaChave = 'criterio_'+Date.now().toString(36);
+  box.insertAdjacentHTML('beforeend', `<div class="field-row" style="align-items:center;">
+    <div class="field" style="flex:2;"><input value="" placeholder="Nome do novo critério" data-chave="${novaChave}" class="criterio-label-input"></div>
+    <div class="field" style="flex:0 0 140px;"><label style="font-size:11px; display:flex; align-items:center; gap:4px;"><input type="checkbox" class="criterio-invertido-chk" data-chave="${novaChave}" style="width:auto;"> É dificuldade?</label></div>
+    <button class="icon-btn danger" style="flex:0;" onclick="this.parentElement.remove()" title="Remover">🗑</button>
+  </div>`);
+}
+function removerCriterioEdicao(indice){
+  const linhas = document.querySelectorAll('#criterios-lista-edicao .field-row');
+  if(linhas.length<=1){ showToast('Deixe ao menos um critério.'); return; }
+  linhas[indice].remove();
 }
 async function renderDelegacoesEstagiario(){
   const box = document.getElementById('delegacoes-lista'); if(!box) return;
@@ -4982,7 +5097,27 @@ async function renderScoreEstagiario(){
     </div>
   `;
   const hist = document.getElementById('score-historico');
-  hist.innerHTML = lista.length? lista.map(d=>`<div class="list-row"><div><div class="rtitle">${escapeHtml(d.titulo)}</div><div class="rsub">${STATUS_DELEGACAO_LABEL[d.status]}${d.avaliacao?.observacao? ' — '+escapeHtml(d.avaliacao.observacao):''}</div></div><div class="rmeta">${d.avaliacao?.notaFinal!=null? d.avaliacao.notaFinal+'/10' : '—'}</div></div>`).join('') : '<div class="empty">Nenhuma missão ainda.</div>';
+  DELEGACOES_CACHE = lista; // reaproveitado pelo detalhe ao clicar
+  hist.innerHTML = lista.length? lista.map(d=>`<div class="list-row" style="cursor:pointer;" onclick="abrirDetalheMissaoScore('${d.id}')"><div><div class="rtitle">${escapeHtml(d.titulo)}</div><div class="rsub">${STATUS_DELEGACAO_LABEL[d.status]}${d.avaliacao?.observacao? ' — '+escapeHtml(d.avaliacao.observacao):''}</div></div><div class="rmeta">${d.avaliacao?.notaFinal!=null? d.avaliacao.notaFinal+'/10' : '—'}</div></div>`).join('') : '<div class="empty">Nenhuma missão ainda.</div>';
+}
+function abrirDetalheMissaoScore(id){
+  const d = DELEGACOES_CACHE.find(x=>x.id===id); if(!d) return;
+  const primeiroArquivo = d.arquivos[0];
+  const ultimoApontamento = d.apontamentos[d.apontamentos.length-1];
+  const body = `
+    <div class="field"><label>O que foi pedido</label><p>${escapeHtml(d.descricao)||'<span style="color:var(--ink-soft);">Sem descrição detalhada.</span>'}</p></div>
+    <div class="field-row">
+      <div class="field"><label>Enviada por</label><p>${escapeHtml(usuarioNome(d.criadoPor))}</p></div>
+      <div class="field"><label>Quando foi enviada</label><p>${new Date(d.criadoEm).toLocaleString('pt-BR')}</p></div>
+    </div>
+    ${d.prazoData? `<div class="field"><label>Prazo estabelecido</label><p>${fmtDate(d.prazoData)}${d.prazoHora?' às '+d.prazoHora:''}</p></div>`:''}
+    <div class="field"><label>Situação atual</label><p>${STATUS_DELEGACAO_LABEL[d.status]}</p></div>
+    ${d.arquivos.length? `<div class="field"><label>O que foi entregue</label><p>${d.arquivos.map(a=>escapeHtml(a.nome)).join(', ')}${primeiroArquivo? ' — entregue em '+new Date(primeiroArquivo.enviadoEm).toLocaleString('pt-BR') : ''}</p></div>` : '<div class="field"><label>O que foi entregue</label><p style="color:var(--ink-soft);">Nenhum arquivo foi enviado.</p></div>'}
+    ${ultimoApontamento? `<div class="field"><label>Último apontamento</label><p>"${escapeHtml(ultimoApontamento.texto)}" — ${escapeHtml(usuarioNome(ultimoApontamento.autorId))}, ${new Date(ultimoApontamento.data).toLocaleString('pt-BR')}</p></div>`:''}
+    ${d.avaliacao? `<div class="field"><label>Avaliação</label><p>Nota ${d.avaliacao.notaFinal!=null?d.avaliacao.notaFinal+'/10':'—'}${d.avaliacao.observacao? ' — '+escapeHtml(d.avaliacao.observacao):''}</p></div>`:''}
+  `;
+  openModal(d.titulo, body, null);
+  document.getElementById('modal-save-btn').style.display='none';
 }
 function baixarMeuRelatorioEstagio(){
   baixarArquivoPost('/api/documentos/estagio/relatorio', { estagiarioId: CURRENT_USER.id }, 'Relatorio Final de Estagio.docx');
@@ -5408,6 +5543,16 @@ function updateNavBadges(){
   const hoje = todayISO();
   const lembHoje = DB.lembretes.filter(l => !l.feito && !l.lixeira && l.data <= hoje).length;
   const bl = document.getElementById('badge-lembretes'); if(bl){ if(lembHoje>0){ bl.style.display='inline-block'; bl.textContent=lembHoje; } else bl.style.display='none'; }
+  const bd = document.getElementById('badge-delegacoes');
+  if(bd){
+    const pendentes = DELEGACOES_CACHE.filter(d=>d.status==='pendente'||d.status==='entregue').length;
+    if(pendentes>0){ bd.style.display='inline-block'; bd.textContent=pendentes; } else bd.style.display='none';
+  }
+}
+async function atualizarBadgeDelegacoes(){
+  if(!isEstagiario()) return;
+  try{ DELEGACOES_CACHE = await apiFetch('/api/delegacoes'); }catch(e){ /* silencioso */ }
+  updateNavBadges();
 }
 function renderDashboard(){
   if(!CURRENT_USER) return;
