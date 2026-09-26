@@ -19,6 +19,7 @@ const documentosRoutes = require('./src/routes/documentos');
 const calculosRoutes = require('./src/routes/calculos');
 const agendaPessoalRoutes = require('./src/routes/agendaPessoal');
 const djenRoutes = require('./src/routes/djen');
+const delegacoesRoutes = require('./src/routes/delegacoes');
 
 const app = express();
 app.use(cors({ origin: process.env.CORS_ORIGIN || '*' }));
@@ -36,6 +37,7 @@ app.use('/api/documentos', documentosRoutes);
 app.use('/api/calculos', calculosRoutes);
 app.use('/api/agenda-pessoal', agendaPessoalRoutes);
 app.use('/api/djen', djenRoutes);
+app.use('/api/delegacoes', delegacoesRoutes);
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 

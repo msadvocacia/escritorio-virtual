@@ -686,4 +686,145 @@ router.post('/detalhe-financeiro', requireAuth, requireRole('master', 'socio'), 
   }
 });
 
+// Marca d'água (mesmo mecanismo que o próprio Word usa: uma forma VML com
+// texto rotacionado, semi-transparente, ancorada atrás do texto da página).
+function marcaDagua(texto) {
+  return `<w:p><w:r><w:pict><v:shapetype id="_x0000_t136" coordsize="1600,21600" o:spt="136" adj="10800" path="m@7,0l@8,5400,@5,21600@6,21600,@4,5400xe"><v:formulas><v:f eqn="sum #0 0 10800"/><v:f eqn="prod #0 2 1"/><v:f eqn="sum 21600 0 @1"/><v:f eqn="sum 0 0 @2"/><v:f eqn="sum 21600 0 @3"/><v:f eqn="if @0 @3 0"/><v:f eqn="if @0 21600 @1"/><v:f eqn="if @0 0 @2"/><v:f eqn="if @0 @4 21600"/><v:f eqn="mid @5 @6"/><v:f eqn="mid @8 @5"/><v:f eqn="mid @7 @8"/><v:f eqn="mid @6 @7"/><v:f eqn="sum @6 0 @5"/></v:formulas><v:path textpathok="t" o:connecttype="custom" o:connectlocs="@9,0;@10,10800;@11,21600;@12,10800" o:connectangles="270,180,90,0"/><v:textpath on="t" fitshape="t"/><v:handles><v:h position="#0,bottomRight" xrange="6629,14971"/></v:handles></v:shapetype><v:shape id="marca_dagua_1" o:spid="_x0000_s2001" type="#_x0000_t136" style="position:absolute;margin-left:0;margin-top:0;width:415pt;height:207pt;rotation:315;z-index:-251658240;mso-position-horizontal:center;mso-position-horizontal-relative:margin;mso-position-vertical:center;mso-position-vertical-relative:margin" fillcolor="silver" stroked="f"><v:fill opacity=".4"/><v:textpath style="font-family:'Arial';font-size:1pt" string="${xmlEscapeLocal(texto)}"/></v:shape></w:pict></w:r></w:p>`;
+}
+function xmlEscapeLocal(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// Relatório final de estágio: o que foi delegado no período, como foi
+// desenvolvido, resultados e evolução — montado a partir do histórico real
+// de missões (delegações) do estagiário, não digitado à mão.
+router.post('/estagio/relatorio', requireAuth, requireRole('master', 'socio', 'associado', 'estagiario'), async (req, res) => {
+  const { estagiarioId } = req.body || {};
+  if (!estagiarioId) return res.status(400).json({ erro: 'Informe o estagiário.' });
+  if (req.user.tipo === 'estagiario') {
+    if (req.user.id !== estagiarioId) return res.status(403).json({ erro: 'Você só pode gerar o próprio relatório.' });
+    const usuariosCheck = await getCollection('usuarios', []);
+    const euCheck = usuariosCheck.find((u) => u.id === req.user.id);
+    if (!euCheck || !euCheck.relatorioLiberado) return res.status(403).json({ erro: 'Seu relatório final ainda não foi liberado pelo seu tutor/responsável.' });
+  }
+  const usuarios = await getCollection('usuarios', []);
+  const estagiario = usuarios.find((u) => u.id === estagiarioId && u.tipo === 'estagiario');
+  if (!estagiario) return res.status(404).json({ erro: 'Estagiário não encontrado.' });
+  const todasDelegacoes = await getCollection('delegacoes', []);
+  const minhas = todasDelegacoes.filter((d) => d.estagiarioIds.includes(estagiarioId));
+  const concluidas = minhas.filter((d) => d.status === 'concluida');
+  const naoCumpridas = minhas.filter((d) => d.status === 'nao_cumprida');
+  const notas = concluidas.map((d) => d.avaliacao?.notaFinal).filter((n) => n != null);
+  const notaMedia = notas.length ? Math.round((notas.reduce((s, n) => s + n, 0) / notas.length) * 10) / 10 : null;
+  const cargaHoraria = (concluidas.length + naoCumpridas.length) * 4; // média de 4h por missão, conforme definido
+
+  try {
+    const corpo = [
+      D.paragraph(D.run('RELATÓRIO FINAL DE ESTÁGIO', { bold: true, sizeHalfPt: 30 }), { center: true, justify: false }),
+      D.blank(), D.blank(),
+      D.paragraph([D.run('Estagiário(a): ', { bold: true }), D.run(estagiario.nome)]),
+      D.paragraph([D.run('Formação: ', { bold: true }), D.run(estagiario.formacaoEstagiario === 'bacharel' ? 'Bacharel em Direito' : 'Estudante de Direito')]),
+      D.paragraph([D.run('Período do estágio: ', { bold: true }), D.run(`${estagiario.dataInicioEstagio ? T.fmtDateExtenso(estagiario.dataInicioEstagio) : '—'} a ${estagiario.dataFimEstagio ? T.fmtDateExtenso(estagiario.dataFimEstagio) : T.fmtDateExtenso(todayISO())}`)]),
+      D.paragraph([D.run('Carga horária estimada: ', { bold: true }), D.run(`${cargaHoraria}h (${concluidas.length + naoCumpridas.length} missão(ões) avaliada(s) × 4h)`)]),
+      D.blank(),
+      D.paragraph(D.run('RESUMO QUANTITATIVO', { bold: true, sizeHalfPt: 24 })),
+      D.blank(),
+      D.paragraph(`Total de missões delegadas: ${minhas.length}`),
+      D.paragraph(`Cumpridas: ${concluidas.length}`),
+      D.paragraph(`Não cumpridas: ${naoCumpridas.length}`),
+      D.paragraph(`Ainda em andamento: ${minhas.length - concluidas.length - naoCumpridas.length}`),
+      D.paragraph([D.run('Nota média final: ', { bold: true }), D.run(notaMedia != null ? `${notaMedia} / 10` : 'sem missões avaliadas ainda', { bold: true })]),
+      D.blank(),
+      D.paragraph(D.run('HISTÓRICO DE MISSÕES DELEGADAS', { bold: true, sizeHalfPt: 24 })),
+      D.blank(),
+      ...minhas.flatMap((d) => {
+        const statusLabel = { pendente: 'Pendente', entregue: 'Entregue (aguardando avaliação)', concluida: 'Cumprida', nao_cumprida: 'Não cumprida' }[d.status] || d.status;
+        const linhas = [
+          D.paragraph([D.run(d.titulo, { bold: true }), D.run(` — ${statusLabel}`)]),
+        ];
+        if (d.descricao) linhas.push(D.paragraph(D.run(d.descricao, { italic: true, sizeHalfPt: 20 })));
+        if (d.avaliacao) {
+          linhas.push(D.paragraph(`Nota: ${d.avaliacao.notaFinal != null ? d.avaliacao.notaFinal + '/10' : '—'}${d.avaliacao.observacao ? ' — ' + d.avaliacao.observacao : ''}`));
+        }
+        linhas.push(D.blank());
+        return linhas;
+      }),
+    ].join('');
+    const buffer = gerarDocxComCorpo(corpo, { margemInferiorTwips: 1843 });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="Relatorio Final de Estagio - ${estagiario.nome.replace(/[^\w\- ]/g, '')}.docx"`);
+    res.send(buffer);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ erro: 'Não foi possível gerar o relatório.' });
+  }
+});
+
+// Certificado de estágio — frente com marca d'água e assinatura do
+// responsável; verso com data de início/fim, carga horária e pontuação
+// final. Só é gerado quando o tutor/responsável decide liberar.
+router.post('/estagio/certificado', requireAuth, requireRole('master', 'socio', 'associado', 'estagiario'), async (req, res) => {
+  const { estagiarioId, advogadoResponsavelId } = req.body || {};
+  if (!estagiarioId || !advogadoResponsavelId) return res.status(400).json({ erro: 'Informe o estagiário e o advogado responsável.' });
+  if (req.user.tipo === 'estagiario') {
+    if (req.user.id !== estagiarioId) return res.status(403).json({ erro: 'Você só pode gerar o próprio certificado.' });
+    const usuariosCheck = await getCollection('usuarios', []);
+    const euCheck = usuariosCheck.find((u) => u.id === req.user.id);
+    if (!euCheck || !euCheck.certificadoLiberado) return res.status(403).json({ erro: 'Seu certificado ainda não foi liberado pelo seu tutor/responsável.' });
+  }
+  const usuarios = await getCollection('usuarios', []);
+  const estagiario = usuarios.find((u) => u.id === estagiarioId && u.tipo === 'estagiario');
+  const responsavel = usuarios.find((u) => u.id === advogadoResponsavelId && (u.tipo === 'socio' || u.tipo === 'associado'));
+  if (!estagiario) return res.status(404).json({ erro: 'Estagiário não encontrado.' });
+  if (!responsavel) return res.status(404).json({ erro: 'Advogado responsável não encontrado.' });
+  const config = await getCollection('config', {});
+  const todasDelegacoes = await getCollection('delegacoes', []);
+  const minhas = todasDelegacoes.filter((d) => d.estagiarioIds.includes(estagiarioId));
+  const concluidas = minhas.filter((d) => d.status === 'concluida');
+  const naoCumpridas = minhas.filter((d) => d.status === 'nao_cumprida');
+  const notas = concluidas.map((d) => d.avaliacao?.notaFinal).filter((n) => n != null);
+  const notaMedia = notas.length ? Math.round((notas.reduce((s, n) => s + n, 0) / notas.length) * 10) / 10 : null;
+  const cargaHoraria = (concluidas.length + naoCumpridas.length) * 4;
+  const dataInicio = estagiario.dataInicioEstagio || todayISO();
+  const dataFim = estagiario.dataFimEstagio || todayISO();
+
+  try {
+    const corpo = [
+      marcaDagua((config.nomeEscritorio || 'MS ADVOCACIA').toUpperCase()),
+      D.blank(), D.blank(), D.blank(),
+      D.paragraph(D.run('CERTIFICADO DE ESTÁGIO', { bold: true, sizeHalfPt: 34 }), { center: true, justify: false }),
+      D.blank(), D.blank(),
+      D.paragraph(D.run(`${config.nomeEscritorio || 'MS ADVOCACIA'} certifica que`, { sizeHalfPt: 24 }), { center: true, justify: false }),
+      D.blank(),
+      D.paragraph(D.run(estagiario.nome.toUpperCase(), { bold: true, sizeHalfPt: 32 }), { center: true, justify: false }),
+      D.blank(),
+      D.paragraph(D.run(`concluiu, sob supervisão direta, o estágio de ${estagiario.formacaoEstagiario === 'bacharel' ? 'Bacharel em Direito' : 'estudante de Direito'} nesta atividade advocatícia, no período de ${T.fmtDateExtenso(dataInicio)} a ${T.fmtDateExtenso(dataFim)}, com carga horária estimada de ${cargaHoraria} horas.`, { sizeHalfPt: 24 }), { center: true, justify: true }),
+      D.blank(), D.blank(), D.blank(), D.blank(),
+      D.paragraph(D.run(`Jequié/BA, ${T.fmtDateExtenso(todayISO())}.`, { sizeHalfPt: 22 }), { center: true, justify: false }),
+      D.blank(), D.blank(), D.blank(),
+      D.paragraph(D.run('_____________________________________________________________'), { center: true, justify: false }),
+      D.paragraph(D.run(responsavel.nome.toUpperCase(), { bold: true }), { center: true, justify: false }),
+      D.paragraph(D.run(`OAB/BA nº ${responsavel.oab || '—'}`), { center: true, justify: false }),
+      D.paragraph(D.run('Advogado(a) Responsável', { italic: true }), { center: true, justify: false }),
+      // Quebra de página — o verso do certificado
+      '<w:p><w:r><w:br w:type="page"/></w:r></w:p>',
+      D.paragraph(D.run('INFORMAÇÕES COMPLEMENTARES', { bold: true, sizeHalfPt: 26 }), { center: true, justify: false }),
+      D.blank(), D.blank(),
+      D.paragraph([D.run('Data de início: ', { bold: true }), D.run(T.fmtDateExtenso(dataInicio))]),
+      D.paragraph([D.run('Data de encerramento: ', { bold: true }), D.run(T.fmtDateExtenso(dataFim))]),
+      D.paragraph([D.run('Carga horária total: ', { bold: true }), D.run(`${cargaHoraria} horas (${concluidas.length + naoCumpridas.length} missões avaliadas × 4h/missão em média)`)]),
+      D.paragraph([D.run('Missões cumpridas: ', { bold: true }), D.run(String(concluidas.length))]),
+      D.paragraph([D.run('Missões não cumpridas: ', { bold: true }), D.run(String(naoCumpridas.length))]),
+      D.paragraph([D.run('Pontuação final média: ', { bold: true, sizeHalfPt: 26 }), D.run(notaMedia != null ? `${notaMedia} / 10` : 'não avaliado', { bold: true, sizeHalfPt: 26 })]),
+    ].join('');
+    const buffer = gerarDocxComCorpo(corpo, { margemInferiorTwips: 1843, paisagem: true });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="Certificado de Estagio - ${estagiario.nome.replace(/[^\w\- ]/g, '')}.docx"`);
+    res.send(buffer);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ erro: 'Não foi possível gerar o certificado.' });
+  }
+});
+
 module.exports = router;

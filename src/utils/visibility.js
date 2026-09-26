@@ -6,6 +6,7 @@
 function isMaster(user) { return user && user.tipo === 'master'; }
 function isSocio(user) { return user && user.tipo === 'socio'; }
 function isAssociado(user) { return user && user.tipo === 'associado'; }
+function isEstagiario(user) { return user && user.tipo === 'estagiario'; }
 function isCliente(user) { return user && user.tipo === 'cliente'; }
 function isStaff(user) { return isMaster(user) || isSocio(user) || isAssociado(user); }
 function podeVerCaixa(user) { return isMaster(user) || isSocio(user); }
@@ -45,6 +46,11 @@ function processosVisiveis(user, processos, clientes) {
     const idsClientes = idsClientesDoUsuario(user, clientes);
     return processos.filter((p) => idsProfissionaisDoRegistro(p).includes(user.id) || idsClientes.includes(p.clienteId));
   }
+  // Estagiário só vê o processo se tiver sido vinculado a ele via uma
+  // delegação do tutor — nunca a carteira toda de clientes/processos.
+  if (isEstagiario(user)) {
+    return processos.filter((p) => Array.isArray(p.estagiariosVinculados) && p.estagiariosVinculados.includes(user.id));
+  }
   if (isCliente(user)) {
     return processos.filter((p) => p.clienteId === user.clienteId);
   }
@@ -76,6 +82,9 @@ function usuariosVisiveis(user, usuarios) {
 function prazosVisiveis(user, prazos, processos, clientes) {
   if (isMaster(user) || isSocio(user)) return prazos;
   const idsProc = processosVisiveis(user, processos, clientes).map((p) => p.id);
+  // Estagiário: só o que tiver processo vinculado (nunca o prazo "solto",
+  // sem processo, que os demais funcionários veem por padrão).
+  if (isEstagiario(user)) return prazos.filter((pr) => pr.processoId && idsProc.includes(pr.processoId));
   return prazos.filter((pr) => !pr.processoId || idsProc.includes(pr.processoId));
 }
 
@@ -91,6 +100,11 @@ function lembretesVisiveis(user, lembretes) {
     return lembretes.filter((l) =>
       !l.visivelPara || l.visivelPara.length === 0 || l.visivelPara.includes(user.id) || l.criadoPor === user.id
     );
+  }
+  // Estagiário só vê lembretes endereçados especificamente a ele pelo tutor —
+  // nunca o "padrão aberto" (visivelPara vazio) que os demais funcionários usam.
+  if (isEstagiario(user)) {
+    return lembretes.filter((l) => Array.isArray(l.visivelPara) && l.visivelPara.includes(user.id));
   }
   return [];
 }
@@ -116,7 +130,7 @@ function mensagensVisiveis(user, mensagens) {
 }
 
 module.exports = {
-  isMaster, isSocio, isAssociado, isCliente, isStaff, podeVerCaixa, semSenha,
+  isMaster, isSocio, isAssociado, isEstagiario, isCliente, isStaff, podeVerCaixa, semSenha,
   clientesVisiveis, processosVisiveis, honorariosVisiveis, despesasVisiveis,
   usuariosVisiveis, prazosVisiveis, audienciasVisiveis, lembretesVisiveis,
   disponibilidadesVisiveis, agendamentosVisiveis, mensagensVisiveis,

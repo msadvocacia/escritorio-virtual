@@ -601,6 +601,36 @@
         </div>
       </div>
 
+      <!-- ESTÁGIO (master/sócio/associado) -->
+      <div class="page" id="page-estagio">
+        <div class="section-head"><div><h2>Estágio</h2><p>Delegue missões, acompanhe entregas e avalie o desempenho dos estagiários.</p></div>
+          <button class="btn btn-gold" onclick="abrirNovaDelegacaoForm()">+ Nova delegação</button>
+        </div>
+        <div class="panel" id="estagio-estagiarios-panel" style="margin-bottom:16px;"><h3>Estagiários</h3><div id="estagio-estagiarios-lista"></div></div>
+        <div class="pill-select" style="margin-bottom:14px;" id="estagio-status-tabs">
+          <button class="fin-tab active" data-status="" onclick="setEstagioStatusTab('')">Todas</button>
+          <button class="fin-tab" data-status="pendente" onclick="setEstagioStatusTab('pendente')">Pendentes</button>
+          <button class="fin-tab" data-status="entregue" onclick="setEstagioStatusTab('entregue')">Entregues (avaliar)</button>
+          <button class="fin-tab" data-status="concluida" onclick="setEstagioStatusTab('concluida')">Cumpridas</button>
+          <button class="fin-tab" data-status="nao_cumprida" onclick="setEstagioStatusTab('nao_cumprida')">Não cumpridas</button>
+        </div>
+        <div id="estagio-lista"></div>
+      </div>
+
+      <!-- DELEGAÇÕES (perfil do estagiário) -->
+      <div class="page" id="page-delegacoes">
+        <div class="section-head"><div><h2>Delegações</h2><p>Missões que seu tutor/responsável delegou a você.</p></div></div>
+        <div id="delegacoes-lista"></div>
+      </div>
+
+      <!-- SCORE (perfil do estagiário) -->
+      <div class="page" id="page-score">
+        <div class="section-head"><div><h2>Score</h2><p>Sua pontuação e histórico de missões durante o estágio.</p></div></div>
+        <div class="kpi-grid" id="score-kpi-grid"></div>
+        <div class="panel" id="score-liberacoes-panel" style="margin-bottom:16px;"></div>
+        <div class="panel"><h3>Histórico de missões</h3><div id="score-historico"></div></div>
+      </div>
+
       <!-- AGENDA PESSOAL -->
       <div class="page" id="page-agenda-pessoal">
         <div class="section-head"><div><h2 id="ap-titulo-pagina">Agenda Pessoal</h2><p>Um espaço só seu — clientes, processos, audiências e prazos particulares, à parte do sistema principal.</p></div>
@@ -866,11 +896,23 @@ async function loadAll(){
   }
   if(isMaster() || isSocio()){
     try{ DB.usuarios = await apiFetch('/api/usuarios'); }catch(e){ DB.usuarios = []; }
-  } else if(isAssociado()){
-    // O associado não pode ver os dados completos (RG/CPF/telefone) de outros
-    // usuários, mas precisa saber QUEM são os sócios/associados para poder
-    // vinculá-los aos processos. Usa uma lista "básica" (só id/nome/tipo).
-    try{ DB.usuarios = await apiFetch('/api/usuarios/basico'); }catch(e){ DB.usuarios = [{ id: CURRENT_USER.id, nome: CURRENT_USER.nome, tipo: 'associado', ativo: true }]; }
+  } else if(isAssociado() || isEstagiario()){
+    // Associado/estagiário não podem ver os dados completos (RG/CPF/telefone)
+    // de outros usuários, mas precisam saber QUEM são os demais (sócios,
+    // associados, colegas de estágio) pra exibir nomes em processos e
+    // delegações. Usa uma lista "básica" (só id/nome/tipo) — e, no caso do
+    // próprio estagiário, mescla o PRÓPRIO registro completo (via /api/me),
+    // que já veio no login em CURRENT_USER mas precisa estar em DB.usuarios
+    // também para os campos relatorioLiberado/certificadoLiberado/tutoresIds.
+    try{
+      const basico = await apiFetch('/api/usuarios/basico');
+      if(isEstagiario()){
+        const idx = basico.findIndex(u=>u.id===CURRENT_USER.id);
+        const meuCompleto = await apiFetch('/api/me');
+        if(idx>=0) basico[idx] = meuCompleto; else basico.push(meuCompleto);
+      }
+      DB.usuarios = basico;
+    }catch(e){ DB.usuarios = [{ id: CURRENT_USER.id, nome: CURRENT_USER.nome, tipo: CURRENT_USER.tipo, ativo: true }]; }
   } else {
     DB.usuarios = [];
   }
@@ -976,7 +1018,7 @@ async function doLogin(){
   AUTH_TOKEN = resposta.token;
   localStorage.setItem('ms_token', AUTH_TOKEN);
   const u = resposta.usuario;
-  CURRENT_USER = { id:u.id, tipo:u.tipo, nome:u.nome, clienteId:u.clienteId||null, vinculoId:u.vinculoId||null, mustChange: !!u.mustChange, agendaPessoalLiberada: !!u.agendaPessoalLiberada };
+  CURRENT_USER = { id:u.id, tipo:u.tipo, nome:u.nome, clienteId:u.clienteId||null, vinculoId:u.vinculoId||null, mustChange: !!u.mustChange, agendaPessoalLiberada: !!u.agendaPessoalLiberada, visualizarEstagio: !!u.visualizarEstagio };
   document.getElementById('login-pass').value='';
   await enterApp();
   if(CURRENT_USER.mustChange) setTimeout(()=>openTrocarSenha(true), 300);
@@ -1161,9 +1203,10 @@ const ICONS = {
   calc:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M8 6h8M8 11h.01M12 11h.01M16 11h.01M8 15h.01M12 15h.01M16 15h.01M8 19h.01M12 19h.01M16 19h.01"/></svg>',
 };
 const PAGES_BY_ROLE = {
-  master: [ {id:'dashboard',label:'Painel',icon:'grid'}, {id:'usuarios',label:'Usuários',icon:'users'}, {id:'clientes',label:'Clientes',icon:'user'}, {id:'processos',label:'Processos',icon:'folder'}, {id:'prazos',label:'Prazos',icon:'calendar'}, {id:'financeiro',label:'Financeiro',icon:'money'}, {id:'calculo',label:'Cálculo Jurídico',icon:'calc'}, {id:'djen',label:'DJEN',icon:'bell'}, {id:'agenda',label:'Agenda',icon:'calendar'}, {id:'mensagens',label:'Mensagens',icon:'msg'}, {id:'lembretes',label:'Lembretes',icon:'bell'}, {id:'config',label:'Configurações',icon:'cog'} ],
-  socio: [ {id:'dashboard',label:'Painel',icon:'grid'}, {id:'usuarios',label:'Usuários',icon:'users'}, {id:'clientes',label:'Clientes',icon:'user'}, {id:'processos',label:'Processos',icon:'folder'}, {id:'prazos',label:'Prazos',icon:'calendar'}, {id:'financeiro',label:'Financeiro',icon:'money'}, {id:'calculo',label:'Cálculo Jurídico',icon:'calc'}, {id:'djen',label:'DJEN',icon:'bell'}, {id:'agenda',label:'Agenda',icon:'calendar'}, {id:'mensagens',label:'Mensagens',icon:'msg'}, {id:'lembretes',label:'Lembretes',icon:'bell'} ],
-  associado: [ {id:'dashboard',label:'Painel',icon:'grid'}, {id:'clientes',label:'Clientes',icon:'user'}, {id:'processos',label:'Processos',icon:'folder'}, {id:'prazos',label:'Prazos',icon:'calendar'}, {id:'financeiro',label:'Financeiro',icon:'money'}, {id:'calculo',label:'Cálculo Jurídico',icon:'calc'}, {id:'djen',label:'DJEN',icon:'bell'}, {id:'agenda',label:'Agenda',icon:'calendar'}, {id:'mensagens',label:'Mensagens',icon:'msg'}, {id:'lembretes',label:'Lembretes',icon:'bell'} ],
+  master: [ {id:'dashboard',label:'Painel',icon:'grid'}, {id:'usuarios',label:'Usuários',icon:'users'}, {id:'clientes',label:'Clientes',icon:'user'}, {id:'processos',label:'Processos',icon:'folder'}, {id:'prazos',label:'Prazos',icon:'calendar'}, {id:'financeiro',label:'Financeiro',icon:'money'}, {id:'calculo',label:'Cálculo Jurídico',icon:'calc'}, {id:'djen',label:'DJEN',icon:'bell'}, {id:'agenda',label:'Agenda',icon:'calendar'}, {id:'mensagens',label:'Mensagens',icon:'msg'}, {id:'lembretes',label:'Lembretes',icon:'bell'}, {id:'estagio',label:'Estágio',icon:'grid'}, {id:'config',label:'Configurações',icon:'cog'} ],
+  socio: [ {id:'dashboard',label:'Painel',icon:'grid'}, {id:'usuarios',label:'Usuários',icon:'users'}, {id:'clientes',label:'Clientes',icon:'user'}, {id:'processos',label:'Processos',icon:'folder'}, {id:'prazos',label:'Prazos',icon:'calendar'}, {id:'financeiro',label:'Financeiro',icon:'money'}, {id:'calculo',label:'Cálculo Jurídico',icon:'calc'}, {id:'djen',label:'DJEN',icon:'bell'}, {id:'agenda',label:'Agenda',icon:'calendar'}, {id:'mensagens',label:'Mensagens',icon:'msg'}, {id:'lembretes',label:'Lembretes',icon:'bell'}, {id:'estagio',label:'Estágio',icon:'grid'} ],
+  associado: [ {id:'dashboard',label:'Painel',icon:'grid'}, {id:'clientes',label:'Clientes',icon:'user'}, {id:'processos',label:'Processos',icon:'folder'}, {id:'prazos',label:'Prazos',icon:'calendar'}, {id:'financeiro',label:'Financeiro',icon:'money'}, {id:'calculo',label:'Cálculo Jurídico',icon:'calc'}, {id:'djen',label:'DJEN',icon:'bell'}, {id:'agenda',label:'Agenda',icon:'calendar'}, {id:'mensagens',label:'Mensagens',icon:'msg'}, {id:'lembretes',label:'Lembretes',icon:'bell'}, {id:'estagio',label:'Estágio',icon:'grid'} ],
+  estagiario: [ {id:'dashboard',label:'Painel',icon:'grid'}, {id:'processos',label:'Processos',icon:'folder'}, {id:'prazos',label:'Prazos',icon:'calendar'}, {id:'calculo',label:'Cálculo Jurídico',icon:'calc'}, {id:'djen',label:'DJEN',icon:'bell'}, {id:'lembretes',label:'Lembretes',icon:'bell'}, {id:'delegacoes',label:'Delegações',icon:'folder'}, {id:'score',label:'Score',icon:'grid'} ],
   cliente: [ {id:'meus-processos',label:'Meus processos',icon:'folder'}, {id:'agendar-cliente',label:'Agendar visita',icon:'calendar'}, {id:'mensagens',label:'Mensagens',icon:'msg'} ],
 };
 // Só os módulos com seções internas claras ganham submenu — o objetivo é
@@ -1192,6 +1235,9 @@ function buildNav(){
     pages = [...pages.slice(0,1), {id:'agenda-pessoal', label:'Acompanhar agendas', icon:'calendar'}, ...pages.slice(1)];
   } else if(CURRENT_USER.tipo==='socio' || (CURRENT_USER.tipo==='associado' && CURRENT_USER.agendaPessoalLiberada)){
     pages = [...pages.slice(0,1), {id:'agenda-pessoal', label:'Agenda Pessoal', icon:'calendar'}, ...pages.slice(1)];
+  }
+  if((CURRENT_USER.tipo==='socio' || CURRENT_USER.tipo==='associado') && !CURRENT_USER.visualizarEstagio){
+    pages = pages.filter(p=>p.id!=='estagio');
   }
   document.getElementById('nav-list').innerHTML = pages.map(p=>{
     const sub = SUBMENU_MAP[p.id];
@@ -1232,6 +1278,9 @@ function goPage(id){
   if(id==='prazos'){ renderPrazos(); renderAudiencias(); }
   if(id==='processos') renderProcessos();
   if(id==='calculo') renderCalculoJuridico();
+  if(id==='estagio') renderEstagioPage();
+  if(id==='delegacoes') renderDelegacoesEstagiario();
+  if(id==='score') renderScoreEstagiario();
 }
 function setPrazoSecaoTab(tab){
   document.querySelectorAll('.prazo-sec-tab').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
@@ -1250,6 +1299,7 @@ function goToAudiencias(){ goPage('prazos'); setPrazoSecaoTab('audiencias'); }
 function isMaster(){ return CURRENT_USER.tipo==='master'; }
 function isSocio(){ return CURRENT_USER.tipo==='socio'; }
 function isAssociado(){ return CURRENT_USER.tipo==='associado'; }
+function isEstagiario(){ return CURRENT_USER.tipo==='estagiario'; }
 function isCliente(){ return CURRENT_USER.tipo==='cliente'; }
 function advogadosVisiveis(){ // sócios e associados que o usuário atual pode ver/gerenciar
   if(isMaster() || isSocio()) return DB.usuarios.filter(u=>u.tipo==='socio'||u.tipo==='associado');
@@ -1264,6 +1314,7 @@ function meusClientes(){ // clientes que o usuário atual pode ver
 function meusProcessosVisiveis(){
   if(isMaster()||isSocio()) return DB.processos;
   if(isAssociado()){ const idsClientes = meusClientes().map(c=>c.id); return DB.processos.filter(p=>idsProfissionaisRegistro(p).includes(CURRENT_USER.id) || idsClientes.includes(p.clienteId)); }
+  if(isEstagiario()) return DB.processos; // o backend já manda só os processos vinculados a ele via delegação
   return [];
 }
 function clienteDoUsuarioLogado(){ return DB.clientes.find(c=>c.id===CURRENT_USER.clienteId); }
@@ -1338,16 +1389,17 @@ async function submitAgendamentoPublico(){
 function podeGerenciarUsuarios(){ return isMaster()||isSocio(); }
 function openUsuarioForm(id){
   if(!podeGerenciarUsuarios()){ showToast('Sem permissão.'); return; }
-  const u = id? DB.usuarios.find(x=>x.id===id) : {tipo: isMaster()? 'socio':'associado', nome:'', login:'', oab:'', ativo:true, nacionalidade:'brasileiro(a)', estadoCivil:'solteiro(a)', rg:'', cpf:'', telefone:'', endereco:''};
-  const tiposPermitidos = isMaster()? ['socio','associado'] : ['associado'];
+  const u = id? DB.usuarios.find(x=>x.id===id) : {tipo: isMaster()? 'socio':'associado', nome:'', login:'', oab:'', ativo:true, nacionalidade:'brasileiro(a)', estadoCivil:'solteiro(a)', rg:'', cpf:'', telefone:'', endereco:'', remunerado:false, formacaoEstagiario:'estudante', estagiarioVisivelPara:'todos', tutoresIds:[]};
+  const tiposPermitidos = isMaster()? ['socio','associado','estagiario'] : ['associado','estagiario'];
+  const tutoresDisponiveis = DB.usuarios.filter(x=>x.tipo==='socio'||x.tipo==='associado');
   const body = `
     <div class="field-row">
       <div class="field"><label>Nome completo</label><input id="uf-nome" value="${escapeHtml(u.nome)}"></div>
-      <div class="field"><label>Perfil</label><select id="uf-tipo" onchange="const c=document.getElementById('uf-agenda-pessoal'); if(this.value==='socio'){c.checked=true;c.disabled=true;}else{c.disabled=false;}">${tiposPermitidos.map(t=>`<option value="${t}" ${u.tipo===t?'selected':''}>${t==='socio'?'Sócio':'Associado'}</option>`).join('')}</select></div>
+      <div class="field"><label>Perfil</label><select id="uf-tipo" onchange="atualizarCamposFormUsuario()">${tiposPermitidos.map(t=>`<option value="${t}" ${u.tipo===t?'selected':''}>${{socio:'Sócio',associado:'Associado',estagiario:'Estagiário'}[t]}</option>`).join('')}</select></div>
     </div>
     <div class="field-row">
       <div class="field"><label>Login</label><input id="uf-login" value="${escapeHtml(u.login)}" placeholder="ex: joao.silva" ${id?'disabled':''}></div>
-      <div class="field"><label>OAB</label><input id="uf-oab" value="${escapeHtml(u.oab)}" placeholder="OAB/BA 00000"></div>
+      <div class="field" id="uf-oab-box"><label>OAB</label><input id="uf-oab" value="${escapeHtml(u.oab)}" placeholder="OAB/BA 00000"></div>
     </div>
     <div class="field-row">
       <div class="field"><label>Telefone</label><input id="uf-telefone" value="${escapeHtml(u.telefone)}" placeholder="(73) 9 9999-9999"></div>
@@ -1365,15 +1417,51 @@ function openUsuarioForm(id){
         <div class="field"><label>CPF</label><input id="uf-cpf" value="${escapeHtml(u.cpf)}"></div>
       </div>
     </fieldset>
+    <div id="uf-estagiario-box" style="display:none;">
+      <fieldset><legend>Dados do estágio</legend>
+        <div class="field-row">
+          <div class="field"><label>Formação</label><select id="uf-formacao-estagiario">
+            <option value="estudante" ${u.formacaoEstagiario==='estudante'?'selected':''}>Estudante de Direito</option>
+            <option value="bacharel" ${u.formacaoEstagiario==='bacharel'?'selected':''}>Bacharel em Direito</option>
+          </select></div>
+          <div class="field"><label>Visível para${ajuda('Quem mais no escritório pode ver que este estagiário existe e acompanhar as delegações dele — além de quem for tutor direto, que sempre vê.')}</label><select id="uf-estagiario-visivel">
+            <option value="todos" ${u.estagiarioVisivelPara==='todos'?'selected':''}>Todos (sócios e associados)</option>
+            <option value="socio" ${u.estagiarioVisivelPara==='socio'?'selected':''}>Só sócios</option>
+            <option value="associado" ${u.estagiarioVisivelPara==='associado'?'selected':''}>Só associados</option>
+          </select></div>
+        </div>
+        <div class="field"><label><input type="checkbox" id="uf-remunerado" style="width:auto; margin-right:6px;" ${u.remunerado?'checked':''}> Estágio remunerado${ajuda('O valor ou percentual da remuneração é definido depois, processo por processo, ao delegar uma missão vinculada a um caso — não é um valor fixo aqui no cadastro.')}</label></div>
+        <div class="field"><label>Tutor(es) / responsável(is) direto(s)</label>
+          <div style="display:flex; flex-direction:column; gap:4px; margin-top:4px; max-height:140px; overflow-y:auto;">
+            ${tutoresDisponiveis.map(t=>`<label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" class="uf-tutor-chk" value="${t.id}" style="width:auto;" ${(u.tutoresIds||[]).includes(t.id)?'checked':''}> ${escapeHtml(t.nome)} (${t.tipo==='socio'?'Sócio':'Associado'})</label>`).join('') || '<span class="hint">Nenhum sócio/associado cadastrado ainda.</span>'}
+          </div>
+        </div>
+      </fieldset>
+    </div>
     ${!id? `<div class="field"><label>Senha inicial</label><input type="password" id="uf-senha" placeholder="Defina uma senha temporária"></div>` : ''}
-    <div class="field"><label><input type="checkbox" id="uf-agenda-pessoal" style="width:auto; margin-right:6px;" ${u.tipo==='socio'||u.agendaPessoalLiberada?'checked':''} ${u.tipo==='socio'?'disabled':''}> Agenda pessoal${ajuda('Libera a aba "Agenda Pessoal" para este usuário — um mini-painel só dele, para anotar clientes, processos, audiências e prazos particulares. Sócios sempre têm acesso; para associados, você decide aqui.')}</label></div>
+    <div class="field" id="uf-agenda-box"><label><input type="checkbox" id="uf-agenda-pessoal" style="width:auto; margin-right:6px;" ${u.tipo==='socio'||u.tipo==='estagiario'||u.agendaPessoalLiberada?'checked':''} ${u.tipo==='socio'||u.tipo==='estagiario'?'disabled':''}> Agenda pessoal${ajuda('Libera a aba "Agenda Pessoal" para este usuário — um mini-painel só dele, para anotar clientes, processos, audiências e prazos particulares. Sócios e estagiários sempre têm acesso; para associados, você decide aqui.')}</label></div>
+    <div class="field" id="uf-estagio-visualizar-box" style="display:none;"><label><input type="checkbox" id="uf-visualizar-estagio" style="width:auto; margin-right:6px;" ${u.visualizarEstagio?'checked':''}> Visualizar Estágio${ajuda('Libera o módulo "Estágio" para este usuário — onde é possível delegar missões a estagiários, acompanhar entregas e avaliar o desempenho.')}</label></div>
     <div class="field"><label>Situação</label><select id="uf-ativo"><option value="true" ${u.ativo!==false?'selected':''}>Ativo</option><option value="false" ${u.ativo===false?'selected':''}>Inativo</option></select></div>
   `;
   openModal(id? 'Editar usuário' : 'Novo usuário', body, async ()=>{
     const nome = document.getElementById('uf-nome').value.trim();
     const login = document.getElementById('uf-login').value.trim();
     if(!nome || !login){ showToast('Preencha nome e login.'); return; }
-    const data = { nome, tipo: document.getElementById('uf-tipo').value, oab: document.getElementById('uf-oab').value.trim(), ativo: document.getElementById('uf-ativo').value==='true', nacionalidade: document.getElementById('uf-nac').value.trim(), estadoCivil: document.getElementById('uf-ec').value.trim(), rg: document.getElementById('uf-rg').value.trim(), cpf: document.getElementById('uf-cpf').value.trim(), telefone: document.getElementById('uf-telefone').value.trim(), endereco: document.getElementById('uf-endereco').value.trim(), agendaPessoalLiberada: document.getElementById('uf-agenda-pessoal').checked };
+    const tipo = document.getElementById('uf-tipo').value;
+    const data = {
+      nome, tipo, oab: document.getElementById('uf-oab').value.trim(), ativo: document.getElementById('uf-ativo').value==='true',
+      nacionalidade: document.getElementById('uf-nac').value.trim(), estadoCivil: document.getElementById('uf-ec').value.trim(),
+      rg: document.getElementById('uf-rg').value.trim(), cpf: document.getElementById('uf-cpf').value.trim(),
+      telefone: document.getElementById('uf-telefone').value.trim(), endereco: document.getElementById('uf-endereco').value.trim(),
+      agendaPessoalLiberada: document.getElementById('uf-agenda-pessoal').checked,
+      visualizarEstagio: document.getElementById('uf-visualizar-estagio')?.checked || false,
+    };
+    if(tipo==='estagiario'){
+      data.remunerado = document.getElementById('uf-remunerado').checked;
+      data.formacaoEstagiario = document.getElementById('uf-formacao-estagiario').value;
+      data.estagiarioVisivelPara = document.getElementById('uf-estagiario-visivel').value;
+      data.tutoresIds = Array.from(document.querySelectorAll('.uf-tutor-chk:checked')).map(el=>el.value);
+    }
     try{
       if(id){
         await apiFetch('/api/usuarios/'+id, { method:'PATCH', body: JSON.stringify(data) });
@@ -1385,6 +1473,15 @@ function openUsuarioForm(id){
       renderUsuarios(); closeModal(); showToast('Usuário salvo.');
     }catch(e){ showToast(e.message || 'Não foi possível salvar o usuário.'); }
   });
+  atualizarCamposFormUsuario();
+}
+function atualizarCamposFormUsuario(){
+  const tipo = document.getElementById('uf-tipo').value;
+  document.getElementById('uf-estagiario-box').style.display = tipo==='estagiario'? 'block':'none';
+  document.getElementById('uf-oab-box').style.display = tipo==='estagiario'? 'none':'block';
+  document.getElementById('uf-estagio-visualizar-box').style.display = (tipo==='socio'||tipo==='associado')? 'block':'none';
+  const chkAgenda = document.getElementById('uf-agenda-pessoal');
+  if(tipo==='socio'||tipo==='estagiario'){ chkAgenda.checked=true; chkAgenda.disabled=true; } else { chkAgenda.disabled=false; }
 }
 async function redefinirSenha(id){
   const u = DB.usuarios.find(x=>x.id===id); if(!u) return;
@@ -3907,7 +4004,7 @@ async function gerarDocumentoPccr(){
   }catch(e){ status.innerHTML = `<div class="empty">${escapeHtml(e.message||'Não foi possível gerar o documento.')}</div>`; }
 }
 
-function renderFinanceiro(){
+async function renderFinanceiro(){
   const kpiGrid = document.getElementById('fin-kpi-grid'); if(!kpiGrid) return;
   const kpiGrid2 = document.getElementById('fin-kpi-grid-2');
   const podeVerCaixa = isMaster()||isSocio();
@@ -3945,6 +4042,19 @@ function renderFinanceiro(){
       caixas.push(`<div class="kpi kpi-danger" style="cursor:pointer;" onclick="abrirDetalheKpi('despesas-mes')"><div class="label">Despesas no mês</div><div class="value">${vmoney(s.despesasMes)}</div><div class="sub">total ${vmoney(s.totalDespesas)} acumulado</div></div>`);
       caixas.push(`<div class="kpi" style="cursor:pointer;" onclick="abrirDetalheKpi('saldo-mes')"><div class="label">Saldo do mês</div><div class="value" style="color:${s.saldoMes>=0?'var(--success)':'var(--danger)'}">${vmoney(s.saldoMes)}</div><div class="sub">parte do escritório − despesas</div></div>`);
       caixas.push(`<div class="kpi kpi-info" style="cursor:pointer;" onclick="abrirDetalheKpi('caixa-acumulado')"><div class="label">Caixa do escritório (acumulado)${ajuda('Clique para ver o detalhamento completo, incluindo o total a receber (líquido) acumulado e quanto sócio(s), escritório e cada associado já receberam historicamente.')}</div><div class="value" style="color:${s.caixaAcumulado>=0?'var(--success)':'var(--danger)'}">${vmoney(s.caixaAcumulado)}</div><div class="sub">parte do escritório recebida historicamente − despesas totais</div></div>`);
+      let remuneracaoEstagiarios = 0;
+      try{
+        const delegacoesFin = await apiFetch('/api/delegacoes');
+        delegacoesFin.forEach(d=>{
+          if(!d.remuneracaoTipo || !d.remuneracaoValor) return;
+          if(d.remuneracaoTipo==='valor') remuneracaoEstagiarios += d.remuneracaoValor;
+          else if(d.remuneracaoTipo==='percentual' && d.processoId){
+            const hon = DB.honorarios.find(h=>h.processoId===d.processoId);
+            if(hon) remuneracaoEstagiarios += hon.valorTotal * (d.remuneracaoValor/100);
+          }
+        });
+      }catch(e){ /* silencioso — não trava o financeiro por causa disso */ }
+      caixas.push(`<div class="kpi kpi-danger" style="cursor:pointer;" onclick="goPage('estagio')"><div class="label">Estagiários${ajuda('Soma da remuneração combinada em cada missão delegada a estagiários remunerados — valor fixo ou percentual sobre o processo vinculado. Sai do que sobraria para o escritório.')}</div><div class="value">${vmoney(remuneracaoEstagiarios)}</div><div class="sub">remuneração combinada nas delegações</div></div>`);
     }
   }
   kpiGrid.innerHTML = caixas.slice(0,4).join('');
@@ -4601,6 +4711,288 @@ let DJEN_STATUS_TAB = 'pendente';
 let DJEN_RESULTADOS_ATUAIS = [];
 let DJEN_CAPTURADAS_CACHE = [];
 let DJEN_INICIALIZADO = false;
+/* ============================================================
+   ESTÁGIO — delegação de missões a estagiários, apontamentos, arquivos e
+   avaliação com pontuação (visão de quem delega: master/sócio/associado)
+   ============================================================ */
+let DELEGACOES_CACHE = [];
+let ESTAGIO_STATUS_TAB = '';
+function meusEstagiarios(){
+  // Sócio/master veem todo mundo (respeitando "visível para"); associado só
+  // os estagiários em que ele é tutor, ou com "visível para" incluindo associado/todos.
+  return DB.usuarios.filter(u=>{
+    if(u.tipo!=='estagiario') return false;
+    if(isMaster()) return true;
+    if(isSocio()) return u.estagiarioVisivelPara!=='associado' ? true : (u.tutoresIds||[]).includes(CURRENT_USER.id);
+    if(isAssociado()) return (u.tutoresIds||[]).includes(CURRENT_USER.id) || u.estagiarioVisivelPara==='associado' || u.estagiarioVisivelPara==='todos';
+    return false;
+  });
+}
+async function renderEstagioPage(){
+  try{ DELEGACOES_CACHE = await apiFetch('/api/delegacoes'); }
+  catch(e){ DELEGACOES_CACHE = []; showToast(e.message||'Não foi possível carregar as delegações.'); }
+  renderListaEstagio();
+  renderPainelEstagiarios();
+}
+function renderPainelEstagiarios(){
+  const box = document.getElementById('estagio-estagiarios-lista'); if(!box) return;
+  const estagiarios = meusEstagiarios();
+  if(!estagiarios.length){ box.innerHTML = '<div class="empty">Nenhum estagiário cadastrado ainda — crie um em Usuários.</div>'; return; }
+  box.innerHTML = estagiarios.map(e=>{
+    const minhas = DELEGACOES_CACHE.filter(d=>d.estagiarioIds.includes(e.id));
+    const concluidas = minhas.filter(d=>d.status==='concluida');
+    const notas = concluidas.map(d=>d.avaliacao?.notaFinal).filter(n=>n!=null);
+    const notaMedia = notas.length? Math.round((notas.reduce((s,n)=>s+n,0)/notas.length)*10)/10 : null;
+    return `<div class="list-row">
+      <div><div class="rtitle">${escapeHtml(e.nome)}</div><div class="rsub">${e.formacaoEstagiario==='bacharel'?'Bacharel':'Estudante'} · ${e.remunerado?'Remunerado':'Não remunerado'} · ${minhas.length} missão(ões) · nota média: ${notaMedia!=null?notaMedia+'/10':'—'}</div></div>
+      <div class="rmeta">
+        <label style="font-size:11px; display:block;"><input type="checkbox" style="width:auto;" ${e.relatorioLiberado?'checked':''} onchange="toggleLiberacaoEstagiario('${e.id}','relatorioLiberado',this.checked)"> Liberar relatório</label>
+        <label style="font-size:11px; display:block;"><input type="checkbox" style="width:auto;" ${e.certificadoLiberado?'checked':''} onchange="toggleLiberacaoEstagiario('${e.id}','certificadoLiberado',this.checked)"> Liberar certificado</label>
+      </div>
+    </div>`;
+  }).join('');
+}
+async function toggleLiberacaoEstagiario(id, campo, valor){
+  try{
+    await apiFetch('/api/usuarios/'+id, { method:'PATCH', body: JSON.stringify({[campo]: valor}) });
+    const u = DB.usuarios.find(x=>x.id===id); if(u) u[campo] = valor;
+    showToast('Atualizado.');
+  }catch(e){ showToast(e.message||'Não foi possível atualizar.'); }
+}
+function setEstagioStatusTab(status){
+  ESTAGIO_STATUS_TAB = status;
+  document.querySelectorAll('#estagio-status-tabs .fin-tab').forEach(b=>b.classList.toggle('active', b.dataset.status===status));
+  renderListaEstagio();
+}
+function renderListaEstagio(){
+  const box = document.getElementById('estagio-lista'); if(!box) return;
+  let lista = DELEGACOES_CACHE.slice();
+  if(ESTAGIO_STATUS_TAB) lista = lista.filter(d=>d.status===ESTAGIO_STATUS_TAB);
+  lista.sort((a,b)=>(b.criadoEm||'').localeCompare(a.criadoEm||''));
+  if(!lista.length){ box.innerHTML = '<div class="empty"><div class="big">🗂️</div>Nenhuma delegação nesta situação.</div>'; return; }
+  box.innerHTML = lista.map(d=>renderCardDelegacao(d, true)).join('');
+}
+const STATUS_DELEGACAO_LABEL = {pendente:'Pendente', entregue:'Entregue — aguardando avaliação', concluida:'Cumprida', nao_cumprida:'Não cumprida'};
+const STATUS_DELEGACAO_TAG = {pendente:'pendente', entregue:'solicitado', concluida:'cumprido', nao_cumprida:'perdido'};
+function renderCardDelegacao(d, comAvaliacao){
+  const nomesEstagiarios = d.estagiarioIds.map(id=>usuarioNome(id)).join(', ');
+  const proc = d.processoId? DB.processos.find(p=>p.id===d.processoId) : null;
+  const podeAvaliar = comAvaliacao && (d.status==='pendente'||d.status==='entregue') && (isMaster()||isSocio()||isAssociado());
+  const podeApagarApontamento = isMaster()||isSocio();
+  return `<div class="panel" style="margin-bottom:12px;" id="delegacao-${d.id}">
+    <div style="display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+      <div>
+        <strong>${escapeHtml(d.titulo)}</strong>
+        <div class="rsub">${escapeHtml(nomesEstagiarios)}${proc? ' · '+escapeHtml(proc.numero)+' — '+escapeHtml(clienteNome(proc.clienteId)) : (d.clienteId? ' · '+escapeHtml(clienteNome(d.clienteId)) : '')}</div>
+        ${d.prazoData? `<div class="rsub">Prazo: ${fmtDate(d.prazoData)}${d.prazoHora? ' às '+d.prazoHora:''}</div>` : ''}
+      </div>
+      <span class="tag tag-${STATUS_DELEGACAO_TAG[d.status]}">${STATUS_DELEGACAO_LABEL[d.status]}</span>
+    </div>
+    ${d.descricao? `<p style="margin-top:8px; font-size:13px; color:var(--ink-soft);">${escapeHtml(d.descricao)}</p>` : ''}
+    ${d.avaliacao? `<div class="hint" style="margin-top:8px;"><strong>Nota: ${d.avaliacao.notaFinal!=null? d.avaliacao.notaFinal+'/10':'—'}</strong>${d.avaliacao.observacao? ' — '+escapeHtml(d.avaliacao.observacao):''}</div>` : ''}
+    <details style="margin-top:10px;"><summary style="cursor:pointer; font-size:12.5px; color:var(--gold-dark);">Apontamentos e arquivos (${d.apontamentos.length} msg, ${d.arquivos.length} arquivo(s))</summary>
+      <div style="margin-top:8px;">
+        ${d.apontamentos.map(a=>`<div class="list-row"><div><div class="rtitle" style="font-size:12px;">${escapeHtml(usuarioNome(a.autorId))}</div><div class="rsub">${escapeHtml(a.texto)}</div></div><div class="rmeta">${new Date(a.data).toLocaleString('pt-BR')}${podeApagarApontamento? `<br><span style="cursor:pointer; text-decoration:underline; color:var(--danger); font-size:11px;" onclick="apagarApontamentoDelegacao('${d.id}','${a.id}')">apagar</span>`:''}</div></div>`).join('') || '<div class="empty" style="padding:8px;">Nenhum apontamento ainda.</div>'}
+        <div style="display:flex; gap:8px; margin-top:8px;"><input type="text" id="apont-input-${d.id}" placeholder="Escrever apontamento..." onkeydown="if(event.key==='Enter')enviarApontamentoDelegacao('${d.id}')"><button class="btn btn-ghost btn-sm" onclick="enviarApontamentoDelegacao('${d.id}')">Enviar</button></div>
+        <div style="margin-top:12px;">
+          <strong style="font-size:12px;">Arquivos</strong>
+          ${d.arquivos.map(a=>`<div class="list-row"><div><div class="rtitle" style="font-size:12px;">${escapeHtml(a.nome)}</div><div class="rsub">enviado por ${escapeHtml(usuarioNome(a.enviadoPor))} em ${new Date(a.enviadoEm).toLocaleString('pt-BR')}</div></div><div class="rmeta"><button class="icon-btn btn-sm" onclick="baixarArquivoDelegacao('${d.id}','${a.id}','${escapeHtml(a.nome)}')" title="Baixar">📥</button><button class="icon-btn btn-sm danger" onclick="apagarArquivoDelegacao('${d.id}','${a.id}')" title="Apagar">🗑</button></div></div>`).join('') || '<div class="empty" style="padding:8px;">Nenhum arquivo enviado ainda.</div>'}
+          <input type="file" id="arquivo-input-${d.id}" style="margin-top:6px;" onchange="uploadArquivoDelegacao('${d.id}', this)">
+        </div>
+      </div>
+    </details>
+    ${podeAvaliar? `<div style="margin-top:10px; display:flex; gap:8px;">
+      <button class="btn btn-gold btn-sm" onclick="abrirAvaliacaoMissao('${d.id}', true)">✔️ Marcar como cumprida</button>
+      <button class="btn btn-ghost btn-sm" onclick="abrirAvaliacaoMissao('${d.id}', false)">✖️ Marcar como não cumprida</button>
+    </div>` : ''}
+  </div>`;
+}
+function abrirNovaDelegacaoForm(){
+  const estagiarios = meusEstagiarios();
+  if(!estagiarios.length){ showToast('Nenhum estagiário disponível para delegar. Cadastre um estagiário primeiro em Usuários.'); return; }
+  const clientes = meusClientes();
+  const body = `
+    <div class="field"><label>Título da missão</label><input id="del-titulo" placeholder="Ex: Produzir petição inicial"></div>
+    <div class="field"><label>Descrição / instruções</label><textarea id="del-descricao" placeholder="Detalhe o que precisa ser feito..."></textarea></div>
+    <div class="field-row">
+      <div class="field"><label>Cliente (opcional)</label><select id="del-cliente" onchange="atualizarProcessosDelegacao()"><option value="">— nenhum —</option>${clientes.map(c=>`<option value="${c.id}">${escapeHtml(c.nome)}</option>`).join('')}</select></div>
+      <div class="field"><label>Processo (opcional)</label><select id="del-processo"><option value="">— nenhum —</option></select></div>
+    </div>
+    <div class="field"><label>Estagiário(s)${ajuda('Pode selecionar mais de um — todos trabalham juntos na mesma missão.')}</label>
+      <div style="display:flex; flex-direction:column; gap:4px; margin-top:4px;">
+        ${estagiarios.map(e=>`<label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" class="del-estag-chk" value="${e.id}" data-remunerado="${!!e.remunerado}" style="width:auto;" onchange="atualizarCampoRemuneracaoDelegacao()"> ${escapeHtml(e.nome)}${e.remunerado?' 💰':''}</label>`).join('')}
+      </div>
+    </div>
+    <div class="field-row" id="del-remuneracao-box" style="display:none;">
+      <div class="field"><label>Remuneração desta missão</label><select id="del-remuneracao-tipo">
+        <option value="valor">Valor fixo (R$)</option>
+        <option value="percentual">Percentual do processo (%)</option>
+      </select></div>
+      <div class="field"><label>Valor</label><input type="number" step="0.01" id="del-remuneracao-valor" placeholder="0,00"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Prazo máximo — data</label><input type="date" id="del-prazo-data" value="${todayISO()}"></div>
+      <div class="field"><label>Horário máximo</label><input type="time" id="del-prazo-hora" value="18:00"></div>
+    </div>
+  `;
+  openModal('Nova delegação', body, async ()=>{
+    const titulo = document.getElementById('del-titulo').value.trim();
+    const estagiarioIds = Array.from(document.querySelectorAll('.del-estag-chk:checked')).map(el=>el.value);
+    if(!titulo){ showToast('Informe o título da missão.'); return; }
+    if(!estagiarioIds.length){ showToast('Selecione ao menos um estagiário.'); return; }
+    const remuneracaoBoxVisivel = document.getElementById('del-remuneracao-box').style.display!=='none';
+    try{
+      await apiFetch('/api/delegacoes', { method:'POST', body: JSON.stringify({
+        titulo, descricao: document.getElementById('del-descricao').value.trim(),
+        clienteId: document.getElementById('del-cliente').value || null,
+        processoId: document.getElementById('del-processo').value || null,
+        estagiarioIds, prazoData: document.getElementById('del-prazo-data').value, prazoHora: document.getElementById('del-prazo-hora').value,
+        remuneracaoTipo: remuneracaoBoxVisivel? document.getElementById('del-remuneracao-tipo').value : null,
+        remuneracaoValor: remuneracaoBoxVisivel? document.getElementById('del-remuneracao-valor').value : null,
+      })});
+      await renderEstagioPage(); closeModal(); showToast('Missão delegada.');
+    }catch(e){ showToast(e.message||'Não foi possível delegar.'); }
+  });
+}
+function atualizarCampoRemuneracaoDelegacao(){
+  const algumRemunerado = Array.from(document.querySelectorAll('.del-estag-chk:checked')).some(el=>el.dataset.remunerado==='true');
+  document.getElementById('del-remuneracao-box').style.display = algumRemunerado? 'flex':'none';
+}
+function atualizarProcessosDelegacao(){
+  const clienteId = document.getElementById('del-cliente').value;
+  const sel = document.getElementById('del-processo');
+  const processos = meusProcessosVisiveis().filter(p=>!clienteId || p.clienteId===clienteId);
+  sel.innerHTML = '<option value="">— nenhum —</option>' + processos.map(p=>`<option value="${p.id}">${escapeHtml(p.numero)}</option>`).join('');
+}
+async function enviarApontamentoDelegacao(id){
+  const input = document.getElementById('apont-input-'+id);
+  const texto = input.value.trim(); if(!texto) return;
+  try{
+    await apiFetch('/api/delegacoes/'+id+'/apontamento', { method:'POST', body: JSON.stringify({texto}) });
+    input.value='';
+    if(document.getElementById('page-estagio').classList.contains('active')) await renderEstagioPage();
+    else await renderDelegacoesEstagiario();
+  }catch(e){ showToast(e.message||'Não foi possível enviar.'); }
+}
+async function apagarApontamentoDelegacao(id, apontId){
+  if(!confirm('Apagar este apontamento?')) return;
+  try{
+    await apiFetch('/api/delegacoes/'+id+'/apontamento/'+apontId, { method:'DELETE' });
+    if(document.getElementById('page-estagio').classList.contains('active')) await renderEstagioPage();
+    else await renderDelegacoesEstagiario();
+  }catch(e){ showToast(e.message||'Não foi possível apagar.'); }
+}
+function lerArquivoComoBase64(file){
+  return new Promise((resolve,reject)=>{
+    const reader = new FileReader();
+    reader.onload = ()=>resolve(reader.result.split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+async function uploadArquivoDelegacao(id, inputEl){
+  const file = inputEl.files[0]; if(!file) return;
+  if(file.size > 10*1024*1024){ showToast('Arquivo muito grande (máximo 10MB).'); inputEl.value=''; return; }
+  showToast('Enviando arquivo...');
+  try{
+    const conteudoBase64 = await lerArquivoComoBase64(file);
+    await apiFetch('/api/delegacoes/'+id+'/arquivo', { method:'POST', body: JSON.stringify({nomeArquivo:file.name, conteudoBase64}) });
+    if(document.getElementById('page-estagio').classList.contains('active')) await renderEstagioPage();
+    else await renderDelegacoesEstagiario();
+    showToast('Arquivo enviado.');
+  }catch(e){ showToast(e.message||'Não foi possível enviar o arquivo.'); }
+}
+async function baixarArquivoDelegacao(id, arquivoId, nome){
+  try{
+    const arq = await apiFetch('/api/delegacoes/'+id+'/arquivo/'+arquivoId);
+    const byteChars = atob(arq.conteudoBase64);
+    const bytes = new Uint8Array(byteChars.length);
+    for(let i=0;i<byteChars.length;i++) bytes[i] = byteChars.charCodeAt(i);
+    const blob = new Blob([bytes]);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href=url; a.download=nome; document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  }catch(e){ showToast(e.message||'Não foi possível baixar o arquivo.'); }
+}
+async function apagarArquivoDelegacao(id, arquivoId){
+  if(!confirm('Apagar este arquivo? Baixe antes, se ainda não baixou.')) return;
+  try{
+    await apiFetch('/api/delegacoes/'+id+'/arquivo/'+arquivoId, { method:'DELETE' });
+    if(document.getElementById('page-estagio').classList.contains('active')) await renderEstagioPage();
+    else await renderDelegacoesEstagiario();
+  }catch(e){ showToast(e.message||'Não foi possível apagar.'); }
+}
+let CRITERIOS_AVALIACAO_CACHE = null;
+async function abrirAvaliacaoMissao(id, cumprida){
+  if(!CRITERIOS_AVALIACAO_CACHE){
+    try{ CRITERIOS_AVALIACAO_CACHE = await apiFetch('/api/delegacoes/criterios'); }
+    catch(e){ showToast('Não foi possível carregar os critérios de avaliação.'); return; }
+  }
+  const opcoesDificuldade = [['baixa','Baixa'],['razoavel','Razoável'],['alta','Alta'],['altissima','Altíssima'],['ignorado','Não avaliar']];
+  const body = `
+    <div class="hint" style="margin-bottom:10px;">${cumprida? '✔️ Marcando como cumprida' : '✖️ Marcando como não cumprida'} — avalie os critérios abaixo (opcional, mas gera a nota final e entra no relatório do estagiário).</div>
+    ${CRITERIOS_AVALIACAO_CACHE.criterios.map(c=>`
+      <div class="field"><label>${escapeHtml(c.label)}</label>
+        <select id="aval-${c.chave}">${opcoesDificuldade.map(([v,l])=>`<option value="${v}" ${v==='ignorado'?'selected':''}>${l}</option>`).join('')}</select>
+      </div>
+    `).join('')}
+    <div class="field"><label>Observação (opcional)</label><textarea id="aval-observacao" placeholder="Como foi a entrega, o que pode melhorar..."></textarea></div>
+  `;
+  openModal('Avaliar missão', body, async ()=>{
+    const respostas = {};
+    CRITERIOS_AVALIACAO_CACHE.criterios.forEach(c=>{ respostas[c.chave] = document.getElementById('aval-'+c.chave).value; });
+    try{
+      await apiFetch('/api/delegacoes/'+id+'/avaliar', { method:'PATCH', body: JSON.stringify({cumprida, respostas, observacao: document.getElementById('aval-observacao').value.trim()}) });
+      await renderEstagioPage(); closeModal(); showToast('Avaliação registrada.');
+    }catch(e){ showToast(e.message||'Não foi possível avaliar.'); }
+  });
+}
+async function renderDelegacoesEstagiario(){
+  const box = document.getElementById('delegacoes-lista'); if(!box) return;
+  let lista = [];
+  try{ lista = await apiFetch('/api/delegacoes'); }
+  catch(e){ showToast(e.message||'Não foi possível carregar suas delegações.'); }
+  lista.sort((a,b)=>(b.criadoEm||'').localeCompare(a.criadoEm||''));
+  DELEGACOES_CACHE = lista; // reaproveita os mesmos handlers de apontamento/arquivo
+  box.innerHTML = lista.length? lista.map(d=>renderCardDelegacao(d, false)).join('') : '<div class="empty"><div class="big">🗂️</div>Nenhuma missão delegada a você ainda.</div>';
+}
+async function renderScoreEstagiario(){
+  let lista = [];
+  try{ lista = await apiFetch('/api/delegacoes'); }
+  catch(e){ showToast(e.message||'Não foi possível carregar seu score.'); }
+  const concluidas = lista.filter(d=>d.status==='concluida');
+  const naoCumpridas = lista.filter(d=>d.status==='nao_cumprida');
+  const notas = concluidas.map(d=>d.avaliacao?.notaFinal).filter(n=>n!=null);
+  const notaMedia = notas.length? Math.round((notas.reduce((s,n)=>s+n,0)/notas.length)*10)/10 : null;
+  document.getElementById('score-kpi-grid').innerHTML = `
+    <div class="kpi"><div class="label">Total de missões</div><div class="value">${lista.length}</div></div>
+    <div class="kpi kpi-success"><div class="label">Cumpridas</div><div class="value">${concluidas.length}</div></div>
+    <div class="kpi kpi-danger"><div class="label">Não cumpridas</div><div class="value">${naoCumpridas.length}</div></div>
+    <div class="kpi kpi-info"><div class="label">Nota média</div><div class="value">${notaMedia!=null? notaMedia+'/10' : '—'}</div></div>
+  `;
+  const eu = DB.usuarios?.find(u=>u.id===CURRENT_USER.id) || CURRENT_USER;
+  const relatorioLiberado = eu.relatorioLiberado;
+  const certificadoLiberado = eu.certificadoLiberado;
+  document.getElementById('score-liberacoes-panel').innerHTML = `
+    <h3>Relatório final e certificado</h3>
+    <div class="hint" style="margin-bottom:10px;">Ficam disponíveis para download aqui assim que seu tutor/responsável liberar.</div>
+    <div style="display:flex; gap:10px; flex-wrap:wrap;">
+      <button class="btn ${relatorioLiberado?'btn-gold':'btn-ghost'}" ${relatorioLiberado?'':'disabled'} onclick="baixarMeuRelatorioEstagio()">📄 ${relatorioLiberado?'Baixar relatório final':'Relatório ainda não liberado'}</button>
+      <button class="btn ${certificadoLiberado?'btn-gold':'btn-ghost'}" ${certificadoLiberado?'':'disabled'} onclick="baixarMeuCertificadoEstagio()">🎓 ${certificadoLiberado?'Baixar certificado':'Certificado ainda não liberado'}</button>
+    </div>
+  `;
+  const hist = document.getElementById('score-historico');
+  hist.innerHTML = lista.length? lista.map(d=>`<div class="list-row"><div><div class="rtitle">${escapeHtml(d.titulo)}</div><div class="rsub">${STATUS_DELEGACAO_LABEL[d.status]}${d.avaliacao?.observacao? ' — '+escapeHtml(d.avaliacao.observacao):''}</div></div><div class="rmeta">${d.avaliacao?.notaFinal!=null? d.avaliacao.notaFinal+'/10' : '—'}</div></div>`).join('') : '<div class="empty">Nenhuma missão ainda.</div>';
+}
+function baixarMeuRelatorioEstagio(){
+  baixarArquivoPost('/api/documentos/estagio/relatorio', { estagiarioId: CURRENT_USER.id }, 'Relatorio Final de Estagio.docx');
+}
+function baixarMeuCertificadoEstagio(){
+  const tutores = (DB.usuarios?.find(u=>u.id===CURRENT_USER.id)?.tutoresIds)||[];
+  const advogadoResponsavelId = tutores[0];
+  if(!advogadoResponsavelId){ showToast('Nenhum tutor/responsável definido para assinar o certificado.'); return; }
+  baixarArquivoPost('/api/documentos/estagio/certificado', { estagiarioId: CURRENT_USER.id, advogadoResponsavelId }, 'Certificado de Estagio.docx');
+}
 function renderDjenPage(){
   if(!DJEN_INICIALIZADO){
     DJEN_INICIALIZADO = true;
@@ -5082,7 +5474,7 @@ document.getElementById('today-label').textContent = new Date().toLocaleDateStri
   if(AUTH_TOKEN){
     try{
       const usuario = await apiFetch('/api/me');
-      CURRENT_USER = { id:usuario.id, tipo:usuario.tipo, nome:usuario.nome, clienteId:usuario.clienteId||null, vinculoId:usuario.vinculoId||null, mustChange: !!usuario.mustChange, agendaPessoalLiberada: !!usuario.agendaPessoalLiberada };
+      CURRENT_USER = { id:usuario.id, tipo:usuario.tipo, nome:usuario.nome, clienteId:usuario.clienteId||null, vinculoId:usuario.vinculoId||null, mustChange: !!usuario.mustChange, agendaPessoalLiberada: !!usuario.agendaPessoalLiberada, visualizarEstagio: !!usuario.visualizarEstagio };
       await enterApp();
       return;
     }catch(e){ AUTH_TOKEN = null; localStorage.removeItem('ms_token'); }

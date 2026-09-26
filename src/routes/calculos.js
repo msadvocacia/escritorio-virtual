@@ -24,8 +24,8 @@ const { calcularRescisao } = require('../utils/calculoTrabalhista');
 const router = express.Router();
 
 // Todos os módulos de cálculo são de uso interno da equipe (não faz sentido
-// para o cliente), então restringimos a master/sócio/associado.
-router.use(requireAuth, requireRole('master', 'socio', 'associado'));
+// para o cliente), então restringimos a master/sócio/associado/estagiário.
+router.use(requireAuth, requireRole('master', 'socio', 'associado', 'estagiario'));
 
 // Núcleo: correção monetária + juros — usado isoladamente ou por outros módulos.
 router.post('/correcao', async (req, res) => {

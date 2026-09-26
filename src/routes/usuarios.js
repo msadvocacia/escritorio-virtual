@@ -9,6 +9,9 @@ const router = express.Router();
 function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 }
+function todayISOBackend() {
+  return new Date().toISOString().slice(0, 10);
+}
 
 // Lista usuários (master vê todos; sócio vê todos exceto o master pode restringir se quiser)
 router.get('/', requireAuth, requireRole('master', 'socio'), async (req, res) => {
@@ -24,19 +27,22 @@ router.get('/', requireAuth, requireRole('master', 'socio'), async (req, res) =>
 router.get('/basico', requireAuth, async (req, res) => {
   const usuarios = await getCollection('usuarios', []);
   const lista = usuarios
-    .filter((u) => (u.tipo === 'socio' || u.tipo === 'associado') && u.ativo !== false)
+    .filter((u) => (u.tipo === 'socio' || u.tipo === 'associado' || u.tipo === 'estagiario') && u.ativo !== false)
     .map((u) => ({ id: u.id, nome: u.nome, tipo: u.tipo, oab: u.oab || '' }));
   res.json(lista);
 });
 
 // Cria sócio (só master) ou associado (master ou sócio)
 router.post('/', requireAuth, requireRole('master', 'socio'), async (req, res) => {
-  const { nome, tipo, login, senha, oab, nacionalidade, estadoCivil, rg, cpf, telefone, endereco, ativo, agendaPessoalLiberada } = req.body || {};
+  const {
+    nome, tipo, login, senha, oab, nacionalidade, estadoCivil, rg, cpf, telefone, endereco, ativo, agendaPessoalLiberada,
+    visualizarEstagio, remunerado, formacaoEstagiario, estagiarioVisivelPara, tutoresIds,
+  } = req.body || {};
   if (!nome || !login || !tipo) return res.status(400).json({ erro: 'Preencha nome, login e perfil.' });
   if (tipo === 'socio' && !isMaster(req.user)) {
     return res.status(403).json({ erro: 'Somente o administrador master pode cadastrar sócios.' });
   }
-  if (!['socio', 'associado'].includes(tipo)) {
+  if (!['socio', 'associado', 'estagiario'].includes(tipo)) {
     return res.status(400).json({ erro: 'Perfil inválido.' });
   }
   const usuarios = await getCollection('usuarios', []);
@@ -48,8 +54,17 @@ router.post('/', requireAuth, requireRole('master', 'socio'), async (req, res) =
     id: uid(), tipo, nome, login, senhaHash, mustChange: true, ativo: ativo !== false,
     oab: oab || '', nacionalidade: nacionalidade || 'brasileiro(a)', estadoCivil: estadoCivil || 'solteiro(a)',
     rg: rg || '', cpf: cpf || '', telefone: telefone || '', endereco: endereco || '', vinculoId: null, clienteId: null,
-    agendaPessoalLiberada: tipo === 'socio' ? true : !!agendaPessoalLiberada,
+    agendaPessoalLiberada: (tipo === 'socio' || tipo === 'estagiario') ? true : !!agendaPessoalLiberada,
+    visualizarEstagio: tipo === 'socio' || tipo === 'associado' ? !!visualizarEstagio : false,
   };
+  if (tipo === 'estagiario') {
+    novo.remunerado = !!remunerado;
+    novo.formacaoEstagiario = ['estudante', 'bacharel'].includes(formacaoEstagiario) ? formacaoEstagiario : 'estudante';
+    novo.estagiarioVisivelPara = ['socio', 'associado', 'todos'].includes(estagiarioVisivelPara) ? estagiarioVisivelPara : 'todos';
+    novo.tutoresIds = Array.isArray(tutoresIds) ? tutoresIds.filter((id) => usuarios.some((u) => u.id === id && (u.tipo === 'socio' || u.tipo === 'associado'))) : [];
+    novo.dataInicioEstagio = todayISOBackend();
+    novo.dataFimEstagio = null;
+  }
   usuarios.push(novo);
   await setCollection('usuarios', usuarios);
   const { senhaHash: _omit, ...semSenha } = novo;
@@ -62,7 +77,7 @@ router.patch('/:id', requireAuth, requireRole('master', 'socio'), async (req, re
   const usuario = usuarios.find((u) => u.id === req.params.id);
   if (!usuario) return res.status(404).json({ erro: 'Usuário não encontrado.' });
   if (usuario.tipo === 'master') return res.status(403).json({ erro: 'O administrador master não pode ser editado por aqui.' });
-  const campos = ['nome', 'oab', 'ativo', 'nacionalidade', 'estadoCivil', 'rg', 'cpf', 'telefone', 'endereco', 'agendaPessoalLiberada'];
+  const campos = ['nome', 'oab', 'ativo', 'nacionalidade', 'estadoCivil', 'rg', 'cpf', 'telefone', 'endereco', 'agendaPessoalLiberada', 'visualizarEstagio', 'remunerado', 'formacaoEstagiario', 'estagiarioVisivelPara', 'tutoresIds', 'dataFimEstagio', 'relatorioLiberado', 'certificadoLiberado'];
   campos.forEach((c) => { if (req.body[c] !== undefined) usuario[c] = req.body[c]; });
   await setCollection('usuarios', usuarios);
   const { senhaHash, ...semSenha } = usuario;

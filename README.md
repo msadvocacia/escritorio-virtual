@@ -1550,6 +1550,79 @@ fechar sozinho, módulo sem submenu) bateram certinho. Essa é a parte que
 mais vale a pena conferir visualmente ao testar de verdade.
 
 
+## 52. Novo sistema completo: Estágio (usuário, módulo, delegações, pontuação e certificado)
+
+Esta foi a maior funcionalidade construída até agora — um sistema quase
+inteiro dentro do sistema. Vou detalhar por partes.
+
+### Novo tipo de usuário "Estagiário"
+No cadastro de usuário: remunerado/não remunerado, formação (estudante ou
+bacharel — sem campo de OAB, como pedido), "visível para" (sócio/associado/
+todos) e tutor(es) responsável(is). O valor/percentual da remuneração não
+fica fixo no cadastro — é definido depois, missão por missão, quando
+vinculada a um processo (faz mais sentido assim, já que pode variar por
+caso).
+
+### Módulo "Estágio"
+Liberado para sócio/associado via checkbox "Visualizar Estágio" no cadastro
+do usuário (igual ao padrão já usado para Agenda Pessoal). Nele:
+- **Delegações**: título, descrição, cliente/processo (busca rápida pelos já
+  cadastrados), um ou mais estagiários selecionados juntos, prazo com data e
+  horário máximo.
+- **Apontamentos**: conversa entre estagiário e tutor dentro da própria
+  missão — só sócio/master podem apagar uma mensagem.
+- **Arquivos**: upload do material produzido, para conferência; pode ser
+  baixado e depois apagado.
+- **Avaliação com 10 critérios** (entendimento, execução, escrita, pesquisa,
+  cumprimento de prazo, autonomia, qualidade, organização, proatividade,
+  comunicação), cada um de "baixa" a "altíssima" dificuldade/qualidade — a
+  nota final (0 a 10) é calculada automaticamente pela média das respostas.
+- Painel com todos os estagiários, nota média de cada um, e checkboxes para
+  liberar o relatório final e/ou o certificado individualmente.
+
+### Relatório final e certificado
+O relatório reúne automaticamente tudo que foi delegado no período, o que
+foi cumprido/não cumprido e a nota de cada missão — não precisa digitar nada
+à mão. O certificado sai **em paisagem** (a seu pedido), com **marca d'água**
+do escritório na frente (testei e confirmei visualmente — ficou nítida,
+com o logo, sem atrapalhar a leitura), assinatura do responsável, e no
+verso as datas de início/fim, carga horária (4h por missão avaliada, em
+média) e a pontuação final.
+
+### Perfil restrito do estagiário
+Só enxerga: Painel, Processos e Prazos (só o que foi vinculado a ele via
+delegação — testei e confirmei que ele não vê a carteira toda de clientes),
+Cálculo Jurídico, DJEN, Lembretes (só os endereçados a ele pelo tutor),
+Agenda Pessoal (liberada automaticamente, como sócio) e dois módulos novos:
+"Delegações" (o que foi mandado pra ele, com apontamentos e envio de
+arquivo) e "Score" (pontuação, histórico, e download do relatório/
+certificado — só quando o tutor liberar; testei e confirmei que ele é
+bloqueado (403) se tentar antes da liberação).
+
+### Testado de ponta a ponta, com regressão
+Fiz vários testes reais pelo servidor, e ao longo do caminho **encontrei e
+corrigi duas lacunas reais**: a Agenda Pessoal e o Cálculo Jurídico
+bloqueavam completamente o acesso do estagiário mesmo com tudo liberado —
+corrigidas e reconfirmadas com um novo teste depois do ajuste. Testei
+também: cálculo de remuneração percentual sobre o valor do processo (10%
+de R$10.000 = R$1.000, correto), a nota final calculada automaticamente, e
+a visibilidade restrita de processos (o estagiário via exatamente 1 — nem
+mais, nem menos).
+
+### Simplificações que assumi, para ficar honesto
+- A busca de cliente/processo na delegação é por seleção numa lista, não uma
+  busca com autocomplete "ao vivo" — dado o volume de trabalho já grande
+  nesta entrega, um select simples resolve, mas se quiser algo mais ágil
+  depois, dá pra melhorar.
+- Os arquivos enviados nas delegações ficam guardados como parte do próprio
+  registro no banco de dados (não num serviço de arquivos separado) — funciona
+  bem para o uso pretendido (enviar, conferir, baixar, apagar), mas não é
+  pensado para arquivos muito grandes (limite de 10MB por arquivo).
+- O certificado assina com o **primeiro tutor** cadastrado do estagiário —
+  se quiser escolher qual tutor assina em cada certificado individualmente,
+  posso ajustar depois.
+
+
 ---
 
 Qualquer erro ao subir, me mostre a mensagem exata que aparece (no Render, aba "Logs")

@@ -43,7 +43,7 @@ async function arquivarAntigos(todos) {
 router.get('/usuarios', requireAuth, requireRole('master'), async (req, res) => {
   const usuarios = await getCollection('usuarios', []);
   const lista = usuarios
-    .filter((u) => u.tipo === 'socio' || u.tipo === 'associado')
+    .filter((u) => u.tipo === 'socio' || u.tipo === 'associado' || u.tipo === 'estagiario')
     .map((u) => ({ id: u.id, nome: u.nome, tipo: u.tipo }));
   res.json(lista);
 });
@@ -59,7 +59,7 @@ router.get('/', requireAuth, async (req, res) => {
   if (req.user.tipo === 'master') {
     return res.status(400).json({ erro: 'Informe ?usuarioId= para ver a agenda de um usuário específico.' });
   }
-  if (req.user.tipo !== 'socio' && req.user.tipo !== 'associado') {
+  if (req.user.tipo !== 'socio' && req.user.tipo !== 'associado' && req.user.tipo !== 'estagiario') {
     return res.status(403).json({ erro: 'Sem acesso à agenda pessoal.' });
   }
   res.json(todos.filter((r) => r.usuarioId === req.user.id));
@@ -76,7 +76,7 @@ router.post('/', requireAuth, async (req, res) => {
     usuarioIdAlvo = req.body.usuarioId;
   } else if (req.user.tipo === 'associado' && eu && !eu.agendaPessoalLiberada) {
     return res.status(403).json({ erro: 'Sua agenda pessoal ainda não foi liberada por um sócio ou pelo administrador.' });
-  } else if (req.user.tipo !== 'socio' && req.user.tipo !== 'associado' && req.user.tipo !== 'master') {
+  } else if (req.user.tipo !== 'socio' && req.user.tipo !== 'associado' && req.user.tipo !== 'master' && req.user.tipo !== 'estagiario') {
     return res.status(403).json({ erro: 'Sem acesso à agenda pessoal.' });
   }
   const { clienteNome, numeroProcesso, tipoProcesso, valorCausa, audienciaData, audienciaHora, audienciaLembrete, prazoDescricao, prazoData, prazoLembrete, obs } = req.body || {};
