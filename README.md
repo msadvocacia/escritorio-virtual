@@ -1506,6 +1506,50 @@ Pesquisei o arquivo inteiro atrás desse mesmo padrão (nomes de profissionais
 vendo) para não deixar mais nenhuma ocorrência escondida.
 
 
+## 51. Paginação, layout dos KPIs, Auditar reconstruído e barra lateral com submenu
+
+### Paginação ajustada
+Parcelas em aberto: 10 por página (era 15). Repasses por processo: 5 por
+página (era 8).
+
+### Layout do resumo financeiro
+As caixas agora são montadas como uma lista e só depois divididas em duas
+fileiras — 4 em cima, o resto embaixo — para ficar visualmente harmônico e
+já preparado para quando surgir a necessidade de mais uma caixa (ex:
+estagiários), sem precisar mexer de novo na divisão manualmente.
+
+### "Auditar" reconstruído
+Movido para um botão fixo entre "+ Honorário avulso" e "🖨 Imprimir
+relatório" (antes era uma aba, junto de Parcelas/Repasses). Reconstruí a
+funcionalidade do zero com os filtros pedidos: período (de/até), situação
+(recebido/pendente/ambos), cliente, e principalmente a **visão por papel**
+— Integrado (sócio + escritório + cada associado, com subtotal por pessoa
+logo no topo do resultado) ou isolado por Escritório, Sócio(s) ou
+Associado(s), podendo escolher "todos" (agregado) ou uma pessoa específica.
+A estrutura já está pronta para quando um novo tipo de usuário
+("estagiário") for criado no futuro — é só adicionar a opção, a lógica de
+divisão já é genérica. Testei numericamente os 4 modos de visão — a soma
+sempre bate com o total do contrato, sem vazar nem duplicar nada.
+
+### Barra lateral com submenu expansível
+Só os módulos com seções internas claras ganharam submenu — Financeiro
+(Honorários / Despesas / Parcelas em aberto / Repasses por processo),
+Prazos (Prazos / Audiências) e DJEN (Buscar no DJEN / Capturadas). Clicar
+no item principal abre o submenu logo abaixo dele na própria barra lateral;
+clicar num subitem leva direto pra aquela seção dentro da página. Ao
+navegar para outro módulo, o submenu anterior fecha sozinho — a barra não
+fica com tudo aberto ao mesmo tempo. Os demais módulos (Clientes,
+Processos, Mensagens, etc.) continuam como um clique único, sem submenu,
+para não sobrecarregar a barra lateral.
+
+**Sobre o teste desta parte**: o teste com navegador automatizado ficou
+instável nesta sessão (a própria infraestrutura de teste, não o sistema),
+então validei a lógica exata de abrir/fechar submenu com uma simulação
+isolada da árvore de elementos — os 4 cenários (abrir, trocar de módulo,
+fechar sozinho, módulo sem submenu) bateram certinho. Essa é a parte que
+mais vale a pena conferir visualmente ao testar de verdade.
+
+
 ---
 
 Qualquer erro ao subir, me mostre a mensagem exata que aparece (no Render, aba "Logs")
