@@ -1467,6 +1467,45 @@ isolado por seção).
 Adicionados em Parcelas, Repasses, Honorários e Despesas.
 
 
+## 50. Correção urgente de privacidade: associado via financeiro do sócio
+
+Você avisou que o painel "Quem recebeu quanto" mostrava o financeiro do
+sócio para o associado. Já tinha removido esse painel na entrega anterior,
+mas fiz uma auditoria completa em busca do mesmo padrão em outros lugares —
+e encontrei mais **três pontos com o mesmo problema**, incluindo um erro
+de cálculo sério que nem tinha relação direta com o que você reportou:
+
+1. **Nova função "Auditar"**: um associado que gerasse uma auditoria de
+   "Recebimentos" veria o valor **total pago pelo cliente**, não só a
+   própria parte — corrigido para mostrar só a parte do associado.
+2. **Repasses por processo**: qualquer pessoa vinculada ao mesmo honorário
+   via um sócio (ex: um processo com sócio + associado) via o nome de todos
+   os vinculados, o percentual exato da divisão, o valor total recebido do
+   cliente, e o valor individual de cada um — inclusive do sócio. Agora o
+   associado vê só a própria parte, sem nomes nem valores de terceiros.
+3. **Tabela de Honorários**: mesma coisa — o percentual da divisão e os
+   nomes dos profissionais vinculados apareciam para qualquer um; agora só
+   para sócio/master.
+4. **Bug de cálculo encontrado de brinde, mais sério que o vazamento em si**:
+   a função que calcula "quanto o associado recebe" estava dividindo a
+   parte dele **pelo total de vinculados, incluindo o sócio** — ou seja, se
+   um processo tinha 1 sócio + 1 associado, o sistema calculava a parte do
+   associado como **metade** do que ele realmente deveria receber (a
+   fatia do sócio tem um "balde" separado — não devia dividir o balde do
+   associado com o sócio). **Testei numericamente**: antes calculava R$
+   2.000 quando deveria ser R$ 4.000 — o associado estava sendo mostrado
+   como devendo receber a metade do correto.
+
+**O que ficou visível para o formulário do próprio processo**: mantive o
+percentual da divisão visível quando o associado está *criando ou editando*
+seu próprio processo — isso são os termos do contrato dele mesmo, não
+informação de terceiros, então não é o mesmo tipo de vazamento.
+
+Pesquisei o arquivo inteiro atrás desse mesmo padrão (nomes de profissionais
++ percentual + valor, todos juntos, sem checar o perfil de quem está
+vendo) para não deixar mais nenhuma ocorrência escondida.
+
+
 ---
 
 Qualquer erro ao subir, me mostre a mensagem exata que aparece (no Render, aba "Logs")

@@ -173,7 +173,7 @@ router.post('/contrato', requireAuth, requireRole('master', 'socio', 'associado'
   const nParcelas = parseInt(parcelas, 10) || 1;
   const runsDivisao = nParcelas > 1
     ? [D.run(', dividido em '), D.run(`${nParcelas} (${T.numberToWordsPT(nParcelas)})`, { bold: true }), D.run(' parcelas')]
-    : [D.run(', a ser paga à vista')];
+    : [D.run(tipoValor === 'percentual' ? ', a ser paga ao final' : ', a ser paga à vista')];
 
   const TERMOS_DESTAQUE = ['O ADVOGADO', 'ADVOGADO', 'OUTORGANTE', 'CONTRATANTE', 'CONTRATADOS', 'CONTRATADO', tipoProcessoUpper];
 

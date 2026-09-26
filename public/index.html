@@ -450,14 +450,14 @@
           </div>
         </div>
         <div class="kpi-grid" id="fin-kpi-grid"></div>
-        <div class="panel" id="fin-breakdown-panel" style="display:none;"></div>
         <div class="pill-select" style="margin-bottom:10px;" id="fin-top-tabs">
           <button class="fin-tab active" data-tab="parcelas" onclick="setFinTopTab('parcelas')">Parcelas em aberto</button>
           <button class="fin-tab" data-tab="repasses" onclick="setFinTopTab('repasses')">Repasses por processo</button>
+          <button class="fin-tab" data-tab="auditar" onclick="setFinTopTab('auditar')">🔍 Auditar</button>
         </div>
         <div class="panel" id="fin-parcelas-panel">
           <div class="hint" style="margin-bottom:8px;">O que vai entrar, e em quais datas, considerando as parcelas ainda pendentes.</div>
-          <input type="text" id="fin-parcelas-busca" placeholder="Buscar por cliente ou processo..." oninput="renderParcelasCronologicas()" style="margin-bottom:8px;">
+          <input type="text" id="fin-parcelas-busca" placeholder="Buscar por cliente ou processo..." oninput="FIN_PARCELAS_PAGINA=1; renderParcelasCronologicas()" style="margin-bottom:8px;">
           <div id="fin-parcelas-cronologicas"></div>
         </div>
         <div class="panel" id="fin-repasses-panel" style="display:none;">
@@ -465,7 +465,7 @@
             <button class="fin-tab active" data-tab="pendentes" onclick="setRepasseTab('pendentes')">Pendentes</button>
             <button class="fin-tab" data-tab="repassados" onclick="setRepasseTab('repassados')">Repassados</button>
           </div>
-          <input type="text" id="fin-repasses-busca" placeholder="Buscar por cliente, processo ou profissional..." oninput="renderRepasses()" style="margin-bottom:8px;">
+          <input type="text" id="fin-repasses-busca" placeholder="Buscar por cliente, processo ou profissional..." oninput="FIN_REPASSES_PAGINA=1; renderRepasses()" style="margin-bottom:8px;">
           <div id="fin-repasses"></div>
         </div>
         <div class="pill-select" style="margin-bottom:16px;" id="fin-tabs">
@@ -1602,6 +1602,12 @@ function idsProfissionaisRegistro(r){
   const arr=[]; if(r.associadoId) arr.push(r.associadoId); if(r.associadoId2) arr.push(r.associadoId2);
   return arr;
 }
+function idsSociosRegistro(r){
+  return idsProfissionaisRegistro(r).filter(id=>{ const u=DB.usuarios.find(x=>x.id===id); return u&&u.tipo==='socio'; });
+}
+function idsAssociadosRegistro(r){
+  return idsProfissionaisRegistro(r).filter(id=>{ const u=DB.usuarios.find(x=>x.id===id); return u&&u.tipo==='associado'; });
+}
 function nomesProfissionais(r){
   const ids = idsProfissionaisRegistro(r);
   return ids.length? ids.map(id=>usuarioNome(id)).join(', ') : 'Escritório';
@@ -2177,6 +2183,7 @@ function setFinTab(tab){
   document.getElementById('fin-despesas').style.display = tab==='despesas' ? 'block':'none';
 }
 function setFinTopTab(tab){
+  if(tab==='auditar'){ abrirAuditoriaFinanceira(); return; }
   document.querySelectorAll('#fin-top-tabs .fin-tab').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
   document.getElementById('fin-parcelas-panel').style.display = tab==='parcelas' ? 'block':'none';
   document.getElementById('fin-repasses-panel').style.display = tab==='repasses' ? 'block':'none';
@@ -2199,14 +2206,25 @@ function fracaoEscritorio(h){
   const ids = idsProfissionaisRegistro(h);
   if(!ids.length) return 1;
   const partes = partesSplit(h.splitTipo);
-  return 1 - (partes.profissional||0);
+  // A fatia de "sócio" (nos splits que têm essa divisão separada) pertence ao
+  // sócio responsável pelo processo, não ao caixa institucional — só a fatia
+  // de "escritório" propriamente dita entra aqui.
+  return partes.escritorio||0;
 }
 function parteDoProfissional(h, usuarioId){
-  const ids = idsProfissionaisRegistro(h);
-  if(!ids.includes(usuarioId) || ids.length===0) return 0;
+  const idsAssoc = idsAssociadosRegistro(h);
+  if(!idsAssoc.includes(usuarioId) || idsAssoc.length===0) return 0;
   const partes = partesSplit(h.splitTipo);
   const recebido = valorRecebidoHonorario(h);
-  return (recebido * (partes.profissional||0)) / ids.length;
+  return (recebido * (partes.profissional||0)) / idsAssoc.length;
+}
+function parteSocioResponsavel(h, usuarioId){
+  const idsSocios = idsSociosRegistro(h);
+  if(!idsSocios.includes(usuarioId) || idsSocios.length===0) return 0;
+  const partes = partesSplit(h.splitTipo);
+  if(!partes.socio) return 0;
+  const recebido = valorRecebidoHonorario(h);
+  return (recebido * partes.socio) / idsSocios.length;
 }
 function buildParcelasPreview(total, n, primeiraData){
   if(!total || !n || n<1 || !primeiraData) return [];
@@ -2335,7 +2353,7 @@ function renderHonorariosTable(){
       detalhe = `<div style="margin-top:6px;">` + h.parcelas.map(p=>`<div style="display:flex; align-items:center; gap:8px; font-size:11.5px; padding:3px 0;"><span class="tag tag-${p.status}" style="cursor:pointer;" onclick="markParcelaPaga('${h.id}','${p.id}')">${p.status==='pago'?'Pago':'Pendente'}</span><span>Parcela ${p.numero} — ${fmtDate(p.vencimento)} — ${fmtMoney(p.valor)}</span>${p.status==='pago'? `<button class="icon-btn btn-sm" onclick="imprimirRecibo('${h.id}','${p.id}')" title="Imprimir recibo desta parcela">🧾</button><button class="icon-btn btn-sm" onclick="baixarReciboWord('${h.id}','${p.id}')" title="Baixar recibo em Word">📥</button>`:''}</div>`).join('') + `</div>`;
     }
     return `<tr>
-      <td><strong>${escapeHtml(clienteNome(h.clienteId))}</strong>${h.processoId? '<br><span style="font-size:11.5px;color:var(--ink-soft);">'+escapeHtml(processoLabel(h.processoId)||'')+'</span>':''}${idsProfissionaisRegistro(h).length? '<br><span style="font-size:10.5px;color:var(--gold-dark);">'+escapeHtml(nomesProfissionais(h))+' · '+splitLabel(h.splitTipo)+'</span>':''}</td>
+      <td><strong>${escapeHtml(clienteNome(h.clienteId))}</strong>${h.processoId? '<br><span style="font-size:11.5px;color:var(--ink-soft);">'+escapeHtml(processoLabel(h.processoId)||'')+'</span>':''}${(isMaster()||isSocio()) && idsProfissionaisRegistro(h).length? '<br><span style="font-size:10.5px;color:var(--gold-dark);">'+escapeHtml(nomesProfissionais(h))+' · '+splitLabel(h.splitTipo)+'</span>':''}</td>
       <td>${escapeHtml(h.descricao)||'—'}${detalhe}</td>
       <td><strong>${fmtMoney(h.valorTotal)}</strong></td>
       <td>${formaLabel[h.forma]||h.forma}${h.parcelas&&h.parcelas.length? ' ('+h.parcelas.length+'x)':''}</td>
@@ -2413,17 +2431,28 @@ function computeFinanceSummary(periodo){
   const hoje = todayISO(); const mesAtual = hoje.slice(0,7);
   const dentroPeriodo = (dataStr) => !periodo || (dataStr>=periodo.inicio && dataStr<=periodo.fim);
   const podeVerCaixa = isMaster()||isSocio();
-  let aReceber=0, aReceberLiquidoEscritorio=0, recebidoMes=0, atrasadoReceber=0, recebidoPeriodo=0;
+  let aReceber=0, aReceberLiquidoEscritorio=0, aReceberMesEscritorio=0, minhaParteSocioAReceberMes=0, recebidoMes=0, atrasadoReceber=0, recebidoPeriodo=0;
   const list = meusHonorarios();
   list.forEach(h=>{
     // fração que efetivamente entra no caixa do escritório (abate a parte do associado, quando houver)
     const fracao = podeVerCaixa ? fracaoEscritorio(h) : 1;
+    const partes = partesSplit(h.splitTipo);
+    const idsSocios = isSocio() ? idsSociosRegistro(h) : [];
+    const souSocioDoRegistro = isSocio() && idsSocios.includes(CURRENT_USER.id);
+    const somarPendente = (valor, vencimento) => {
+      aReceber += valor;
+      aReceberLiquidoEscritorio += valor*fracao;
+      if(vencimento && vencimento.slice(0,7)===mesAtual){
+        aReceberMesEscritorio += valor*fracao;
+        if(souSocioDoRegistro && partes.socio) minhaParteSocioAReceberMes += (valor*partes.socio)/idsSocios.length;
+      }
+    };
     if(h.forma==='avista'){
-      if(h.avistaStatus==='pendente'){ aReceber+=h.valorTotal; aReceberLiquidoEscritorio+=h.valorTotal*fracao; }
+      if(h.avistaStatus==='pendente') somarPendente(h.valorTotal, null); // à vista sem data de vencimento própria — conta no acumulado, não no "deste mês"
       if(h.avistaStatus==='pago' && h.avistaPagoEm){ if(h.avistaPagoEm.slice(0,7)===mesAtual) recebidoMes+=h.valorTotal*fracao; if(dentroPeriodo(h.avistaPagoEm)) recebidoPeriodo+=h.valorTotal*fracao; }
     } else {
       (h.parcelas||[]).forEach(p=>{
-        if(p.status==='pendente'){ aReceber+=p.valor; aReceberLiquidoEscritorio+=p.valor*fracao; if(p.vencimento<hoje) atrasadoReceber+=p.valor; }
+        if(p.status==='pendente'){ somarPendente(p.valor, p.vencimento); if(p.vencimento<hoje) atrasadoReceber+=p.valor; }
         if(p.status==='pago' && p.pagoEm){ if(p.pagoEm.slice(0,7)===mesAtual) recebidoMes+=p.valor*fracao; if(dentroPeriodo(p.pagoEm)) recebidoPeriodo+=p.valor*fracao; }
       });
     }
@@ -2434,7 +2463,7 @@ function computeFinanceSummary(periodo){
   const totalDespesas = despesasList.reduce((s,d)=>s+d.valor,0);
   const totalRecebidoHistorico = list.reduce((s,h)=> s + valorRecebidoHonorario(h) * (podeVerCaixa? fracaoEscritorio(h) : 1), 0);
   const caixaAcumulado = totalRecebidoHistorico - totalDespesas;
-  return { aReceber, aReceberLiquidoEscritorio, recebidoMes, despesasMes, totalDespesas, saldoMes: recebidoMes-despesasMes, atrasadoReceber, caixaAcumulado, recebidoPeriodo, despesasPeriodo, saldoPeriodo: recebidoPeriodo-despesasPeriodo };
+  return { aReceber, aReceberLiquidoEscritorio, aReceberMesEscritorio, minhaParteSocioAReceberMes, recebidoMes, despesasMes, totalDespesas, saldoMes: recebidoMes-despesasMes, atrasadoReceber, caixaAcumulado, recebidoPeriodo, despesasPeriodo, saldoPeriodo: recebidoPeriodo-despesasPeriodo };
 }
 // Quanto cada "papel" recebeu de verdade, historicamente (ou dentro de um
 // período, se informado): sócio (taxa fixa de sócio nos splits que têm essa
@@ -2472,6 +2501,29 @@ async function confirmarRepasse(honId){
   });
   renderFinanceiro(); showToast('Repasse atualizado.');
 }
+// Paginação estilo "chat" (1 2 3 ... com anterior/próxima), reutilizada nas
+// Parcelas e nos Repasses, que podem crescer bastante com o tempo.
+function gerarControlesPaginacao(paginaAtual, totalPaginas, funcaoJs){
+  if(totalPaginas<=1) return '';
+  let paginas = [];
+  for(let i=1;i<=totalPaginas;i++) paginas.push(i);
+  if(totalPaginas>7){
+    paginas = [...new Set([1,2, paginaAtual-1, paginaAtual, paginaAtual+1, totalPaginas-1, totalPaginas].filter(p=>p>=1 && p<=totalPaginas))].sort((a,b)=>a-b);
+  }
+  let html = `<div style="display:flex; gap:4px; justify-content:center; align-items:center; margin-top:12px; flex-wrap:wrap;">`;
+  html += `<button class="btn btn-ghost btn-sm" ${paginaAtual===1?'disabled':''} onclick="${funcaoJs}(${paginaAtual-1})">← Anterior</button>`;
+  let anterior = 0;
+  paginas.forEach(p=>{
+    if(p-anterior>1) html += `<span style="padding:0 4px; color:var(--ink-soft);">…</span>`;
+    html += `<button class="btn btn-sm ${p===paginaAtual?'btn-gold':'btn-ghost'}" onclick="${funcaoJs}(${p})">${p}</button>`;
+    anterior = p;
+  });
+  html += `<button class="btn btn-ghost btn-sm" ${paginaAtual===totalPaginas?'disabled':''} onclick="${funcaoJs}(${paginaAtual+1})">Próxima →</button>`;
+  html += `</div>`;
+  return html;
+}
+let FIN_PARCELAS_PAGINA = 1;
+function irParaPaginaParcelas(p){ FIN_PARCELAS_PAGINA = p; renderParcelasCronologicas(); }
 function renderParcelasCronologicas(){
   const box = document.getElementById('fin-parcelas-cronologicas'); if(!box) return;
   const busca = (document.getElementById('fin-parcelas-busca')?.value||'').toLowerCase().trim();
@@ -2486,8 +2538,12 @@ function renderParcelasCronologicas(){
   filtrados.sort((a,b)=> (a.vencimento||'').localeCompare(b.vencimento||''));
   if(filtrados.length===0){ box.innerHTML = `<div class="empty">${busca? 'Nenhuma parcela encontrada.' : 'Nenhuma parcela pendente no momento.'}</div>`; return; }
   const hoje = todayISO();
+  const porPagina = 15;
+  const totalPaginas = Math.max(1, Math.ceil(filtrados.length/porPagina));
+  if(FIN_PARCELAS_PAGINA>totalPaginas) FIN_PARCELAS_PAGINA = totalPaginas;
+  const pagina = filtrados.slice((FIN_PARCELAS_PAGINA-1)*porPagina, FIN_PARCELAS_PAGINA*porPagina);
   box.innerHTML = `<table><thead><tr><th>Vencimento</th><th>Cliente / Processo</th><th>Parcela</th><th>Valor</th></tr></thead><tbody>
-    ${filtrados.map(it=>{
+    ${pagina.map(it=>{
       const atrasada = it.vencimento && it.vencimento < hoje;
       return `<tr>
         <td><span class="tag ${atrasada?'tag-perdido':'tag-pendente'}">${fmtDate(it.vencimento)}</span></td>
@@ -2496,14 +2552,17 @@ function renderParcelasCronologicas(){
         <td><strong>${fmtMoney(it.valor)}</strong></td>
       </tr>`;
     }).join('')}
-  </tbody></table>`;
+  </tbody></table>` + gerarControlesPaginacao(FIN_PARCELAS_PAGINA, totalPaginas, 'irParaPaginaParcelas');
 }
 let REPASSE_TAB = 'pendentes';
 function setRepasseTab(tab){
   REPASSE_TAB = tab;
+  FIN_REPASSES_PAGINA = 1;
   document.querySelectorAll('#repasse-tabs .fin-tab').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
   renderRepasses();
 }
+let FIN_REPASSES_PAGINA = 1;
+function irParaPaginaRepasses(p){ FIN_REPASSES_PAGINA = p; renderRepasses(); }
 function renderRepasses(){
   const box = document.getElementById('fin-repasses');
   const busca = (document.getElementById('fin-repasses-busca')?.value||'').toLowerCase().trim();
@@ -2516,26 +2575,40 @@ function renderRepasses(){
     });
   }
   if(relevantes.length===0){ box.innerHTML = `<div class="empty">Nenhum repasse ${busca? 'encontrado' : (REPASSE_TAB==='repassados'?'já repassado':'pendente')}.</div>`; return; }
-  box.innerHTML = relevantes.map(h=>{
+  const porPagina = 8;
+  const totalPaginas = Math.max(1, Math.ceil(relevantes.length/porPagina));
+  if(FIN_REPASSES_PAGINA>totalPaginas) FIN_REPASSES_PAGINA = totalPaginas;
+  const pagina = relevantes.slice((FIN_REPASSES_PAGINA-1)*porPagina, FIN_REPASSES_PAGINA*porPagina);
+  box.innerHTML = pagina.map(h=>{
     const ids = idsProfissionaisRegistro(h);
     const recebido = valorRecebidoHonorario(h);
-    const partesTexto = ids.map(id=>`${escapeHtml(usuarioNome(id))}: <strong>${fmtMoney(parteDoProfissional(h,id))}</strong>`).join(' · ');
+    const podeVerCaixa = isMaster()||isSocio();
+    // Associado vê só a PRÓPRIA parte — nunca o valor total pago pelo
+    // cliente, os nomes de outros profissionais vinculados, nem o
+    // percentual do split, porque isso, junto com a própria parte, dá pra
+    // calcular a divisão interna do escritório (era esse o erro grave
+    // encontrado: um painel anterior mostrava o financeiro do sócio ao
+    // associado — aqui a mesma informação vazava por outro caminho).
+    const minhaParte = parteDoProfissional(h, CURRENT_USER.id);
+    const linhaDetalhe = podeVerCaixa
+      ? `<div class="rsub">${ids.map(id=>escapeHtml(usuarioNome(id))).join(', ')} · ${splitLabel(h.splitTipo)} · recebido do cliente: ${fmtMoney(recebido)}</div><div class="rsub">${ids.map(id=>`${escapeHtml(usuarioNome(id))}: <strong>${fmtMoney(parteDoProfissional(h,id)||parteSocioResponsavel(h,id))}</strong>`).join(' · ')}</div>`
+      : `<div class="rsub">Sua parte: <strong>${fmtMoney(minhaParte)}</strong></div>`;
     // Master/sócio sempre podem confirmar; um associado/sócio vinculado também pode
     // confirmar o RECEBIMENTO da própria parte (autoatendimento do repasse).
     const podeConfirmar = isMaster()||isSocio()||ids.includes(CURRENT_USER.id);
     return `<div class="list-row">
       <div><div class="rtitle">${escapeHtml(clienteNome(h.clienteId))} ${h.processoId? '· '+escapeHtml(processoLabel(h.processoId)||''):''}</div>
-      <div class="rsub">${ids.map(id=>escapeHtml(usuarioNome(id))).join(', ')} · ${splitLabel(h.splitTipo)} · recebido do cliente: ${fmtMoney(recebido)}</div>
-      <div class="rsub">${partesTexto}</div></div>
+      ${linhaDetalhe}</div>
       <div class="rmeta">
         <span class="tag tag-${h.repasseStatus==='confirmado'?'confirmado':'solicitado'}">${h.repasseStatus==='confirmado'?'Repassado':'Aguardando repasse'}</span>
         ${podeConfirmar? `<br><button class="btn btn-ghost btn-sm" style="margin-top:4px;" onclick="confirmarRepasse('${h.id}')">${h.repasseStatus==='confirmado'?'Desfazer':'Confirmar repasse'}</button>`:''}
       </div></div>`;
-  }).join('');
+  }).join('') + gerarControlesPaginacao(FIN_REPASSES_PAGINA, totalPaginas, 'irParaPaginaRepasses');
 }
 function computeAssociadoTotals(){
+  const hoje = todayISO(); const mesAtual = hoje.slice(0,7);
   const list = meusHonorarios().filter(h=>idsProfissionaisRegistro(h).includes(CURRENT_USER.id));
-  let totalContrato=0, totalRecebidoCliente=0, minhaParteTotal=0, minhaParteRepassada=0, minhaParteAguardando=0;
+  let totalContrato=0, totalRecebidoCliente=0, minhaParteTotal=0, minhaParteRepassada=0, minhaParteAguardando=0, minhaParteAReceberMes=0;
   list.forEach(h=>{
     const recebido = valorRecebidoHonorario(h);
     const minhaParte = parteDoProfissional(h, CURRENT_USER.id);
@@ -2543,8 +2616,17 @@ function computeAssociadoTotals(){
     totalRecebidoCliente += recebido;
     minhaParteTotal += minhaParte;
     if(h.repasseStatus==='confirmado') minhaParteRepassada += minhaParte; else minhaParteAguardando += minhaParte;
+    if(h.forma!=='avista'){
+      const partes = partesSplit(h.splitTipo);
+      const idsAssoc = idsAssociadosRegistro(h);
+      (h.parcelas||[]).forEach(p=>{
+        if(p.status==='pendente' && p.vencimento && p.vencimento.slice(0,7)===mesAtual && idsAssoc.includes(CURRENT_USER.id) && partes.profissional){
+          minhaParteAReceberMes += (p.valor*partes.profissional)/idsAssoc.length;
+        }
+      });
+    }
   });
-  return {totalContrato, totalRecebidoCliente, minhaParteTotal, minhaParteRepassada, minhaParteAguardando, qtd:list.length};
+  return {totalContrato, totalRecebidoCliente, minhaParteTotal, minhaParteRepassada, minhaParteAguardando, minhaParteAReceberMes, qtd:list.length};
 }
 /* ============================================================
    CÁLCULO JURÍDICO
@@ -3796,6 +3878,7 @@ function renderFinanceiro(){
     const a = computeAssociadoTotals();
     kpiGrid.innerHTML = `
       <div class="kpi"><div class="label">Total dos contratos fechados</div><div class="value">${fmtMoney(a.totalContrato)}</div><div class="sub">${a.qtd} processo(s) vinculado(s) a você</div></div>
+      <div class="kpi kpi-warning"><div class="label">A receber este mês (sua parte)</div><div class="value">${fmtMoney(a.minhaParteAReceberMes)}</div><div class="sub">parcelas com vencimento este mês, ainda não pagas pelo cliente</div></div>
       <div class="kpi kpi-success"><div class="label">Recebido dos clientes até agora</div><div class="value">${fmtMoney(a.totalRecebidoCliente)}</div><div class="sub">soma de todas as parcelas/à vista já pagos</div></div>
       <div class="kpi kpi-info"><div class="label">Sua parte já repassada a você</div><div class="value">${fmtMoney(a.minhaParteRepassada)}</div><div class="sub">confirmado pelo sócio/administrador</div></div>
       <div class="kpi kpi-warning"><div class="label">Sua parte aguardando repasse</div><div class="value">${fmtMoney(a.minhaParteAguardando)}</div><div class="sub">já recebido do cliente, repasse pendente</div></div>
@@ -3803,28 +3886,85 @@ function renderFinanceiro(){
     return;
   }
   atualizarBotoesValoresOcultos();
-  const b = computeFinanceBreakdown();
-  const nomesAssociadosComValor = Object.keys(b.porAssociado).filter(id=>b.porAssociado[id]>0.004);
   kpiGrid.innerHTML = `
     <div class="kpi kpi-warning" style="cursor:pointer;" onclick="abrirDetalheKpi('a-receber')"><div class="label">A receber (total dos clientes)</div><div class="value">${vmoney(s.aReceber)}</div><div class="sub">${s.atrasadoReceber>0? vmoney(s.atrasadoReceber)+' em atraso':'nenhum valor em atraso'}</div></div>
-    <div class="kpi kpi-warning" style="cursor:pointer;" onclick="abrirDetalheKpi('a-receber-liquido')"><div class="label">A receber (líquido do escritório)${ajuda('Mesmas parcelas pendentes acima, mas já descontando a parte que pertence a cada associado — considera só a fatia do(s) sócio(s) e do escritório em cada contrato. É o valor real que vai entrar no caixa quando os clientes pagarem.')}</div><div class="value">${vmoney(s.aReceberLiquidoEscritorio)}</div><div class="sub">já descontada a parte dos associados</div></div>
+    <div class="kpi kpi-warning" style="cursor:pointer;" onclick="abrirDetalheKpi('a-receber-mes-escritorio')"><div class="label">A receber este mês (parte do escritório)${ajuda('Das parcelas com vencimento neste mês, só a fatia institucional do escritório em cada contrato — já sem a parte de associados nem a fatia pessoal de sócio, quando o contrato tiver essa divisão separada.')}</div><div class="value">${vmoney(s.aReceberMesEscritorio)}</div><div class="sub">parcelas com vencimento este mês</div></div>
+    ${isSocio()? `<div class="kpi kpi-warning" style="cursor:pointer;" onclick="abrirDetalheKpi('a-receber-mes-socio')"><div class="label">A receber este mês (sua parte, sócio)${ajuda('Sua fatia pessoal de sócio (nos contratos que têm essa divisão separada da taxa institucional) sobre as parcelas com vencimento neste mês, nos processos em que você está vinculado.')}</div><div class="value">${vmoney(s.minhaParteSocioAReceberMes)}</div><div class="sub">só nos contratos com fatia de sócio</div></div>`:''}
     <div class="kpi kpi-success" style="cursor:pointer;" onclick="abrirDetalheKpi('recebido-mes')"><div class="label">Recebido no mês${podeVerCaixa?' (parte do escritório)':''}</div><div class="value">${vmoney(s.recebidoMes)}</div><div class="sub">${podeVerCaixa? 'já descontada a parte dos associados':'honorários pagos neste mês'}</div></div>
     ${podeVerCaixa? `<div class="kpi kpi-danger" style="cursor:pointer;" onclick="abrirDetalheKpi('despesas-mes')"><div class="label">Despesas no mês</div><div class="value">${vmoney(s.despesasMes)}</div><div class="sub">total ${vmoney(s.totalDespesas)} acumulado</div></div>
     <div class="kpi" style="cursor:pointer;" onclick="abrirDetalheKpi('saldo-mes')"><div class="label">Saldo do mês</div><div class="value" style="color:${s.saldoMes>=0?'var(--success)':'var(--danger)'}">${vmoney(s.saldoMes)}</div><div class="sub">parte do escritório − despesas</div></div>
-    <div class="kpi kpi-info" style="cursor:pointer;" onclick="abrirDetalheKpi('caixa-acumulado')"><div class="label">Caixa do escritório (acumulado)</div><div class="value" style="color:${s.caixaAcumulado>=0?'var(--success)':'var(--danger)'}">${vmoney(s.caixaAcumulado)}</div><div class="sub">parte do escritório recebida historicamente − despesas totais</div></div>` : ''}
+    <div class="kpi kpi-info" style="cursor:pointer;" onclick="abrirDetalheKpi('caixa-acumulado')"><div class="label">Caixa do escritório (acumulado)${ajuda('Clique para ver o detalhamento completo, incluindo o total a receber (líquido) acumulado e quanto sócio(s), escritório e cada associado já receberam historicamente.')}</div><div class="value" style="color:${s.caixaAcumulado>=0?'var(--success)':'var(--danger)'}">${vmoney(s.caixaAcumulado)}</div><div class="sub">parte do escritório recebida historicamente − despesas totais</div></div>` : ''}
   `;
-  const breakdownPanel = document.getElementById('fin-breakdown-panel');
-  if(breakdownPanel){
-    if(!podeVerCaixa){ breakdownPanel.style.display='none'; }
-    else {
-      breakdownPanel.style.display='block';
-      breakdownPanel.innerHTML = `<h3>Quem recebeu quanto (histórico acumulado)${ajuda('Divide o total já recebido dos clientes conforme a porcentagem de cada contrato: a fatia fixa de sócio (nos contratos que têm essa fatia separada da taxa institucional), a taxa institucional do escritório, e a parte de cada associado.')}</h3>
-        <div class="list-row"><div><div class="rtitle">Sócio(s)</div><div class="rsub">fatia de sócio nos contratos que têm essa divisão específica</div></div><div class="rmeta" style="font-weight:700;">${vmoney(b.recebidoSocio)}</div></div>
-        <div class="list-row"><div><div class="rtitle">Escritório (taxa institucional)</div><div class="rsub">MS Advocacia</div></div><div class="rmeta" style="font-weight:700;">${vmoney(b.recebidoEscritorio)}</div></div>
-        ${nomesAssociadosComValor.map(id=>`<div class="list-row"><div><div class="rtitle">${escapeHtml(usuarioNome(id))}</div><div class="rsub">associado</div></div><div class="rmeta" style="font-weight:700;">${vmoney(b.porAssociado[id])}</div></div>`).join('')}
-      `;
+}
+function abrirAuditoriaFinanceira(){
+  const clientes = meusClientes();
+  const podeVerCaixa = isMaster()||isSocio();
+  const body = `
+    <div class="field-row">
+      <div class="field"><label>De</label><input type="date" id="aud-data-inicio"></div>
+      <div class="field"><label>Até</label><input type="date" id="aud-data-fim" value="${todayISO()}"></div>
+    </div>
+    <div class="field"><label>Tipo de movimento</label><select id="aud-tipo">
+      <option value="recebimentos">Recebimentos (honorários já pagos)</option>
+      <option value="pendentes">Parcelas pendentes (a receber)</option>
+      ${podeVerCaixa? '<option value="despesas">Despesas</option><option value="ambos">Recebimentos e despesas</option>':''}
+    </select></div>
+    <div class="field"><label>Cliente (opcional)</label><select id="aud-cliente"><option value="">Todos</option>${clientes.map(c=>`<option value="${c.id}">${escapeHtml(c.nome)}</option>`).join('')}</select></div>
+    <button type="button" class="btn btn-gold btn-block" style="margin-top:10px;" onclick="gerarAuditoriaFinanceira()">🔍 Gerar</button>
+    <div id="aud-resultado" style="margin-top:14px;"></div>
+  `;
+  openModal('Auditar financeiro', body, null);
+  document.getElementById('modal-save-btn').style.display='none';
+}
+function gerarAuditoriaFinanceira(){
+  const dataInicio = document.getElementById('aud-data-inicio').value;
+  const dataFim = document.getElementById('aud-data-fim').value;
+  const tipoMov = document.getElementById('aud-tipo').value;
+  const clienteFiltro = document.getElementById('aud-cliente').value;
+  const podeVerCaixa = isMaster()||isSocio();
+  const dentro = (d) => (!dataInicio || d>=dataInicio) && (!dataFim || d<=dataFim);
+  let itens = [];
+  const list = meusHonorarios().filter(h=>!clienteFiltro || h.clienteId===clienteFiltro);
+  list.forEach(h=>{
+    // Sócio/master veem a fatia do escritório sobre o valor bruto; associado
+    // vê só a PRÓPRIA parte — nunca o valor total pago pelo cliente, que
+    // revelaria a divisão interna do escritório (era esse o erro grave
+    // encontrado: um painel anterior mostrava o financeiro do sócio ao
+    // associado).
+    const minhaParteDe = (bruto) => {
+      if(podeVerCaixa) return bruto*fracaoEscritorio(h);
+      const partes = partesSplit(h.splitTipo);
+      const idsAssoc = idsAssociadosRegistro(h);
+      if(!idsAssoc.includes(CURRENT_USER.id) || !partes.profissional) return 0;
+      return (bruto*partes.profissional)/idsAssoc.length;
+    };
+    const base = clienteNome(h.clienteId)+(h.processoId? ' · '+(processoLabel(h.processoId)||'') : '');
+    if(tipoMov==='recebimentos' || tipoMov==='ambos'){
+      if(h.forma==='avista'){ if(h.avistaStatus==='pago' && h.avistaPagoEm && dentro(h.avistaPagoEm)) itens.push({data:h.avistaPagoEm, desc:base, valor:minhaParteDe(h.valorTotal)}); }
+      else (h.parcelas||[]).forEach(p=>{ if(p.status==='pago' && p.pagoEm && dentro(p.pagoEm)) itens.push({data:p.pagoEm, desc:base+' — parcela '+p.numero, valor:minhaParteDe(p.valor)}); });
     }
+    if(tipoMov==='pendentes'){
+      if(h.forma==='avista'){ if(h.avistaStatus==='pendente') itens.push({data:null, desc:base, valor:minhaParteDe(h.valorTotal)}); }
+      else (h.parcelas||[]).forEach(p=>{ if(p.status==='pendente' && (!p.vencimento || dentro(p.vencimento))) itens.push({data:p.vencimento, desc:base+' — parcela '+p.numero, valor:minhaParteDe(p.valor)}); });
+    }
+  });
+  if((tipoMov==='despesas' || tipoMov==='ambos') && podeVerCaixa){
+    DB.despesas.filter(d=>dentro(d.data)).forEach(d=>itens.push({data:d.data, desc:'Despesa: '+d.descricao, valor:-d.valor}));
   }
+  itens.sort((a,b)=>(a.data||'').localeCompare(b.data||''));
+  const total = itens.reduce((s,it)=>s+it.valor,0);
+  const tituloTipo = {recebimentos:'Recebimentos', despesas:'Despesas', ambos:'Recebimentos e despesas', pendentes:'Parcelas pendentes'}[tipoMov];
+  const titulo = `Auditoria financeira — ${tituloTipo}`+(dataInicio||dataFim? ` (${dataInicio?fmtDate(dataInicio):'início'} a ${dataFim?fmtDate(dataFim):'hoje'})` : '');
+  DETALHE_KPI_ATUAL = {titulo, itens, total};
+  document.getElementById('aud-resultado').innerHTML = `
+    <div class="panel" style="padding:0; max-height:300px; overflow-y:auto;">
+      <table><thead><tr><th>Data</th><th>Descrição</th><th>Valor</th></tr></thead><tbody>
+      ${itens.length? itens.map(it=>`<tr><td>${it.data?fmtDate(it.data):'—'}</td><td>${escapeHtml(it.desc)}</td><td style="color:${it.valor<0?'var(--danger)':'inherit'};">${fmtMoney(it.valor)}</td></tr>`).join('') : '<tr><td colspan="3" style="text-align:center; color:var(--ink-soft);">Nenhum item encontrado.</td></tr>'}
+      </tbody></table>
+    </div>
+    <div style="text-align:right; margin-top:10px; font-weight:700;">Total: ${fmtMoney(total)}</div>
+    <button type="button" class="btn btn-dark btn-block" style="margin-top:10px;" onclick="baixarDetalheKpiWord()">📥 Baixar em Word (timbrado)</button>
+  `;
 }
 let DETALHE_KPI_ATUAL = null;
 // Monta, item a item, a lista que compõe o valor de uma caixa do resumo
@@ -3834,15 +3974,29 @@ function abrirDetalheKpi(tipo){
   const hoje = todayISO(); const mesAtual = hoje.slice(0,7);
   const podeVerCaixa = isMaster()||isSocio();
   const list = meusHonorarios();
-  let titulo = '', itens = [];
-  if(tipo==='a-receber' || tipo==='a-receber-liquido'){
-    const liquido = tipo==='a-receber-liquido';
-    titulo = liquido? 'A receber (líquido do escritório)' : 'A receber (total dos clientes)';
+  let titulo = '', itens = [], resumoExtra = '';
+  if(tipo==='a-receber'){
+    titulo = 'A receber (total dos clientes)';
     list.forEach(h=>{
-      const fracao = liquido? fracaoEscritorio(h) : 1;
       const base = clienteNome(h.clienteId)+(h.processoId? ' · '+(processoLabel(h.processoId)||'') : '');
-      if(h.forma==='avista'){ if(h.avistaStatus==='pendente') itens.push({data:null, desc:base, valor:h.valorTotal*fracao}); }
-      else (h.parcelas||[]).forEach(p=>{ if(p.status==='pendente') itens.push({data:p.vencimento, desc:base+' — parcela '+p.numero, valor:p.valor*fracao}); });
+      if(h.forma==='avista'){ if(h.avistaStatus==='pendente') itens.push({data:null, desc:base, valor:h.valorTotal}); }
+      else (h.parcelas||[]).forEach(p=>{ if(p.status==='pendente') itens.push({data:p.vencimento, desc:base+' — parcela '+p.numero, valor:p.valor}); });
+    });
+  } else if(tipo==='a-receber-mes-escritorio'){
+    titulo = 'A receber este mês (parte do escritório)';
+    list.forEach(h=>{
+      const fracao = fracaoEscritorio(h);
+      const base = clienteNome(h.clienteId)+(h.processoId? ' · '+(processoLabel(h.processoId)||'') : '');
+      (h.parcelas||[]).forEach(p=>{ if(p.status==='pendente' && p.vencimento && p.vencimento.slice(0,7)===mesAtual) itens.push({data:p.vencimento, desc:base+' — parcela '+p.numero, valor:p.valor*fracao}); });
+    });
+  } else if(tipo==='a-receber-mes-socio'){
+    titulo = 'A receber este mês (sua parte, sócio)';
+    list.forEach(h=>{
+      const partes = partesSplit(h.splitTipo);
+      const idsSocios = idsSociosRegistro(h);
+      if(!idsSocios.includes(CURRENT_USER.id) || !partes.socio) return;
+      const base = clienteNome(h.clienteId)+(h.processoId? ' · '+(processoLabel(h.processoId)||'') : '');
+      (h.parcelas||[]).forEach(p=>{ if(p.status==='pendente' && p.vencimento && p.vencimento.slice(0,7)===mesAtual) itens.push({data:p.vencimento, desc:base+' — parcela '+p.numero, valor:(p.valor*partes.socio)/idsSocios.length}); });
     });
   } else if(tipo==='recebido-mes'){
     titulo = 'Recebido no mês'+(podeVerCaixa? ' (parte do escritório)' : '');
@@ -3873,11 +4027,21 @@ function abrirDetalheKpi(tipo){
       else (h.parcelas||[]).forEach(p=>{ if(p.status==='pago' && p.pagoEm) itens.push({data:p.pagoEm, desc:base+' — parcela '+p.numero, valor:p.valor*fracao}); });
     });
     DB.despesas.forEach(d=>itens.push({data:d.data, desc:'Despesa: '+d.descricao, valor:-d.valor}));
+    const b = computeFinanceBreakdown();
+    const s = computeFinanceSummary();
+    const nomesAssociadosComValor = Object.keys(b.porAssociado).filter(id=>b.porAssociado[id]>0.004);
+    resumoExtra = `<div class="panel" style="margin-bottom:12px;">
+      <div class="list-row"><div><div class="rtitle">A receber (líquido do escritório, acumulado)</div></div><div class="rmeta" style="font-weight:700;">${vmoney(s.aReceberLiquidoEscritorio)}</div></div>
+      <div class="list-row"><div><div class="rtitle">Sócio(s) já receberam</div><div class="rsub">fatia de sócio nos contratos que têm essa divisão específica</div></div><div class="rmeta" style="font-weight:700;">${vmoney(b.recebidoSocio)}</div></div>
+      <div class="list-row"><div><div class="rtitle">Escritório já recebeu (taxa institucional)</div></div><div class="rmeta" style="font-weight:700;">${vmoney(b.recebidoEscritorio)}</div></div>
+      ${nomesAssociadosComValor.map(id=>`<div class="list-row"><div><div class="rtitle">${escapeHtml(usuarioNome(id))} (associado) já recebeu</div></div><div class="rmeta" style="font-weight:700;">${vmoney(b.porAssociado[id])}</div></div>`).join('')}
+    </div>`;
   } else return;
   itens.sort((a,b)=>(a.data||'').localeCompare(b.data||''));
   const total = itens.reduce((s,it)=>s+it.valor,0);
   DETALHE_KPI_ATUAL = {titulo, itens, total};
   const corpo = `
+    ${resumoExtra}
     <div class="panel" style="padding:0; max-height:400px; overflow-y:auto;">
       <table><thead><tr><th>Data</th><th>Descrição</th><th>Valor</th></tr></thead><tbody>
       ${itens.length? itens.map(it=>`<tr><td>${it.data?fmtDate(it.data):'—'}</td><td>${escapeHtml(it.desc)}</td><td style="color:${it.valor<0?'var(--danger)':'inherit'};">${fmtMoney(it.valor)}</td></tr>`).join('') : '<tr><td colspan="3" style="text-align:center; color:var(--ink-soft);">Nenhum item neste período.</td></tr>'}
