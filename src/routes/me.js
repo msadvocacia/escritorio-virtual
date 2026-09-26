@@ -10,7 +10,11 @@ router.get('/', requireAuth, async (req, res) => {
   const usuarios = await getCollection('usuarios', []);
   const usuario = usuarios.find((u) => u.id === req.user.id);
   if (!usuario) return res.status(404).json({ erro: 'Usuário não encontrado.' });
-  res.json(semSenha(usuario));
+  const dados = semSenha(usuario);
+  // Anotações internas do tutor sobre o estagiário são só para quem
+  // supervisiona — nunca para o próprio estagiário ver sobre si mesmo.
+  if (req.user.tipo === 'estagiario') delete dados.anotacoesInternas;
+  res.json(dados);
 });
 
 router.get('/cliente', requireAuth, async (req, res) => {

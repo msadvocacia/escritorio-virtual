@@ -2,7 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const { getCollection, setCollection } = require('../utils/store');
 const { requireAuth, requireRole } = require('../middleware/auth');
-const { usuariosVisiveis, isMaster } = require('../utils/visibility');
+const { usuariosVisiveis, isMaster, isSocio } = require('../utils/visibility');
 
 const router = express.Router();
 
@@ -72,6 +72,23 @@ router.post('/', requireAuth, requireRole('master', 'socio'), async (req, res) =
 });
 
 // Edita dados cadastrais (não a senha) de um sócio/associado — uso do administrador/sócio
+// Anotações internas sobre um estagiário — o próprio tutor (mesmo sendo
+// associado, que não tem permissão geral de editar usuários) pode escrever
+// aqui, já que é uma percepção pessoal dele sobre quem ele supervisiona, não
+// uma alteração de cadastro. Nunca visível para o próprio estagiário.
+router.patch('/:id/anotacoes', requireAuth, async (req, res) => {
+  const usuarios = await getCollection('usuarios', []);
+  const alvo = usuarios.find((u) => u.id === req.params.id && u.tipo === 'estagiario');
+  if (!alvo) return res.status(404).json({ erro: 'Estagiário não encontrado.' });
+  const souTutor = (alvo.tutoresIds || []).includes(req.user.id);
+  if (!isMaster(req.user) && !isSocio(req.user) && !souTutor) {
+    return res.status(403).json({ erro: 'Só sócio, administrador ou o tutor direto podem anotar sobre este estagiário.' });
+  }
+  alvo.anotacoesInternas = String(req.body.anotacoesInternas || '');
+  await setCollection('usuarios', usuarios);
+  res.json({ anotacoesInternas: alvo.anotacoesInternas });
+});
+
 router.patch('/:id', requireAuth, requireRole('master', 'socio'), async (req, res) => {
   const usuarios = await getCollection('usuarios', []);
   const usuario = usuarios.find((u) => u.id === req.params.id);

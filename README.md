@@ -1673,6 +1673,43 @@ mais, nem menos).
   estagiário poder ajustar e reenviar.
 
 
+## 54. Estágio reorganizado por estagiário, perfil com anotações internas, e "Supervisão"
+
+### Processos: correção do que foi retirado a mais
+Na rodada anterior, tirei nome do responsável e do cliente da lista para o
+estagiário, quando só devia tirar o percentual da divisão. Corrigido —
+agora ele volta a ver quem é o responsável (só sem o percentual/valor).
+
+### Módulo Estágio reorganizado
+Em vez de uma lista corrida de todas as tarefas de todos os estagiários
+misturadas, agora a tela principal mostra **um card por estagiário** (com
+contagem de pendentes). Clicar abre o **perfil completo** dele:
+- Dados básicos (formação, remunerado, tutor(es), início do estágio)
+- **Nota média** — parâmetro interno de qualidade/interesse, visível só
+  para sócio/associado, nunca para o próprio estagiário (serve pra avaliar
+  se ele pode ser considerado pra uma vaga futura no escritório)
+- **Anotações internas**: campo de texto livre para as percepções do
+  responsável sobre o estagiário — testei e confirmei que **nunca aparece
+  para o próprio estagiário** (nem via a rota `/api/me`), mas fica visível
+  para sócio/master. Um associado que seja tutor direto também pode
+  escrever (testei isso especificamente, já que ele normalmente não tem
+  permissão de editar usuários) — e testei que um associado que NÃO é
+  tutor daquele estagiário é bloqueado (403) se tentar.
+- Checkboxes de liberar relatório/certificado
+- A lista de tarefas **só daquele estagiário**
+- Botão "← Voltar" para a lista
+
+### "Score" renomeado para "Supervisão"
+Removida a caixa "Nota Média" dessa tela — o estagiário não vê mais sua
+própria pontuação agregada, só a contagem de tarefas (total, cumpridas,
+não cumpridas) e o acesso ao relatório/certificado quando liberados.
+
+### "Missão" virou "Tarefa" em todo o sistema
+Fiz uma varredura completa (interface, avaliação, mensagens de erro do
+servidor) trocando toda ocorrência de "missão/missões" por "tarefa/tarefas",
+incluindo o nome da própria função de avaliação internamente.
+
+
 ---
 
 Qualquer erro ao subir, me mostre a mensagem exata que aparece (no Render, aba "Logs")

@@ -603,35 +603,31 @@
 
       <!-- ESTÁGIO (master/sócio/associado) -->
       <div class="page" id="page-estagio">
-        <div class="section-head"><div><h2>Estágio</h2><p>Delegue missões, acompanhe entregas e avalie o desempenho dos estagiários.</p></div>
+        <div class="section-head"><div><h2>Estágio</h2><p>Delegue tarefas, acompanhe entregas e avalie o desempenho dos estagiários.</p></div>
           <div style="display:flex; gap:8px;">
             <button class="btn btn-ghost" onclick="abrirGerenciarCriterios()">⚙️ Critérios de avaliação</button>
             <button class="btn btn-gold" onclick="abrirNovaDelegacaoForm()">+ Nova delegação</button>
           </div>
         </div>
-        <div class="panel" id="estagio-estagiarios-panel" style="margin-bottom:16px;"><h3>Estagiários</h3><div id="estagio-estagiarios-lista"></div></div>
-        <div class="pill-select" style="margin-bottom:14px;" id="estagio-status-tabs">
-          <button class="fin-tab active" data-status="" onclick="setEstagioStatusTab('')">Todas</button>
-          <button class="fin-tab" data-status="pendente" onclick="setEstagioStatusTab('pendente')">Pendentes</button>
-          <button class="fin-tab" data-status="entregue" onclick="setEstagioStatusTab('entregue')">Entregues (avaliar)</button>
-          <button class="fin-tab" data-status="concluida" onclick="setEstagioStatusTab('concluida')">Cumpridas</button>
-          <button class="fin-tab" data-status="nao_cumprida" onclick="setEstagioStatusTab('nao_cumprida')">Não cumpridas</button>
+        <div id="estagio-view-lista">
+          <div class="hint" style="margin-bottom:10px;">Clique num estagiário para ver o perfil completo e as tarefas dele.</div>
+          <div id="estagio-cards-lista"></div>
         </div>
-        <div id="estagio-lista"></div>
+        <div id="estagio-view-perfil" style="display:none;"></div>
       </div>
 
       <!-- DELEGAÇÕES (perfil do estagiário) -->
       <div class="page" id="page-delegacoes">
-        <div class="section-head"><div><h2>Delegações</h2><p>Missões que seu tutor/responsável delegou a você.</p></div></div>
+        <div class="section-head"><div><h2>Delegações</h2><p>Tarefas que seu tutor/responsável delegou a você.</p></div></div>
         <div id="delegacoes-lista"></div>
       </div>
 
       <!-- SCORE (perfil do estagiário) -->
       <div class="page" id="page-score">
-        <div class="section-head"><div><h2>Score</h2><p>Sua pontuação e histórico de missões durante o estágio.</p></div></div>
+        <div class="section-head"><div><h2>Supervisão</h2><p>Acompanhe suas tarefas, seu relatório final e certificado.</p></div></div>
         <div class="kpi-grid" id="score-kpi-grid"></div>
         <div class="panel" id="score-liberacoes-panel" style="margin-bottom:16px;"></div>
-        <div class="panel"><h3>Histórico de missões</h3><div id="score-historico"></div></div>
+        <div class="panel"><h3>Histórico de tarefas</h3><div id="score-historico"></div></div>
       </div>
 
       <!-- AGENDA PESSOAL -->
@@ -1210,7 +1206,7 @@ const PAGES_BY_ROLE = {
   master: [ {id:'dashboard',label:'Painel',icon:'grid'}, {id:'usuarios',label:'Usuários',icon:'users'}, {id:'clientes',label:'Clientes',icon:'user'}, {id:'processos',label:'Processos',icon:'folder'}, {id:'prazos',label:'Prazos',icon:'calendar'}, {id:'financeiro',label:'Financeiro',icon:'money'}, {id:'calculo',label:'Cálculo Jurídico',icon:'calc'}, {id:'djen',label:'DJEN',icon:'bell'}, {id:'agenda',label:'Agenda',icon:'calendar'}, {id:'mensagens',label:'Mensagens',icon:'msg'}, {id:'lembretes',label:'Lembretes',icon:'bell'}, {id:'estagio',label:'Estágio',icon:'grid'}, {id:'config',label:'Configurações',icon:'cog'} ],
   socio: [ {id:'dashboard',label:'Painel',icon:'grid'}, {id:'usuarios',label:'Usuários',icon:'users'}, {id:'clientes',label:'Clientes',icon:'user'}, {id:'processos',label:'Processos',icon:'folder'}, {id:'prazos',label:'Prazos',icon:'calendar'}, {id:'financeiro',label:'Financeiro',icon:'money'}, {id:'calculo',label:'Cálculo Jurídico',icon:'calc'}, {id:'djen',label:'DJEN',icon:'bell'}, {id:'agenda',label:'Agenda',icon:'calendar'}, {id:'mensagens',label:'Mensagens',icon:'msg'}, {id:'lembretes',label:'Lembretes',icon:'bell'}, {id:'estagio',label:'Estágio',icon:'grid'} ],
   associado: [ {id:'dashboard',label:'Painel',icon:'grid'}, {id:'clientes',label:'Clientes',icon:'user'}, {id:'processos',label:'Processos',icon:'folder'}, {id:'prazos',label:'Prazos',icon:'calendar'}, {id:'financeiro',label:'Financeiro',icon:'money'}, {id:'calculo',label:'Cálculo Jurídico',icon:'calc'}, {id:'djen',label:'DJEN',icon:'bell'}, {id:'agenda',label:'Agenda',icon:'calendar'}, {id:'mensagens',label:'Mensagens',icon:'msg'}, {id:'lembretes',label:'Lembretes',icon:'bell'}, {id:'estagio',label:'Estágio',icon:'grid'} ],
-  estagiario: [ {id:'dashboard',label:'Painel',icon:'grid'}, {id:'processos',label:'Processos',icon:'folder'}, {id:'prazos',label:'Prazos',icon:'calendar'}, {id:'calculo',label:'Cálculo Jurídico',icon:'calc'}, {id:'djen',label:'DJEN',icon:'bell'}, {id:'lembretes',label:'Lembretes',icon:'bell'}, {id:'delegacoes',label:'Delegações',icon:'folder'}, {id:'score',label:'Score',icon:'grid'} ],
+  estagiario: [ {id:'dashboard',label:'Painel',icon:'grid'}, {id:'processos',label:'Processos',icon:'folder'}, {id:'prazos',label:'Prazos',icon:'calendar'}, {id:'calculo',label:'Cálculo Jurídico',icon:'calc'}, {id:'djen',label:'DJEN',icon:'bell'}, {id:'lembretes',label:'Lembretes',icon:'bell'}, {id:'delegacoes',label:'Delegações',icon:'folder'}, {id:'score',label:'Supervisão',icon:'grid'} ],
   cliente: [ {id:'meus-processos',label:'Meus processos',icon:'folder'}, {id:'agendar-cliente',label:'Agendar visita',icon:'calendar'}, {id:'mensagens',label:'Mensagens',icon:'msg'} ],
 };
 // Só os módulos com seções internas claras ganham submenu — o objetivo é
@@ -1398,7 +1394,7 @@ async function submitAgendamentoPublico(){
    ============================================================ */
 function podeGerenciarUsuarios(){ return isMaster()||isSocio(); }
 function openUsuarioForm(id){
-  if(!podeGerenciarUsuarios()){ showToast('Sem permissão.'); return; }
+  if(!podeGerenciarUsuarios()){ showToast('Sem pertarefa.'); return; }
   const u = id? DB.usuarios.find(x=>x.id===id) : {tipo: isMaster()? 'socio':'associado', nome:'', login:'', oab:'', ativo:true, nacionalidade:'brasileiro(a)', estadoCivil:'solteiro(a)', rg:'', cpf:'', telefone:'', endereco:'', remunerado:false, formacaoEstagiario:'estudante', estagiarioVisivelPara:'todos', tutoresIds:[]};
   const tiposPermitidos = isMaster()? ['socio','associado','estagiario'] : ['associado','estagiario'];
   const tutoresDisponiveis = DB.usuarios.filter(x=>x.tipo==='socio'||x.tipo==='associado');
@@ -1441,7 +1437,7 @@ function openUsuarioForm(id){
             <option value="especificos" ${u.estagiarioVisivelPara==='especificos'?'selected':''}>Usuários específicos (só os tutores marcados abaixo)</option>
           </select></div>
         </div>
-        <div class="field"><label><input type="checkbox" id="uf-remunerado" style="width:auto; margin-right:6px;" ${u.remunerado?'checked':''}> Estágio remunerado${ajuda('O valor ou percentual da remuneração é definido depois, processo por processo, ao delegar uma missão vinculada a um caso — não é um valor fixo aqui no cadastro.')}</label></div>
+        <div class="field"><label><input type="checkbox" id="uf-remunerado" style="width:auto; margin-right:6px;" ${u.remunerado?'checked':''}> Estágio remunerado${ajuda('O valor ou percentual da remuneração é definido depois, processo por processo, ao delegar uma tarefa vinculada a um caso — não é um valor fixo aqui no cadastro.')}</label></div>
         <div class="field"><label>Tutor(es) / responsável(is) direto(s)</label>
           <div style="display:flex; flex-direction:column; gap:4px; margin-top:4px; max-height:140px; overflow-y:auto;">
             ${tutoresDisponiveis.map(t=>`<label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" class="uf-tutor-chk" value="${t.id}" style="width:auto;" ${(u.tutoresIds||[]).includes(t.id)?'checked':''}> ${escapeHtml(t.nome)} (${t.tipo==='socio'?'Sócio':'Associado'})</label>`).join('') || '<span class="hint">Nenhum sócio/associado cadastrado ainda.</span>'}
@@ -1451,7 +1447,7 @@ function openUsuarioForm(id){
     </div>
     ${!id? `<div class="field"><label>Senha inicial</label><input type="password" id="uf-senha" placeholder="Defina uma senha temporária" autocomplete="new-password"></div>` : ''}
     <div class="field" id="uf-agenda-box"><label><input type="checkbox" id="uf-agenda-pessoal" style="width:auto; margin-right:6px;" ${u.tipo==='socio'||u.tipo==='estagiario'||u.agendaPessoalLiberada?'checked':''} ${u.tipo==='socio'||u.tipo==='estagiario'?'disabled':''}> Agenda pessoal${ajuda('Libera a aba "Agenda Pessoal" para este usuário — um mini-painel só dele, para anotar clientes, processos, audiências e prazos particulares. Sócios e estagiários sempre têm acesso; para associados, você decide aqui.')}</label></div>
-    <div class="field" id="uf-estagio-visualizar-box" style="display:none;"><label><input type="checkbox" id="uf-visualizar-estagio" style="width:auto; margin-right:6px;" ${u.visualizarEstagio?'checked':''}> Visualizar Estágio${ajuda('Libera o módulo "Estágio" para este usuário — onde é possível delegar missões a estagiários, acompanhar entregas e avaliar o desempenho.')}</label></div>
+    <div class="field" id="uf-estagio-visualizar-box" style="display:none;"><label><input type="checkbox" id="uf-visualizar-estagio" style="width:auto; margin-right:6px;" ${u.visualizarEstagio?'checked':''}> Visualizar Estágio${ajuda('Libera o módulo "Estágio" para este usuário — onde é possível delegar tarefas a estagiários, acompanhar entregas e avaliar o desempenho.')}</label></div>
     <div class="field"><label>Situação</label><select id="uf-ativo"><option value="true" ${u.ativo!==false?'selected':''}>Ativo</option><option value="false" ${u.ativo===false?'selected':''}>Inativo</option></select></div>
   `;
   openModal(id? 'Editar usuário' : 'Novo usuário', body, async ()=>{
@@ -2019,7 +2015,7 @@ function renderProcessos(){
     <tr>
       <td><strong>${escapeHtml(p.numero)}</strong><br><span style="font-size:11px;color:var(--ink-soft);">${escapeHtml(p.tipo)||''}</span></td>
       <td>${escapeHtml(clienteNome(p.clienteId))}</td>
-      <td>${isEstagiario()? '—' : escapeHtml(nomesProfissionais(p))+(p.splitTipo && p.splitTipo!=='nenhum'? '<br><span style="font-size:10.5px;color:var(--ink-soft);">'+splitLabel(p.splitTipo)+'</span>':'')}</td>
+      <td>${escapeHtml(nomesProfissionais(p))}${(!isEstagiario() && p.splitTipo && p.splitTipo!=='nenhum')? '<br><span style="font-size:10.5px;color:var(--ink-soft);">'+splitLabel(p.splitTipo)+'</span>':''}</td>
       <td><span class="tag tag-${p.status}">${statusLabel[p.status]}</span></td>
       <td><div class="row-actions">${isEstagiario()? '' : `
         <button class="icon-btn" onclick="openAtualizacaoProcesso('${p.id}')" title="Adicionar andamento">📝</button>
@@ -2561,7 +2557,7 @@ function imprimirRecibo(honId, parcelaId){
   dispararImpressao();
 }
 function openDespesaForm(id){
-  if(!(isMaster()||isSocio())){ showToast('Sem permissão.'); return; }
+  if(!(isMaster()||isSocio())){ showToast('Sem pertarefa.'); return; }
   const d = id ? DB.despesas.find(x=>x.id===id) : {descricao:'',categoria:'',data:todayISO(),valor:''};
   const body = `<div class="field"><label>Descrição</label><input id="df-desc" value="${escapeHtml(d.descricao)}"></div>
     <div class="field-row"><div class="field"><label>Categoria</label><input id="df-cat" value="${escapeHtml(d.categoria)}"></div><div class="field"><label>Data</label><input type="date" id="df-data" value="${d.data}"></div></div>
@@ -2932,8 +2928,8 @@ function formularioRescisaoTrabalhista(){
       <div class="field"><label>Saldo de FGTS já depositado (opcional — se vazio, estima 8% ao mês)${ajuda('Se você tiver o extrato do FGTS com o saldo real, informe aqui para um cálculo mais preciso. Se não tiver, deixe em branco — o sistema estima 8% do salário por mês trabalhado.')}</label><input type="number" step="0.01" id="rt-fgts" placeholder="Deixe vazio para estimar"></div>
     </div>
     <div class="field-row">
-      <div class="field"><label>Data de admissão${ajuda('A data em que o trabalhador começou a trabalhar (consta na carteira de trabalho ou no contrato).')}</label><input type="date" id="rt-admissao"></div>
-      <div class="field"><label>Data de demissão${ajuda('A data em que o trabalhador foi dispensado (o último dia efetivamente trabalhado, salvo aviso prévio).')}</label><input type="date" id="rt-demissao"></div>
+      <div class="field"><label>Data de adtarefa${ajuda('A data em que o trabalhador começou a trabalhar (consta na carteira de trabalho ou no contrato).')}</label><input type="date" id="rt-admissao"></div>
+      <div class="field"><label>Data de detarefa${ajuda('A data em que o trabalhador foi dispensado (o último dia efetivamente trabalhado, salvo aviso prévio).')}</label><input type="date" id="rt-demissao"></div>
     </div>
     <div class="field"><label><input type="checkbox" id="rt-aviso" checked style="width:auto; margin-right:6px;"> Aviso prévio indenizado (desmarque se foi trabalhado)${ajuda('Marque se a empresa pagou o aviso prévio em dinheiro, sem o trabalhador precisar cumprir esse período trabalhando. Desmarque se o trabalhador continuou trabalhando durante o aviso prévio (nesse caso, não há indenização extra por ele).')}</label></div>
     <button class="btn btn-gold" onclick="calcularRescisaoTrabalhista()">Calcular</button>
@@ -3261,7 +3257,7 @@ function formularioDesapropriacao(cat){
       <div class="field"><label>Índice de correção</label><select id="dsp-indice">${INDICES_DISPONIVEIS.map(i=>`<option value="${i.v}">${i.l}</option>`).join('')}</select></div>
     </div>
     <div class="field-row">
-      <div class="field"><label>Data da imissão na posse${ajuda('A data em que o poder público tomou posse do imóvel/bem desapropriado — é a partir dela que os juros compensatórios começam a contar.')}</label><input type="date" id="dsp-data-inicial"></div>
+      <div class="field"><label>Data da itarefa na posse${ajuda('A data em que o poder público tomou posse do imóvel/bem desapropriado — é a partir dela que os juros compensatórios começam a contar.')}</label><input type="date" id="dsp-data-inicial"></div>
       <div class="field"><label>Data do pagamento</label><input type="date" id="dsp-data-final" value="${todayISO()}"></div>
     </div>
     <div class="field-row">
@@ -3447,7 +3443,7 @@ async function calcularDistribuicaoLucros(){
 function formularioAmortizacao(cat){
   return `<h3>${escapeHtml(cat.titulo)} — Price x SAC</h3>
     ${campoVinculoCalculo()}
-    <div class="hint" style="margin-bottom:10px;">Compara os dois sistemas de amortização mais comuns em financiamentos. Análise de juros abusivos, capitalização indevida ou comissão de permanência exige perícia específica do contrato — ainda em construção.</div>
+    <div class="hint" style="margin-bottom:10px;">Compara os dois sistemas de amortização mais comuns em financiamentos. Análise de juros abusivos, capitalização indevida ou cotarefa de permanência exige perícia específica do contrato — ainda em construção.</div>
     <div class="field-row">
       <div class="field"><label>Valor financiado (R$)${ajuda('O valor total que foi (ou será) financiado — o preço do bem menos qualquer entrada já paga.')}</label><input type="number" step="0.01" id="am-valor"></div>
       <div class="field"><label>Taxa de juros ao mês (%)${ajuda('A taxa de juros mensal cobrada pelo banco/financeira, informada no contrato (procure "taxa de juros efetiva mensal" no CET do contrato).')}</label><input type="number" step="0.01" id="am-taxa"></div>
@@ -3654,7 +3650,7 @@ function formularioRetroativoPccr(cat){
       </div>
       <div class="field-row">
         <div class="field"><label>Processo${ajuda('O número do processo administrativo ou judicial, se já existir.')}</label><input id="pccr-processo"></div>
-        <div class="field"><label>Data de admissão${ajuda('Quando o servidor começou a trabalhar no cargo.')}</label><input type="date" id="pccr-admissao"></div>
+        <div class="field"><label>Data de adtarefa${ajuda('Quando o servidor começou a trabalhar no cargo.')}</label><input type="date" id="pccr-admissao"></div>
       </div>
       <div class="field-row">
         <div class="field"><label>Data de protocolo${ajuda('A data em que o pedido administrativo (ou a ação judicial) foi protocolado. É a partir dela que o sistema calcula o corte de 5 anos (prescrição quinquenal) — tudo antes desse corte não entra no cálculo. Vem preenchida com a data de hoje por padrão (para simular "a partir de agora, para trás") — troque se já existir um protocolo/ação com data diferente.')}</label><input type="date" id="pccr-protocolo" value="${todayISO()}"></div>
@@ -4086,7 +4082,7 @@ async function renderFinanceiro(){
           }
         });
       }catch(e){ /* silencioso — não trava o financeiro por causa disso */ }
-      caixas.push(`<div class="kpi kpi-danger" style="cursor:pointer;" onclick="goPage('estagio')"><div class="label">Estagiários${ajuda('Soma da remuneração combinada em cada missão delegada a estagiários remunerados — valor fixo ou percentual sobre o processo vinculado. Sai do que sobraria para o escritório.')}</div><div class="value">${vmoney(remuneracaoEstagiarios)}</div><div class="sub">remuneração combinada nas delegações</div></div>`);
+      caixas.push(`<div class="kpi kpi-danger" style="cursor:pointer;" onclick="goPage('estagio')"><div class="label">Estagiários${ajuda('Soma da remuneração combinada em cada tarefa delegada a estagiários remunerados — valor fixo ou percentual sobre o processo vinculado. Sai do que sobraria para o escritório.')}</div><div class="value">${vmoney(remuneracaoEstagiarios)}</div><div class="sub">remuneração combinada nas delegações</div></div>`);
     }
   }
   kpiGrid.innerHTML = caixas.slice(0,4).join('');
@@ -4744,7 +4740,7 @@ let DJEN_RESULTADOS_ATUAIS = [];
 let DJEN_CAPTURADAS_CACHE = [];
 let DJEN_INICIALIZADO = false;
 /* ============================================================
-   ESTÁGIO — delegação de missões a estagiários, apontamentos, arquivos e
+   ESTÁGIO — delegação de tarefas a estagiários, apontamentos, arquivos e
    avaliação com pontuação (visão de quem delega: master/sócio/associado)
    ============================================================ */
 let DELEGACOES_CACHE = [];
@@ -4769,26 +4765,101 @@ function meusEstagiarios(){
 async function renderEstagioPage(){
   try{ DELEGACOES_CACHE = await apiFetch('/api/delegacoes'); }
   catch(e){ DELEGACOES_CACHE = []; showToast(e.message||'Não foi possível carregar as delegações.'); }
-  renderListaEstagio();
-  renderPainelEstagiarios();
+  document.getElementById('estagio-view-lista').style.display = 'block';
+  document.getElementById('estagio-view-perfil').style.display = 'none';
+  renderCardsEstagiarios();
 }
-function renderPainelEstagiarios(){
-  const box = document.getElementById('estagio-estagiarios-lista'); if(!box) return;
+// Atualiza os dados sem "chutar" o administrador de volta pra lista quando
+// ele está vendo o perfil de um estagiário específico (ex: depois de avaliar
+// uma tarefa ou enviar um apontamento).
+async function atualizarViewEstagioAtual(){
+  try{ DELEGACOES_CACHE = await apiFetch('/api/delegacoes'); }catch(e){}
+  if(ESTAGIARIO_PERFIL_ABERTO) await abrirPerfilEstagiario(ESTAGIARIO_PERFIL_ABERTO);
+  else renderCardsEstagiarios();
+}
+function renderCardsEstagiarios(){
+  const box = document.getElementById('estagio-cards-lista'); if(!box) return;
   const estagiarios = meusEstagiarios();
-  if(!estagiarios.length){ box.innerHTML = '<div class="empty">Nenhum estagiário cadastrado ainda — crie um em Usuários.</div>'; return; }
+  if(!estagiarios.length){ box.innerHTML = '<div class="empty"><div class="big">🎓</div>Nenhum estagiário cadastrado ainda — crie um em Usuários.</div>'; return; }
   box.innerHTML = estagiarios.map(e=>{
     const minhas = DELEGACOES_CACHE.filter(d=>d.estagiarioIds.includes(e.id));
-    const concluidas = minhas.filter(d=>d.status==='concluida');
-    const notas = concluidas.map(d=>d.avaliacao?.notaFinal).filter(n=>n!=null);
-    const notaMedia = notas.length? Math.round((notas.reduce((s,n)=>s+n,0)/notas.length)*10)/10 : null;
-    return `<div class="list-row">
-      <div><div class="rtitle">${escapeHtml(e.nome)}</div><div class="rsub">${e.formacaoEstagiario==='bacharel'?'Bacharel':'Estudante'} · ${e.remunerado?'Remunerado':'Não remunerado'} · ${minhas.length} missão(ões) · nota média: ${notaMedia!=null?notaMedia+'/10':'—'}</div></div>
-      <div class="rmeta">
-        <label style="font-size:11px; display:block;"><input type="checkbox" style="width:auto;" ${e.relatorioLiberado?'checked':''} onchange="toggleLiberacaoEstagiario('${e.id}','relatorioLiberado',this.checked)"> Liberar relatório</label>
-        <label style="font-size:11px; display:block;"><input type="checkbox" style="width:auto;" ${e.certificadoLiberado?'checked':''} onchange="toggleLiberacaoEstagiario('${e.id}','certificadoLiberado',this.checked)"> Liberar certificado</label>
+    const pendentes = minhas.filter(d=>d.status==='pendente'||d.status==='entregue').length;
+    return `<div class="panel" style="margin-bottom:10px; cursor:pointer;" onclick="abrirPerfilEstagiario('${e.id}')">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+        <div>
+          <strong>${escapeHtml(e.nome)}</strong>
+          <div class="rsub">${e.formacaoEstagiario==='bacharel'?'Bacharel':'Estudante'} · ${e.remunerado?'Remunerado':'Não remunerado'} · ${minhas.length} tarefa(s) no total</div>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          ${pendentes>0? `<span class="badge" style="background:var(--danger); color:#fff; border-radius:20px; padding:2px 8px; font-size:11px;">${pendentes} pendente(s)</span>`:''}
+          <span style="font-size:18px;">›</span>
+        </div>
       </div>
     </div>`;
   }).join('');
+}
+let ESTAGIARIO_PERFIL_ABERTO = null;
+function voltarListaEstagiarios(){
+  ESTAGIARIO_PERFIL_ABERTO = null;
+  document.getElementById('estagio-view-lista').style.display = 'block';
+  document.getElementById('estagio-view-perfil').style.display = 'none';
+}
+async function abrirPerfilEstagiario(id){
+  ESTAGIARIO_PERFIL_ABERTO = id;
+  const e = DB.usuarios.find(x=>x.id===id); if(!e) return;
+  document.getElementById('estagio-view-lista').style.display = 'none';
+  const box = document.getElementById('estagio-view-perfil');
+  box.style.display = 'block';
+  box.innerHTML = '<div class="empty">Carregando...</div>';
+  // Busca o registro completo (com anotações internas), já que DB.usuarios
+  // pode ter só a versão "básica" dependendo de quem está logado.
+  let completo = e;
+  if(isMaster()||isSocio()){
+    try{ completo = (await apiFetch('/api/usuarios')).find(x=>x.id===id) || e; }catch(err){}
+  }
+  const minhas = DELEGACOES_CACHE.filter(d=>d.estagiarioIds.includes(id));
+  const concluidas = minhas.filter(d=>d.status==='concluida');
+  const naoCumpridas = minhas.filter(d=>d.status==='nao_cumprida');
+  const notas = concluidas.map(d=>d.avaliacao?.notaFinal).filter(n=>n!=null);
+  const notaMedia = notas.length? Math.round((notas.reduce((s,n)=>s+n,0)/notas.length)*10)/10 : null;
+  box.innerHTML = `
+    <button class="btn btn-ghost btn-sm" style="margin-bottom:14px;" onclick="voltarListaEstagiarios()">← Voltar</button>
+    <div class="panel" style="margin-bottom:14px;">
+      <h3>${escapeHtml(e.nome)}</h3>
+      <div class="field-row">
+        <div class="field"><label>Formação</label><p>${e.formacaoEstagiario==='bacharel'?'Bacharel em Direito':'Estudante de Direito'}</p></div>
+        <div class="field"><label>Estágio</label><p>${e.remunerado?'Remunerado':'Não remunerado'}</p></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Tutor(es)</label><p>${(e.tutoresIds||[]).map(t=>escapeHtml(usuarioNome(t))).join(', ')||'—'}</p></div>
+        <div class="field"><label>Início do estágio</label><p>${e.dataInicioEstagio? fmtDate(e.dataInicioEstagio) : '—'}</p></div>
+      </div>
+    </div>
+    <div class="kpi-grid" style="margin-bottom:14px;">
+      <div class="kpi"><div class="label">Tarefas no total</div><div class="value">${minhas.length}</div></div>
+      <div class="kpi kpi-success"><div class="label">Cumpridas</div><div class="value">${concluidas.length}</div></div>
+      <div class="kpi kpi-danger"><div class="label">Não cumpridas</div><div class="value">${naoCumpridas.length}</div></div>
+      <div class="kpi kpi-info"><div class="label">Nota média${ajuda('Parâmetro interno de qualidade e interesse — visível só para sócio/associado, nunca para o próprio estagiário. Ajuda a avaliar se ele pode ser considerado para uma vaga futura no escritório.')}</div><div class="value">${notaMedia!=null?notaMedia+'/10':'—'}</div></div>
+    </div>
+    <div class="panel" style="margin-bottom:14px;">
+      <h3>Anotações internas${ajuda('De tema livre — suas percepções sobre este estagiário. Nunca fica visível para ele.')}</h3>
+      <textarea id="perfil-estag-notas" placeholder="Percepções sobre postura, evolução, interesse em contratação futura, etc.">${escapeHtml(completo.anotacoesInternas||'')}</textarea>
+      <button class="btn btn-gold btn-sm" style="margin-top:8px;" onclick="salvarAnotacoesEstagiario('${id}')">Salvar anotações</button>
+    </div>
+    <div class="panel" style="margin-bottom:14px;">
+      <h3>Liberações</h3>
+      <label style="display:block; margin-bottom:6px;"><input type="checkbox" style="width:auto; margin-right:6px;" ${e.relatorioLiberado?'checked':''} onchange="toggleLiberacaoEstagiario('${id}','relatorioLiberado',this.checked)"> Liberar relatório final para o estagiário baixar</label>
+      <label style="display:block;"><input type="checkbox" style="width:auto; margin-right:6px;" ${e.certificadoLiberado?'checked':''} onchange="toggleLiberacaoEstagiario('${id}','certificadoLiberado',this.checked)"> Liberar certificado para o estagiário baixar</label>
+    </div>
+    <h3 style="margin-bottom:10px;">Tarefas de ${escapeHtml(e.nome)}</h3>
+    <div>${minhas.length? minhas.sort((a,b)=>(b.criadoEm||'').localeCompare(a.criadoEm||'')).map(d=>renderCardDelegacao(d,true)).join('') : '<div class="empty">Nenhuma tarefa delegada ainda.</div>'}</div>
+  `;
+}
+async function salvarAnotacoesEstagiario(id){
+  try{
+    await apiFetch('/api/usuarios/'+id+'/anotacoes', { method:'PATCH', body: JSON.stringify({anotacoesInternas: document.getElementById('perfil-estag-notas').value}) });
+    showToast('Anotações salvas.');
+  }catch(e){ showToast(e.message||'Não foi possível salvar.'); }
 }
 async function toggleLiberacaoEstagiario(id, campo, valor){
   try{
@@ -4796,19 +4867,6 @@ async function toggleLiberacaoEstagiario(id, campo, valor){
     const u = DB.usuarios.find(x=>x.id===id); if(u) u[campo] = valor;
     showToast('Atualizado.');
   }catch(e){ showToast(e.message||'Não foi possível atualizar.'); }
-}
-function setEstagioStatusTab(status){
-  ESTAGIO_STATUS_TAB = status;
-  document.querySelectorAll('#estagio-status-tabs .fin-tab').forEach(b=>b.classList.toggle('active', b.dataset.status===status));
-  renderListaEstagio();
-}
-function renderListaEstagio(){
-  const box = document.getElementById('estagio-lista'); if(!box) return;
-  let lista = DELEGACOES_CACHE.slice();
-  if(ESTAGIO_STATUS_TAB) lista = lista.filter(d=>d.status===ESTAGIO_STATUS_TAB);
-  lista.sort((a,b)=>(b.criadoEm||'').localeCompare(a.criadoEm||''));
-  if(!lista.length){ box.innerHTML = '<div class="empty"><div class="big">🗂️</div>Nenhuma delegação nesta situação.</div>'; return; }
-  box.innerHTML = lista.map(d=>renderCardDelegacao(d, true)).join('');
 }
 const STATUS_DELEGACAO_LABEL = {pendente:'Pendente', entregue:'Entregue — aguardando avaliação', concluida:'Cumprida', nao_cumprida:'Não cumprida'};
 const STATUS_DELEGACAO_TAG = {pendente:'pendente', entregue:'solicitado', concluida:'cumprido', nao_cumprida:'perdido'};
@@ -4840,8 +4898,8 @@ function renderCardDelegacao(d, comAvaliacao){
       </div>
     </details>
     ${podeAvaliar? `<div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
-      <button class="btn btn-gold btn-sm" onclick="abrirAvaliacaoMissao('${d.id}', true)">✔️ Marcar como cumprida</button>
-      <button class="btn btn-ghost btn-sm" onclick="abrirAvaliacaoMissao('${d.id}', false)">✖️ Marcar como não cumprida</button>
+      <button class="btn btn-gold btn-sm" onclick="abrirAvaliacaoTarefa('${d.id}', true)">✔️ Marcar como cumprida</button>
+      <button class="btn btn-ghost btn-sm" onclick="abrirAvaliacaoTarefa('${d.id}', false)">✖️ Marcar como não cumprida</button>
       ${d.status==='entregue'? `<button class="btn btn-ghost btn-sm" onclick="devolverDelegacaoParaCorrecao('${d.id}')">↩️ Devolver para correção</button>`:''}
     </div>` : ''}
   </div>`;
@@ -4851,19 +4909,19 @@ function abrirNovaDelegacaoForm(){
   if(!estagiarios.length){ showToast('Nenhum estagiário disponível para delegar. Cadastre um estagiário primeiro em Usuários.'); return; }
   const clientes = meusClientes();
   const body = `
-    <div class="field"><label>Título da missão</label><input id="del-titulo" placeholder="Ex: Produzir petição inicial"></div>
+    <div class="field"><label>Título da tarefa</label><input id="del-titulo" placeholder="Ex: Produzir petição inicial"></div>
     <div class="field"><label>Descrição / instruções</label><textarea id="del-descricao" placeholder="Detalhe o que precisa ser feito..."></textarea></div>
     <div class="field-row">
       <div class="field"><label>Cliente (opcional)</label><select id="del-cliente" onchange="atualizarProcessosDelegacao()"><option value="">— nenhum —</option>${clientes.map(c=>`<option value="${c.id}">${escapeHtml(c.nome)}</option>`).join('')}</select></div>
       <div class="field"><label>Processo (opcional)</label><select id="del-processo"><option value="">— nenhum —</option></select></div>
     </div>
-    <div class="field"><label>Estagiário(s)${ajuda('Pode selecionar mais de um — todos trabalham juntos na mesma missão.')}</label>
+    <div class="field"><label>Estagiário(s)${ajuda('Pode selecionar mais de um — todos trabalham juntos na mesma tarefa.')}</label>
       <div style="display:flex; flex-direction:column; gap:4px; margin-top:4px;">
         ${estagiarios.map(e=>`<label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" class="del-estag-chk" value="${e.id}" data-remunerado="${!!e.remunerado}" style="width:auto;" onchange="atualizarCampoRemuneracaoDelegacao()"> ${escapeHtml(e.nome)}${e.remunerado?' 💰':''}</label>`).join('')}
       </div>
     </div>
     <div class="field-row" id="del-remuneracao-box" style="display:none;">
-      <div class="field"><label>Remuneração desta missão</label><select id="del-remuneracao-tipo">
+      <div class="field"><label>Remuneração desta tarefa</label><select id="del-remuneracao-tipo">
         <option value="valor">Valor fixo (R$)</option>
         <option value="percentual">Percentual do processo (%)</option>
       </select></div>
@@ -4877,7 +4935,7 @@ function abrirNovaDelegacaoForm(){
   openModal('Nova delegação', body, async ()=>{
     const titulo = document.getElementById('del-titulo').value.trim();
     const estagiarioIds = Array.from(document.querySelectorAll('.del-estag-chk:checked')).map(el=>el.value);
-    if(!titulo){ showToast('Informe o título da missão.'); return; }
+    if(!titulo){ showToast('Informe o título da tarefa.'); return; }
     if(!estagiarioIds.length){ showToast('Selecione ao menos um estagiário.'); return; }
     const remuneracaoBoxVisivel = document.getElementById('del-remuneracao-box').style.display!=='none';
     try{
@@ -4889,7 +4947,7 @@ function abrirNovaDelegacaoForm(){
         remuneracaoTipo: remuneracaoBoxVisivel? document.getElementById('del-remuneracao-tipo').value : null,
         remuneracaoValor: remuneracaoBoxVisivel? document.getElementById('del-remuneracao-valor').value : null,
       })});
-      await renderEstagioPage(); closeModal(); showToast('Missão delegada.');
+      await atualizarViewEstagioAtual(); closeModal(); showToast('Tarefa delegada.');
     }catch(e){ showToast(e.message||'Não foi possível delegar.'); }
   });
 }
@@ -4910,7 +4968,7 @@ async function enviarApontamentoDelegacao(id){
   try{
     await apiFetch('/api/delegacoes/'+id+'/apontamento', { method:'POST', body: JSON.stringify({texto}) });
     input.value='';
-    if(document.getElementById('page-estagio').classList.contains('active')) await renderEstagioPage();
+    if(document.getElementById('page-estagio').classList.contains('active')) await atualizarViewEstagioAtual();
     else await renderDelegacoesEstagiario();
     showToast('Apontamento enviado.');
   }catch(e){ showToast(e.message||'Não foi possível enviar.'); }
@@ -4919,7 +4977,7 @@ async function apagarApontamentoDelegacao(id, apontId){
   if(!confirm('Apagar este apontamento?')) return;
   try{
     await apiFetch('/api/delegacoes/'+id+'/apontamento/'+apontId, { method:'DELETE' });
-    if(document.getElementById('page-estagio').classList.contains('active')) await renderEstagioPage();
+    if(document.getElementById('page-estagio').classList.contains('active')) await atualizarViewEstagioAtual();
     else await renderDelegacoesEstagiario();
   }catch(e){ showToast(e.message||'Não foi possível apagar.'); }
 }
@@ -4938,7 +4996,7 @@ async function uploadArquivoDelegacao(id, inputEl){
   try{
     const conteudoBase64 = await lerArquivoComoBase64(file);
     await apiFetch('/api/delegacoes/'+id+'/arquivo', { method:'POST', body: JSON.stringify({nomeArquivo:file.name, conteudoBase64}) });
-    if(document.getElementById('page-estagio').classList.contains('active')) await renderEstagioPage();
+    if(document.getElementById('page-estagio').classList.contains('active')) await atualizarViewEstagioAtual();
     else await renderDelegacoesEstagiario();
     showToast('Arquivo enviado.');
   }catch(e){ showToast(e.message||'Não foi possível enviar o arquivo.'); }
@@ -4959,7 +5017,7 @@ async function apagarArquivoDelegacao(id, arquivoId){
   if(!confirm('Apagar este arquivo? Baixe antes, se ainda não baixou.')) return;
   try{
     await apiFetch('/api/delegacoes/'+id+'/arquivo/'+arquivoId, { method:'DELETE' });
-    if(document.getElementById('page-estagio').classList.contains('active')) await renderEstagioPage();
+    if(document.getElementById('page-estagio').classList.contains('active')) await atualizarViewEstagioAtual();
     else await renderDelegacoesEstagiario();
   }catch(e){ showToast(e.message||'Não foi possível apagar.'); }
 }
@@ -4969,11 +5027,11 @@ function devolverDelegacaoParaCorrecao(id){
   openModal('Devolver para correção', body, async ()=>{
     try{
       await apiFetch('/api/delegacoes/'+id+'/devolver', { method:'PATCH', body: JSON.stringify({motivo: document.getElementById('devolver-motivo').value.trim()}) });
-      await renderEstagioPage(); closeModal(); showToast('Devolvida para correção.');
+      await atualizarViewEstagioAtual(); closeModal(); showToast('Devolvida para correção.');
     }catch(e){ showToast(e.message||'Não foi possível devolver.'); }
   });
 }
-async function abrirAvaliacaoMissao(id, cumprida){
+async function abrirAvaliacaoTarefa(id, cumprida){
   if(!CRITERIOS_AVALIACAO_CACHE){
     try{ CRITERIOS_AVALIACAO_CACHE = await apiFetch('/api/delegacoes/criterios'); }
     catch(e){ showToast('Não foi possível carregar os critérios de avaliação.'); return; }
@@ -5001,7 +5059,7 @@ async function abrirAvaliacaoMissao(id, cumprida){
     });
     try{
       await apiFetch('/api/delegacoes/'+id+'/avaliar', { method:'PATCH', body: JSON.stringify({cumprida, respostas, observacao: document.getElementById('aval-observacao').value.trim()}) });
-      await renderEstagioPage(); closeModal(); showToast('Avaliação registrada.');
+      await atualizarViewEstagioAtual(); closeModal(); showToast('Avaliação registrada.');
     }catch(e){ showToast(e.message||'Não foi possível avaliar.'); }
   });
   // Marca visualmente a opção selecionada de cada linha (a última, "Não avaliar", já vem marcada por padrão)
@@ -5069,21 +5127,18 @@ async function renderDelegacoesEstagiario(){
   catch(e){ showToast(e.message||'Não foi possível carregar suas delegações.'); }
   lista.sort((a,b)=>(b.criadoEm||'').localeCompare(a.criadoEm||''));
   DELEGACOES_CACHE = lista; // reaproveita os mesmos handlers de apontamento/arquivo
-  box.innerHTML = lista.length? lista.map(d=>renderCardDelegacao(d, false)).join('') : '<div class="empty"><div class="big">🗂️</div>Nenhuma missão delegada a você ainda.</div>';
+  box.innerHTML = lista.length? lista.map(d=>renderCardDelegacao(d, false)).join('') : '<div class="empty"><div class="big">🗂️</div>Nenhuma tarefa delegada a você ainda.</div>';
 }
 async function renderScoreEstagiario(){
   let lista = [];
   try{ lista = await apiFetch('/api/delegacoes'); }
-  catch(e){ showToast(e.message||'Não foi possível carregar seu score.'); }
+  catch(e){ showToast(e.message||'Não foi possível carregar suas tarefas.'); }
   const concluidas = lista.filter(d=>d.status==='concluida');
   const naoCumpridas = lista.filter(d=>d.status==='nao_cumprida');
-  const notas = concluidas.map(d=>d.avaliacao?.notaFinal).filter(n=>n!=null);
-  const notaMedia = notas.length? Math.round((notas.reduce((s,n)=>s+n,0)/notas.length)*10)/10 : null;
   document.getElementById('score-kpi-grid').innerHTML = `
-    <div class="kpi"><div class="label">Total de missões</div><div class="value">${lista.length}</div></div>
+    <div class="kpi"><div class="label">Total de tarefas</div><div class="value">${lista.length}</div></div>
     <div class="kpi kpi-success"><div class="label">Cumpridas</div><div class="value">${concluidas.length}</div></div>
     <div class="kpi kpi-danger"><div class="label">Não cumpridas</div><div class="value">${naoCumpridas.length}</div></div>
-    <div class="kpi kpi-info"><div class="label">Nota média</div><div class="value">${notaMedia!=null? notaMedia+'/10' : '—'}</div></div>
   `;
   const eu = DB.usuarios?.find(u=>u.id===CURRENT_USER.id) || CURRENT_USER;
   const relatorioLiberado = eu.relatorioLiberado;
@@ -5098,7 +5153,7 @@ async function renderScoreEstagiario(){
   `;
   const hist = document.getElementById('score-historico');
   DELEGACOES_CACHE = lista; // reaproveitado pelo detalhe ao clicar
-  hist.innerHTML = lista.length? lista.map(d=>`<div class="list-row" style="cursor:pointer;" onclick="abrirDetalheMissaoScore('${d.id}')"><div><div class="rtitle">${escapeHtml(d.titulo)}</div><div class="rsub">${STATUS_DELEGACAO_LABEL[d.status]}${d.avaliacao?.observacao? ' — '+escapeHtml(d.avaliacao.observacao):''}</div></div><div class="rmeta">${d.avaliacao?.notaFinal!=null? d.avaliacao.notaFinal+'/10' : '—'}</div></div>`).join('') : '<div class="empty">Nenhuma missão ainda.</div>';
+  hist.innerHTML = lista.length? lista.map(d=>`<div class="list-row" style="cursor:pointer;" onclick="abrirDetalheMissaoScore('${d.id}')"><div><div class="rtitle">${escapeHtml(d.titulo)}</div><div class="rsub">${STATUS_DELEGACAO_LABEL[d.status]}${d.avaliacao?.observacao? ' — '+escapeHtml(d.avaliacao.observacao):''}</div></div><div class="rmeta">${d.avaliacao?.notaFinal!=null? d.avaliacao.notaFinal+'/10' : '—'}</div></div>`).join('') : '<div class="empty">Nenhuma tarefa ainda.</div>';
 }
 function abrirDetalheMissaoScore(id){
   const d = DELEGACOES_CACHE.find(x=>x.id===id); if(!d) return;

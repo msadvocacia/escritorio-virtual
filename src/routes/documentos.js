@@ -229,7 +229,7 @@ router.post('/contrato', requireAuth, requireRole('master', 'socio', 'associado'
       D.blank(),
       D.paragraph(D.comDestaques('Cláusula 10ª. o CONTRATADO não será responsabilizada por quaisquer danos que sobrevierem das demandas que patrocinar, cabendo-lhe tão somente o emprego diligente de seus conhecimentos, meios e técnicas para a defesa dos interesses da CONTRATANTE, inexistente qualquer garantia de resultado.', TERMOS_DESTAQUE)),
       D.paragraph(D.comDestaques('Cláusula 11ª. O CONTRATADO não será responsabilizada acaso resultem danos por não tomar conhecimento de informações e documentos substanciais para a sua atividade ou em decorrência da impossibilidade de contato com a CONTRATANTE, que deverá manter atualizadas quaisquer informações relevantes para a demanda, bem como as informações cadastrais fornecidas por aquele.', TERMOS_DESTAQUE)),
-      D.paragraph(D.comDestaques('Cláusula 12ª. É obrigação da CONTRATANTE, sempre que solicitada, entregar, fornecer ou disponibilizar ao CONTRATADO todos os documentos necessários, provas, informações e subsídios, em tempo hábil, para que este possa cumprir o objeto do presente contrato. Qualquer omissão ou negligência por parte da CONTRATANTE será de sua inteira responsabilidade, caso advenha algum prejuízo a seus interesses.', TERMOS_DESTAQUE)),
+      D.paragraph(D.comDestaques('Cláusula 12ª. É obrigação da CONTRATANTE, sempre que solicitada, entregar, fornecer ou disponibilizar ao CONTRATADO todos os documentos necessários, provas, informações e subsídios, em tempo hábil, para que este possa cumprir o objeto do presente contrato. Qualquer otarefa ou negligência por parte da CONTRATANTE será de sua inteira responsabilidade, caso advenha algum prejuízo a seus interesses.', TERMOS_DESTAQUE)),
       D.blank(),
       D.paragraph(D.run('DO FORO', { bold: true }), { center: true, justify: false }),
       D.blank(),
@@ -460,7 +460,7 @@ router.post('/retroativo-pccr', requireAuth, requireRole('master', 'socio', 'ass
       ],
       [
         campoGrade('Processo: ', cab.processo),
-        campoGrade('Admissão: ', cab.admissao && cab.admissao.split('-').reverse().join('/')),
+        campoGrade('Adtarefa: ', cab.admissao && cab.admissao.split('-').reverse().join('/')),
         campoGrade('Protocolo: ', dadosCalculo.dataProtocolo && dadosCalculo.dataProtocolo.split('-').reverse().join('/')),
       ],
       [
@@ -697,7 +697,7 @@ function xmlEscapeLocal(s) {
 
 // Relatório final de estágio: o que foi delegado no período, como foi
 // desenvolvido, resultados e evolução — montado a partir do histórico real
-// de missões (delegações) do estagiário, não digitado à mão.
+// de tarefas (delegações) do estagiário, não digitado à mão.
 router.post('/estagio/relatorio', requireAuth, requireRole('master', 'socio', 'associado', 'estagiario'), async (req, res) => {
   const { estagiarioId } = req.body || {};
   if (!estagiarioId) return res.status(400).json({ erro: 'Informe o estagiário.' });
@@ -716,7 +716,7 @@ router.post('/estagio/relatorio', requireAuth, requireRole('master', 'socio', 'a
   const naoCumpridas = minhas.filter((d) => d.status === 'nao_cumprida');
   const notas = concluidas.map((d) => d.avaliacao?.notaFinal).filter((n) => n != null);
   const notaMedia = notas.length ? Math.round((notas.reduce((s, n) => s + n, 0) / notas.length) * 10) / 10 : null;
-  const cargaHoraria = (concluidas.length + naoCumpridas.length) * 4; // média de 4h por missão, conforme definido
+  const cargaHoraria = (concluidas.length + naoCumpridas.length) * 4; // média de 4h por tarefa, conforme definido
   const todosPrazos = await getCollection('prazos', []);
   const prazosParticipados = todosPrazos.filter((p) => Array.isArray(p.estagiariosLiberados) && p.estagiariosLiberados.includes(estagiarioId));
   const todasAudiencias = await getCollection('audiencias', []);
@@ -729,15 +729,15 @@ router.post('/estagio/relatorio', requireAuth, requireRole('master', 'socio', 'a
       D.paragraph([D.run('Estagiário(a): ', { bold: true }), D.run(estagiario.nome)]),
       D.paragraph([D.run('Formação: ', { bold: true }), D.run(estagiario.formacaoEstagiario === 'bacharel' ? 'Bacharel em Direito' : 'Estudante de Direito')]),
       D.paragraph([D.run('Período do estágio: ', { bold: true }), D.run(`${estagiario.dataInicioEstagio ? T.fmtDateExtenso(estagiario.dataInicioEstagio) : '—'} a ${estagiario.dataFimEstagio ? T.fmtDateExtenso(estagiario.dataFimEstagio) : T.fmtDateExtenso(todayISO())}`)]),
-      D.paragraph([D.run('Carga horária estimada: ', { bold: true }), D.run(`${cargaHoraria}h (${concluidas.length + naoCumpridas.length} missão(ões) avaliada(s) × 4h)`)]),
+      D.paragraph([D.run('Carga horária estimada: ', { bold: true }), D.run(`${cargaHoraria}h (${concluidas.length + naoCumpridas.length} tarefa(ões) avaliada(s) × 4h)`)]),
       D.blank(),
       D.paragraph(D.run('RESUMO QUANTITATIVO', { bold: true, sizeHalfPt: 24 })),
       D.blank(),
-      D.paragraph(`Total de missões delegadas: ${minhas.length}`),
+      D.paragraph(`Total de tarefas delegadas: ${minhas.length}`),
       D.paragraph(`Cumpridas: ${concluidas.length}`),
       D.paragraph(`Não cumpridas: ${naoCumpridas.length}`),
       D.paragraph(`Ainda em andamento: ${minhas.length - concluidas.length - naoCumpridas.length}`),
-      D.paragraph([D.run('Nota média final: ', { bold: true }), D.run(notaMedia != null ? `${notaMedia} / 10` : 'sem missões avaliadas ainda', { bold: true })]),
+      D.paragraph([D.run('Nota média final: ', { bold: true }), D.run(notaMedia != null ? `${notaMedia} / 10` : 'sem tarefas avaliadas ainda', { bold: true })]),
       D.blank(),
       ...(prazosParticipados.length || audienciasParticipadas.length ? [
         D.paragraph(D.run('PARTICIPAÇÃO EM PRAZOS E AUDIÊNCIAS', { bold: true, sizeHalfPt: 24 })),
@@ -823,9 +823,9 @@ router.post('/estagio/certificado', requireAuth, requireRole('master', 'socio', 
       D.blank(), D.blank(),
       D.paragraph([D.run('Data de início: ', { bold: true }), D.run(T.fmtDateExtenso(dataInicio))]),
       D.paragraph([D.run('Data de encerramento: ', { bold: true }), D.run(T.fmtDateExtenso(dataFim))]),
-      D.paragraph([D.run('Carga horária total: ', { bold: true }), D.run(`${cargaHoraria} horas (${concluidas.length + naoCumpridas.length} missões avaliadas × 4h/missão em média)`)]),
-      D.paragraph([D.run('Missões cumpridas: ', { bold: true }), D.run(String(concluidas.length))]),
-      D.paragraph([D.run('Missões não cumpridas: ', { bold: true }), D.run(String(naoCumpridas.length))]),
+      D.paragraph([D.run('Carga horária total: ', { bold: true }), D.run(`${cargaHoraria} horas (${concluidas.length + naoCumpridas.length} tarefas avaliadas × 4h/tarefa em média)`)]),
+      D.paragraph([D.run('Tarefas cumpridas: ', { bold: true }), D.run(String(concluidas.length))]),
+      D.paragraph([D.run('Tarefas não cumpridas: ', { bold: true }), D.run(String(naoCumpridas.length))]),
       D.paragraph([D.run('Pontuação final média: ', { bold: true, sizeHalfPt: 26 }), D.run(notaMedia != null ? `${notaMedia} / 10` : 'não avaliado', { bold: true, sizeHalfPt: 26 })]),
     ].join('');
     const buffer = gerarDocxComCorpo(corpo, { margemInferiorTwips: 1843, paisagem: true });

@@ -59,7 +59,7 @@ function calcularNotaFinal(respostas, criterios) {
 function podeVerDelegacao(user, d) {
   if (isMaster(user) || isSocio(user)) return true;
   if (isEstagiario(user)) return (d.estagiarioIds || []).includes(user.id);
-  // Associado: só se ele foi quem delegou, ou é um dos tutores da missão
+  // Associado: só se ele foi quem delegou, ou é um dos tutores da tarefa
   return d.criadoPor === user.id || (d.tutoresIds || []).includes(user.id);
 }
 
@@ -71,11 +71,11 @@ router.get('/', requireAuth, async (req, res) => {
 
 router.post('/', requireAuth, async (req, res) => {
   if (!isMaster(req.user) && !isSocio(req.user) && !isAssociado(req.user)) {
-    return res.status(403).json({ erro: 'Só sócio, associado ou administrador podem delegar missões.' });
+    return res.status(403).json({ erro: 'Só sócio, associado ou administrador podem delegar tarefas.' });
   }
   const { titulo, descricao, clienteId, processoId, estagiarioIds, prazoData, prazoHora, remuneracaoTipo, remuneracaoValor } = req.body || {};
   if (!titulo || !Array.isArray(estagiarioIds) || !estagiarioIds.length) {
-    return res.status(400).json({ erro: 'Informe o título da missão e ao menos um estagiário.' });
+    return res.status(400).json({ erro: 'Informe o título da tarefa e ao menos um estagiário.' });
   }
   const usuarios = await getCollection('usuarios', []);
   const idsEstagiariosValidos = estagiarioIds.filter((id) => usuarios.some((u) => u.id === id && u.tipo === 'estagiario'));
@@ -141,8 +141,8 @@ router.post('/', requireAuth, async (req, res) => {
 router.post('/:id/apontamento', requireAuth, async (req, res) => {
   const todas = await getCollection('delegacoes', []);
   const d = todas.find((x) => x.id === req.params.id);
-  if (!d) return res.status(404).json({ erro: 'Missão não encontrada.' });
-  if (!podeVerDelegacao(req.user, d)) return res.status(403).json({ erro: 'Sem acesso a esta missão.' });
+  if (!d) return res.status(404).json({ erro: 'Tarefa não encontrada.' });
+  if (!podeVerDelegacao(req.user, d)) return res.status(403).json({ erro: 'Sem acesso a esta tarefa.' });
   const { texto } = req.body || {};
   if (!texto || !texto.trim()) return res.status(400).json({ erro: 'Escreva o apontamento.' });
   d.apontamentos.push({ id: uid(), autorId: req.user.id, texto: texto.trim(), data: new Date().toISOString() });
@@ -156,7 +156,7 @@ router.delete('/:id/apontamento/:apontId', requireAuth, async (req, res) => {
   if (!isMaster(req.user) && !isSocio(req.user)) return res.status(403).json({ erro: 'Só sócio ou administrador podem apagar apontamentos.' });
   const todas = await getCollection('delegacoes', []);
   const d = todas.find((x) => x.id === req.params.id);
-  if (!d) return res.status(404).json({ erro: 'Missão não encontrada.' });
+  if (!d) return res.status(404).json({ erro: 'Tarefa não encontrada.' });
   d.apontamentos = d.apontamentos.filter((a) => a.id !== req.params.apontId);
   await setCollection('delegacoes', todas);
   res.json(d);
@@ -168,8 +168,8 @@ router.delete('/:id/apontamento/:apontId', requireAuth, async (req, res) => {
 router.post('/:id/arquivo', requireAuth, async (req, res) => {
   const todas = await getCollection('delegacoes', []);
   const d = todas.find((x) => x.id === req.params.id);
-  if (!d) return res.status(404).json({ erro: 'Missão não encontrada.' });
-  if (!podeVerDelegacao(req.user, d)) return res.status(403).json({ erro: 'Sem acesso a esta missão.' });
+  if (!d) return res.status(404).json({ erro: 'Tarefa não encontrada.' });
+  if (!podeVerDelegacao(req.user, d)) return res.status(403).json({ erro: 'Sem acesso a esta tarefa.' });
   const { nomeArquivo, conteudoBase64 } = req.body || {};
   if (!nomeArquivo || !conteudoBase64) return res.status(400).json({ erro: 'Arquivo inválido.' });
   if (conteudoBase64.length > 14 * 1024 * 1024) return res.status(413).json({ erro: 'Arquivo muito grande (máximo ~10MB).' });
@@ -182,53 +182,53 @@ router.post('/:id/arquivo', requireAuth, async (req, res) => {
 router.get('/:id/arquivo/:arquivoId', requireAuth, async (req, res) => {
   const todas = await getCollection('delegacoes', []);
   const d = todas.find((x) => x.id === req.params.id);
-  if (!d) return res.status(404).json({ erro: 'Missão não encontrada.' });
-  if (!podeVerDelegacao(req.user, d)) return res.status(403).json({ erro: 'Sem acesso a esta missão.' });
+  if (!d) return res.status(404).json({ erro: 'Tarefa não encontrada.' });
+  if (!podeVerDelegacao(req.user, d)) return res.status(403).json({ erro: 'Sem acesso a esta tarefa.' });
   const arq = d.arquivos.find((a) => a.id === req.params.arquivoId);
   if (!arq) return res.status(404).json({ erro: 'Arquivo não encontrado.' });
   res.json(arq);
 });
 
 // Apaga o arquivo — pensado para ser usado depois que o tutor já baixou e
-// marcou a missão como cumprida/não cumprida.
+// marcou a tarefa como cumprida/não cumprida.
 router.delete('/:id/arquivo/:arquivoId', requireAuth, async (req, res) => {
   const todas = await getCollection('delegacoes', []);
   const d = todas.find((x) => x.id === req.params.id);
-  if (!d) return res.status(404).json({ erro: 'Missão não encontrada.' });
-  if (!podeVerDelegacao(req.user, d)) return res.status(403).json({ erro: 'Sem acesso a esta missão.' });
+  if (!d) return res.status(404).json({ erro: 'Tarefa não encontrada.' });
+  if (!podeVerDelegacao(req.user, d)) return res.status(403).json({ erro: 'Sem acesso a esta tarefa.' });
   d.arquivos = d.arquivos.filter((a) => a.id !== req.params.arquivoId);
   await setCollection('delegacoes', todas);
   res.json(d);
 });
 
-// Permite delegar a missão a mais um tutor/responsável (ex: um segundo
+// Permite delegar a tarefa a mais um tutor/responsável (ex: um segundo
 // sócio/associado acompanhando o mesmo estagiário).
 router.patch('/:id/tutores', requireAuth, async (req, res) => {
-  if (!isMaster(req.user) && !isSocio(req.user)) return res.status(403).json({ erro: 'Sem permissão.' });
+  if (!isMaster(req.user) && !isSocio(req.user)) return res.status(403).json({ erro: 'Sem pertarefa.' });
   const { tutoresIds } = req.body || {};
   if (!Array.isArray(tutoresIds)) return res.status(400).json({ erro: 'Lista de tutores inválida.' });
   const todas = await getCollection('delegacoes', []);
   const d = todas.find((x) => x.id === req.params.id);
-  if (!d) return res.status(404).json({ erro: 'Missão não encontrada.' });
+  if (!d) return res.status(404).json({ erro: 'Tarefa não encontrada.' });
   d.tutoresIds = tutoresIds;
   await setCollection('delegacoes', todas);
   res.json(d);
 });
 
-// O coração do sistema de pontuação: o tutor marca a missão como cumprida ou
+// O coração do sistema de pontuação: o tutor marca a tarefa como cumprida ou
 // não cumprida, preenchendo os 10 critérios — a nota final (0 a 10) é
 // calculada automaticamente pela média dos critérios respondidos (os
 // marcados como "ignorado" não entram na média).
 router.patch('/:id/avaliar', requireAuth, async (req, res) => {
   if (!isMaster(req.user) && !isSocio(req.user) && !isAssociado(req.user)) {
-    return res.status(403).json({ erro: 'Só quem delegou/tutor pode avaliar a missão.' });
+    return res.status(403).json({ erro: 'Só quem delegou/tutor pode avaliar a tarefa.' });
   }
   const { cumprida, respostas, observacao } = req.body || {};
-  if (typeof cumprida !== 'boolean') return res.status(400).json({ erro: 'Informe se a missão foi cumprida.' });
+  if (typeof cumprida !== 'boolean') return res.status(400).json({ erro: 'Informe se a tarefa foi cumprida.' });
   const todas = await getCollection('delegacoes', []);
   const d = todas.find((x) => x.id === req.params.id);
-  if (!d) return res.status(404).json({ erro: 'Missão não encontrada.' });
-  if (!podeVerDelegacao(req.user, d)) return res.status(403).json({ erro: 'Sem acesso a esta missão.' });
+  if (!d) return res.status(404).json({ erro: 'Tarefa não encontrada.' });
+  if (!podeVerDelegacao(req.user, d)) return res.status(403).json({ erro: 'Sem acesso a esta tarefa.' });
   const criterios = await criteriosAtuais();
   const notaFinal = calcularNotaFinal(respostas || {}, criterios);
   d.status = cumprida ? 'concluida' : 'nao_cumprida';
@@ -249,8 +249,8 @@ router.patch('/:id/devolver', requireAuth, async (req, res) => {
   const { motivo } = req.body || {};
   const todas = await getCollection('delegacoes', []);
   const d = todas.find((x) => x.id === req.params.id);
-  if (!d) return res.status(404).json({ erro: 'Missão não encontrada.' });
-  if (!podeVerDelegacao(req.user, d)) return res.status(403).json({ erro: 'Sem acesso a esta missão.' });
+  if (!d) return res.status(404).json({ erro: 'Tarefa não encontrada.' });
+  if (!podeVerDelegacao(req.user, d)) return res.status(403).json({ erro: 'Sem acesso a esta tarefa.' });
   d.status = 'pendente';
   d.avaliacao = null;
   d.apontamentos.push({
