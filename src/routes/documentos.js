@@ -4,7 +4,7 @@ const path = require('path');
 const PizZip = require('pizzip');
 const Docxtemplater = require('docxtemplater');
 
-const { getCollection } = require('../utils/store');
+const { getCollection, setCollection } = require('../utils/store');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { isAssociado, isMaster, isSocio, isCliente } = require('../utils/visibility');
 const F = require('../utils/financeiro');
@@ -698,72 +698,127 @@ function xmlEscapeLocal(s) {
 // Relatório final de estágio: o que foi delegado no período, como foi
 // desenvolvido, resultados e evolução — montado a partir do histórico real
 // de tarefas (delegações) do estagiário, não digitado à mão.
-router.post('/estagio/relatorio', requireAuth, requireRole('master', 'socio', 'associado', 'estagiario'), async (req, res) => {
-  const { estagiarioId } = req.body || {};
-  if (!estagiarioId) return res.status(400).json({ erro: 'Informe o estagiário.' });
-  if (req.user.tipo === 'estagiario') {
-    if (req.user.id !== estagiarioId) return res.status(403).json({ erro: 'Você só pode gerar o próprio relatório.' });
-    const usuariosCheck = await getCollection('usuarios', []);
-    const euCheck = usuariosCheck.find((u) => u.id === req.user.id);
-    if (!euCheck || !euCheck.relatorioLiberado) return res.status(403).json({ erro: 'Seu relatório final ainda não foi liberado pelo seu tutor/responsável.' });
-  }
+// Monta o relatório final como texto puro (parágrafos separados por linha em
+// branco) — usado tanto para gerar o .docx direto quanto para alimentar a
+// tela de edição (visualizar/editar antes de liberar).
+async function montarTextoRelatorioEstagio(estagiarioId, instituicao) {
   const usuarios = await getCollection('usuarios', []);
   const estagiario = usuarios.find((u) => u.id === estagiarioId && u.tipo === 'estagiario');
-  if (!estagiario) return res.status(404).json({ erro: 'Estagiário não encontrado.' });
+  if (!estagiario) return null;
+  const config = await getCollection('config', {});
+  const nomeEscritorio = config.nomeEscritorio || 'MS Advocacia';
+  const tutores = (estagiario.tutoresIds || []).map((id) => usuarios.find((u) => u.id === id)).filter(Boolean);
+  const nomesTutores = tutores.length ? tutores.map((t) => t.nome).join(' e ') : 'advogado(a) responsável';
   const todasDelegacoes = await getCollection('delegacoes', []);
   const minhas = todasDelegacoes.filter((d) => d.estagiarioIds.includes(estagiarioId));
   const concluidas = minhas.filter((d) => d.status === 'concluida');
   const naoCumpridas = minhas.filter((d) => d.status === 'nao_cumprida');
   const notas = concluidas.map((d) => d.avaliacao?.notaFinal).filter((n) => n != null);
   const notaMedia = notas.length ? Math.round((notas.reduce((s, n) => s + n, 0) / notas.length) * 10) / 10 : null;
-  const cargaHoraria = (concluidas.length + naoCumpridas.length) * 4; // média de 4h por tarefa, conforme definido
+  const cargaHoraria = (concluidas.length + naoCumpridas.length) * 4;
+  const dataInicio = estagiario.dataInicioEstagio ? T.fmtDateExtenso(estagiario.dataInicioEstagio) : '(data de início não informada)';
+  const dataFim = estagiario.dataFimEstagio ? T.fmtDateExtenso(estagiario.dataFimEstagio) : T.fmtDateExtenso(todayISO());
   const todosPrazos = await getCollection('prazos', []);
   const prazosParticipados = todosPrazos.filter((p) => Array.isArray(p.estagiariosLiberados) && p.estagiariosLiberados.includes(estagiarioId));
   const todasAudiencias = await getCollection('audiencias', []);
   const audienciasParticipadas = todasAudiencias.filter((a) => Array.isArray(a.estagiariosLiberados) && a.estagiariosLiberados.includes(estagiarioId));
 
+  const linhas = [];
+  linhas.push('RELATÓRIO FINAL DE ESTÁGIO');
+  linhas.push('');
+  linhas.push(instituicao ? `À ${instituicao},` : 'A quem possa interessar,');
+  linhas.push('');
+  linhas.push(`Declaramos, para os devidos fins, que ${estagiario.nome}, ${estagiario.formacaoEstagiario === 'bacharel' ? 'bacharel em Direito' : 'estudante de Direito'}, participou e concluiu estágio em ${nomeEscritorio}, sob supervisão de ${nomesTutores}, durante o período compreendido entre ${dataInicio} e ${dataFim}, com carga horária estimada de ${cargaHoraria} horas.`);
+  linhas.push('');
+  linhas.push('RESUMO QUANTITATIVO');
+  linhas.push('');
+  linhas.push(`Total de tarefas delegadas: ${minhas.length}`);
+  linhas.push(`Cumpridas: ${concluidas.length}`);
+  linhas.push(`Não cumpridas: ${naoCumpridas.length}`);
+  linhas.push(`Ainda em andamento: ${minhas.length - concluidas.length - naoCumpridas.length}`);
+  linhas.push(`Nota média final: ${notaMedia != null ? notaMedia + ' / 10' : 'sem tarefas avaliadas ainda'}`);
+  linhas.push('');
+  if (prazosParticipados.length || audienciasParticipadas.length) {
+    linhas.push('PARTICIPAÇÃO EM PRAZOS E AUDIÊNCIAS');
+    linhas.push('');
+    prazosParticipados.forEach((p) => linhas.push(`Prazo: ${p.descricao} — vencimento em ${p.vencimento.split('-').reverse().join('/')}`));
+    audienciasParticipadas.forEach((a) => linhas.push(`Audiência em ${a.data.split('-').reverse().join('/')}${a.local ? ' — ' + a.local : ''}`));
+    linhas.push('');
+  }
+  linhas.push('HISTÓRICO DE TAREFAS DELEGADAS');
+  linhas.push('');
+  minhas.forEach((d) => {
+    const statusLabel = { pendente: 'Pendente', entregue: 'Entregue (aguardando avaliação)', concluida: 'Cumprida', nao_cumprida: 'Não cumprida' }[d.status] || d.status;
+    linhas.push(`${d.titulo} — ${statusLabel}`);
+    if (d.descricao) linhas.push(d.descricao);
+    if (d.avaliacao) linhas.push(`Nota: ${d.avaliacao.notaFinal != null ? d.avaliacao.notaFinal + '/10' : '—'}${d.avaliacao.observacao ? ' — ' + d.avaliacao.observacao : ''}`);
+    linhas.push('');
+  });
+  linhas.push('');
+  linhas.push(`${nomeEscritorio}, ${T.fmtDateExtenso(todayISO())}.`);
+  linhas.push('');
+  linhas.push('');
+  linhas.push('_____________________________________________________________');
+  linhas.push(nomesTutores);
+  return { texto: linhas.join('\n'), nomeArquivo: `Relatorio Final de Estagio - ${estagiario.nome.replace(/[^\w\- ]/g, '')}` };
+}
+function podeAcessarRelatorioEstagio(reqUser, estagiarioId, estagiarioRegistro) {
+  if (reqUser.tipo === 'master' || reqUser.tipo === 'socio' || reqUser.tipo === 'associado') return true;
+  if (reqUser.tipo === 'estagiario') return reqUser.id === estagiarioId && !!estagiarioRegistro?.relatorioLiberado;
+  return false;
+}
+
+// Devolve o relatório como TEXTO simples — usado pela tela de "visualizar e
+// editar antes de liberar" (funciona como um editor de texto: sócio/master
+// podem alterar o conteúdo livremente antes de salvar a versão final).
+router.get('/estagio/relatorio-texto', requireAuth, async (req, res) => {
+  const { estagiarioId, instituicao } = req.query;
+  if (!estagiarioId) return res.status(400).json({ erro: 'Informe o estagiário.' });
+  const usuarios = await getCollection('usuarios', []);
+  const estagiario = usuarios.find((u) => u.id === estagiarioId && u.tipo === 'estagiario');
+  if (!podeAcessarRelatorioEstagio(req.user, estagiarioId, estagiario)) return res.status(403).json({ erro: 'Sem acesso a este relatório.' });
+  const resultado = await montarTextoRelatorioEstagio(estagiarioId, instituicao || '');
+  if (!resultado) return res.status(404).json({ erro: 'Estagiário não encontrado.' });
+  // Se já existir uma versão editada e salva, devolve ela em vez de gerar de novo.
+  const texto = (estagiario.relatorioTextoFinal) || resultado.texto;
+  res.json({ texto });
+});
+
+// Salva a versão editada do relatório (sócio/master), pronta para ser
+// liberada depois pelo botão já existente.
+router.put('/estagio/relatorio-texto', requireAuth, requireRole('master', 'socio', 'associado'), async (req, res) => {
+  const { estagiarioId, texto } = req.body || {};
+  if (!estagiarioId || typeof texto !== 'string') return res.status(400).json({ erro: 'Dados inválidos.' });
+  const usuarios = await getCollection('usuarios', []);
+  const estagiario = usuarios.find((u) => u.id === estagiarioId && u.tipo === 'estagiario');
+  if (!estagiario) return res.status(404).json({ erro: 'Estagiário não encontrado.' });
+  estagiario.relatorioTextoFinal = texto;
+  await setCollection('usuarios', usuarios);
+  res.json({ ok: true });
+});
+
+router.post('/estagio/relatorio', requireAuth, requireRole('master', 'socio', 'associado', 'estagiario'), async (req, res) => {
+  const { estagiarioId, instituicao } = req.body || {};
+  if (!estagiarioId) return res.status(400).json({ erro: 'Informe o estagiário.' });
+  const usuarios = await getCollection('usuarios', []);
+  const estagiario = usuarios.find((u) => u.id === estagiarioId && u.tipo === 'estagiario');
+  if (!estagiario) return res.status(404).json({ erro: 'Estagiário não encontrado.' });
+  if (!podeAcessarRelatorioEstagio(req.user, estagiarioId, estagiario)) {
+    return res.status(403).json({ erro: req.user.tipo === 'estagiario' ? 'Seu relatório final ainda não foi liberado pelo seu tutor/responsável.' : 'Sem acesso a este relatório.' });
+  }
   try {
-    const corpo = [
-      D.paragraph(D.run('RELATÓRIO FINAL DE ESTÁGIO', { bold: true, sizeHalfPt: 30 }), { center: true, justify: false }),
-      D.blank(), D.blank(),
-      D.paragraph([D.run('Estagiário(a): ', { bold: true }), D.run(estagiario.nome)]),
-      D.paragraph([D.run('Formação: ', { bold: true }), D.run(estagiario.formacaoEstagiario === 'bacharel' ? 'Bacharel em Direito' : 'Estudante de Direito')]),
-      D.paragraph([D.run('Período do estágio: ', { bold: true }), D.run(`${estagiario.dataInicioEstagio ? T.fmtDateExtenso(estagiario.dataInicioEstagio) : '—'} a ${estagiario.dataFimEstagio ? T.fmtDateExtenso(estagiario.dataFimEstagio) : T.fmtDateExtenso(todayISO())}`)]),
-      D.paragraph([D.run('Carga horária estimada: ', { bold: true }), D.run(`${cargaHoraria}h (${concluidas.length + naoCumpridas.length} tarefa(ões) avaliada(s) × 4h)`)]),
-      D.blank(),
-      D.paragraph(D.run('RESUMO QUANTITATIVO', { bold: true, sizeHalfPt: 24 })),
-      D.blank(),
-      D.paragraph(`Total de tarefas delegadas: ${minhas.length}`),
-      D.paragraph(`Cumpridas: ${concluidas.length}`),
-      D.paragraph(`Não cumpridas: ${naoCumpridas.length}`),
-      D.paragraph(`Ainda em andamento: ${minhas.length - concluidas.length - naoCumpridas.length}`),
-      D.paragraph([D.run('Nota média final: ', { bold: true }), D.run(notaMedia != null ? `${notaMedia} / 10` : 'sem tarefas avaliadas ainda', { bold: true })]),
-      D.blank(),
-      ...(prazosParticipados.length || audienciasParticipadas.length ? [
-        D.paragraph(D.run('PARTICIPAÇÃO EM PRAZOS E AUDIÊNCIAS', { bold: true, sizeHalfPt: 24 })),
-        D.blank(),
-        ...prazosParticipados.map((p) => D.paragraph(`Prazo: ${p.descricao} — vencimento em ${p.vencimento.split('-').reverse().join('/')}`)),
-        ...audienciasParticipadas.map((a) => D.paragraph(`Audiência em ${a.data.split('-').reverse().join('/')}${a.local ? ' — ' + a.local : ''}`)),
-        D.blank(),
-      ] : []),
-      D.paragraph(D.run('HISTÓRICO DE MISSÕES DELEGADAS', { bold: true, sizeHalfPt: 24 })),
-      D.blank(),
-      ...minhas.flatMap((d) => {
-        const statusLabel = { pendente: 'Pendente', entregue: 'Entregue (aguardando avaliação)', concluida: 'Cumprida', nao_cumprida: 'Não cumprida' }[d.status] || d.status;
-        const linhas = [
-          D.paragraph([D.run(d.titulo, { bold: true }), D.run(` — ${statusLabel}`)]),
-        ];
-        if (d.descricao) linhas.push(D.paragraph(D.run(d.descricao, { italic: true, sizeHalfPt: 20 })));
-        if (d.avaliacao) {
-          linhas.push(D.paragraph(`Nota: ${d.avaliacao.notaFinal != null ? d.avaliacao.notaFinal + '/10' : '—'}${d.avaliacao.observacao ? ' — ' + d.avaliacao.observacao : ''}`));
-        }
-        linhas.push(D.blank());
-        return linhas;
-      }),
-    ].join('');
+    const resultado = await montarTextoRelatorioEstagio(estagiarioId, instituicao || '');
+    const textoFinal = estagiario.relatorioTextoFinal || resultado.texto;
+    // Cada linha vira um parágrafo — linhas em CAIXA ALTA (os títulos das
+    // seções) saem em negrito, o resto em texto normal.
+    const corpo = textoFinal.split('\n').map((linha) => {
+      if (!linha.trim()) return D.blank();
+      const ehTitulo = linha === linha.toUpperCase() && /[A-ZÀ-Ú]/.test(linha);
+      return D.paragraph(D.run(linha, ehTitulo ? { bold: true, sizeHalfPt: 24 } : {}), { center: ehTitulo, justify: !ehTitulo });
+    }).join('');
     const buffer = gerarDocxComCorpo(corpo, { margemInferiorTwips: 1843 });
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-    res.setHeader('Content-Disposition', `attachment; filename="Relatorio Final de Estagio - ${estagiario.nome.replace(/[^\w\- ]/g, '')}.docx"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${resultado.nomeArquivo}.docx"`);
     res.send(buffer);
   } catch (e) {
     console.error(e);

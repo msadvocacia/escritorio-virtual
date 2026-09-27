@@ -1710,6 +1710,63 @@ servidor) trocando toda ocorrência de "missão/missões" por "tarefa/tarefas",
 incluindo o nome da própria função de avaliação internamente.
 
 
+## 55. Correções de interface, relatório como declaração formal, e contrato assinado
+
+### Sobre ver senhas dos usuários — não é possível
+Fica registrado aqui também: as senhas são guardadas como hash bcrypt
+(criptografia de mão única) — nem o próprio sistema sabe qual é a senha
+original, só consegue conferir se uma tentativa bate ou não. Não implementei
+isso porque não existe implementação possível sem guardar a senha em texto
+puro, o que seria um retrocesso de segurança sério. A ferramenta real pra
+essa necessidade já existe: "🔑 Redefinir senha" na lista de Usuários.
+
+### Correções pontuais
+- "Estagiário" aparecia como "undefined" na coluna Perfil — corrigido (dois
+  mapeamentos de rótulo esqueceram esse tipo).
+- Caixas de anotações internas e apontamentos aumentadas — a causa raiz era
+  elas estarem fora do `.field`, então nem recebiam o estilo padrão de
+  largura total do sistema (por isso pareciam minúsculas). Corrigido com
+  estilo próprio, bem maior.
+- Campo de mensagens (conversa com cliente) virou uma caixa de texto maior,
+  em vez do campo de uma linha só.
+- ESC agora fecha qualquer pop-up do sistema.
+
+### Nova delegação: arquivos já na criação
+O formulário de nova delegação agora tem um campo de arquivo que aceita
+selecionar vários de uma vez (seleção múltipla do próprio sistema
+operacional) — não precisa mais criar a tarefa pra depois entrar de novo e
+enviar um por um.
+
+### Relatório final: agora é uma declaração de verdade
+Reformulado de listagem para o formato de declaração formal: "À
+[instituição],", "Declaramos, para os devidos fins, que [nome] participou e
+concluiu estágio em [escritório], sob supervisão de [tutor(es)], durante o
+período compreendido entre [data início] e [data fim]..." — com campo
+opcional pra informar a instituição destinatária (ou "A quem possa
+interessar", se deixado em branco). Testei a geração e conferi o texto
+exato no documento.
+
+### Visualizar/editar antes de liberar
+Nova tela de edição do relatório, com visual de página/régua, antes de
+salvar a versão final que fica disponível para liberar. Testei o ciclo
+completo: gerar o texto automático → editar e salvar → reler (traz a
+versão editada) → gerar o .docx final (usa a versão editada) → "recarregar
+do zero" (descarta a edição e recalcula pelos dados atuais).
+
+### Contrato assinado por usuário
+Ícone 📎 ao lado de cada usuário na lista, para sócio/master enviarem o
+contrato assinado (PDF, imagem, etc.) — só visualização/download/impressão
+depois de enviado, nunca edição pelo sistema. Testei: sócio baixa o
+próprio, e confirmei que outro usuário (estagiário, no teste) é bloqueado
+(403) ao tentar baixar o de outra pessoa.
+
+### Bug real encontrado durante o teste
+Ao testar a rota de salvar o texto editado do relatório, o servidor caía
+com erro (`setCollection is not defined`) — faltava importar essa função
+no arquivo. Corrigido e reconfirmado com um novo teste completo depois do
+ajuste.
+
+
 ---
 
 Qualquer erro ao subir, me mostre a mensagem exata que aparece (no Render, aba "Logs")
