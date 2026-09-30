@@ -1767,6 +1767,48 @@ no arquivo. Corrigido e reconfirmado com um novo teste completo depois do
 ajuste.
 
 
+## 56. Correção monetária automática no Retroativo PCCR (3 regimes + pró-rata)
+
+Você me mandou um cálculo real (processo 8001000-38.2026.8.05.0141) para eu
+conferir contra o que eu tinha planejado. Foi essencial — mudou boa parte do
+que eu ia construir. Aqui está o resultado final.
+
+### O que descobri no documento que sua descrição por escrito não cobria
+Além da EC 113/2021 (corte em 08/12/2021), existe uma **segunda mudança
+legal**: a Lei nº 14.905/2024, em vigor desde 30/08/2024, que criou um
+regime novo (correção + "Taxa Legal" de juros) para o período mais recente.
+São **três regimes**, não dois.
+
+### O que pesquisei e confirmei (múltiplas fontes cruzadas, incluindo TRF4)
+- IPCA-E tem série própria no Banco Central (10764) — antes eu usava o IPCA
+  comum como aproximação.
+- A "Taxa Legal" da Lei 14.905/2024 é publicada **pronta** pelo Banco
+  Central, na série 29543 — uso o valor oficial direto.
+- Confirmei que o índice de correção da fase mais recente, no seu caso, é o
+  IPCA-E (não o IPCA-15, que seria o padrão genérico da lei) — porque foi
+  isso que a sentença determinou. Deixei um aviso no resultado lembrando
+  disso, para o caso de outra ação ter uma sentença diferente.
+
+### Pró-rata implementado
+Adicionei suporte a pró-rata nominal (dia a dia) no primeiro e no último mês
+de cada fase — testei matematicamente contra cálculo manual (inclusive o
+caso especial de período inteiro dentro de um único mês) e bateu exato. Um
+detalhe importante que corrigi: a contagem agora começa do **último dia do
+mês de competência** (quando o salário efetivamente vence), não do dia 1 —
+senão, com o pró-rata ativo, o próprio mês de formação da verba entraria
+corrigido, o que não é correto.
+
+### Limitação que preciso deixar clara
+Não consigo, deste ambiente, acessar a API do Banco Central ao vivo para
+conferir os valores exatos, dígito a dígito, contra o seu cálculo real —
+testei toda a mecânica (encadeamento das fases, pesos do pró-rata) com
+números simulados e confirmei que bate matematicamente, mas a validação
+final, com os índices de verdade, só é possível quando o sistema estiver no
+ar. Recomendo fortemente rodar esse mesmo cálculo (mesma competência, mesma
+data de atualização) assim que publicado, e comparar com o cálculo que você
+já tem em mãos antes de confiar cegamente no resultado numa petição nova.
+
+
 ---
 
 Qualquer erro ao subir, me mostre a mensagem exata que aparece (no Render, aba "Logs")

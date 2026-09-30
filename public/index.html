@@ -3704,6 +3704,9 @@ function formularioRetroativoPccr(cat){
         <div class="field"><label>Data de protocolo${ajuda('A data em que o pedido administrativo (ou a ação judicial) foi protocolado. É a partir dela que o sistema calcula o corte de 5 anos (prescrição quinquenal) — tudo antes desse corte não entra no cálculo. Vem preenchida com a data de hoje por padrão (para simular "a partir de agora, para trás") — troque se já existir um protocolo/ação com data diferente.')}</label><input type="date" id="pccr-protocolo" value="${todayISO()}"></div>
         <div class="field"><label>Data de implantação${ajuda('A data em que o benefício (novo nível ou gratificação) passou a ser efetivamente pago no contracheque. Marca o fim do período retroativo.')}</label><input type="date" id="pccr-implantacao"></div>
       </div>
+      <div class="field-row">
+        <div class="field"><label>Atualizar o valor até${ajuda('Até quando trazer o valor devido a valor de hoje. Correção automática, com pró-rata dia a dia nas pontas, em três regimes: IPCA-E + poupança até 08/12/2021; Selic pura de 09/12/2021 a 29/08/2024 (EC 113/2021); IPCA-E + Taxa Legal a partir de 30/08/2024 (Lei 14.905/2024) — buscados ao vivo no Banco Central.')}</label><input type="date" id="pccr-data-atualizacao" value="${todayISO()}"></div>
+      </div>
     </fieldset>
     <fieldset id="pccr-verbas-box" style="margin-top:10px;"><legend>Nomes das verbas percentuais incidentes sobre o base (ex: Anuênio, Insalubridade)${ajuda('Verbas que são calculadas como um percentual do salário-base (ex: anuênio 17%, insalubridade 20%). Quando o base muda (mudança de nível), essas verbas mudam junto, na mesma proporção — por isso o sistema calcula a diferença de cada uma automaticamente.')}</legend>
       <div class="hint" style="margin-bottom:6px;">Defina aqui só os NOMES — o percentual de cada uma é informado por período, logo abaixo.</div>
@@ -4001,9 +4004,10 @@ async function calcularRetroativoPccrUI(){
   const patronalInput = document.getElementById('pccr-patronal').value;
   const contribuicaoPatronalPercentual = patronalInput? parseFloat(patronalInput) : null;
   const regimePrevidenciario = document.getElementById('pccr-regime').value;
+  const dataAtualizacao = document.getElementById('pccr-data-atualizacao').value || todayISO();
   const box = document.getElementById('pccr-resultado');
   box.innerHTML = '<div class="empty">Calculando...</div>';
-  const payload = { modalidade: PCCR_MODALIDADE, dataProtocolo, meses: PCCR_MESES, irrfAtivo, irrfPercentual, contribuicaoPatronalPercentual, regimePrevidenciario };
+  const payload = { modalidade: PCCR_MODALIDADE, dataProtocolo, meses: PCCR_MESES, irrfAtivo, irrfPercentual, contribuicaoPatronalPercentual, regimePrevidenciario, dataAtualizacao };
   try{
     const r = await apiFetch('/api/calculos/retroativo-pccr', { method:'POST', body: JSON.stringify(payload) });
     PCCR_ULTIMO_CALCULO = payload; // guarda para o botão de gerar documento
@@ -4022,29 +4026,33 @@ async function calcularRetroativoPccrUI(){
       ${celulasVerbas}
       <td>${l.reflexo13? fmtMoney(l.reflexo13):'—'}</td>
       <td>${l.reflexoFerias? fmtMoney(l.reflexoFerias):'—'}</td>
-      <td><strong>${fmtMoney(l.totalMes)}</strong></td>
+      <td>${fmtMoney(l.totalMes)}</td>
+      <td><strong>${fmtMoney(l.totalMesCorrigido)}</strong></td>
     </tr>`;
     }).join('');
     box.innerHTML = `
-      <div class="hint" style="margin-bottom:8px;">Data-limite de prescrição quinquenal: ${fmtDate(r.competenciaLimitePrescricao+'-01')}. Meses antes dessa data aparecem esmaecidos e zerados. Regime previdenciário usado: ${r.regimePrevidenciario==='rpps'?'RPPS (previdência própria)':'RGPS (INSS nacional)'}.</div>
+      <div class="hint" style="margin-bottom:8px;">Data-limite de prescrição quinquenal: ${fmtDate(r.competenciaLimitePrescricao+'-01')}. Meses antes dessa data aparecem esmaecidos e zerados. Regime previdenciário usado: ${r.regimePrevidenciario==='rpps'?'RPPS (previdência própria)':'RGPS (INSS nacional)'}. Valores corrigidos até ${fmtDate(r.dataCorrecaoAte)}.</div>
       ${(r.avisos||[]).map(a=>`<div class="hint" style="background:#fff3cd; border:1px solid #ffe08a; padding:8px; border-radius:6px; margin-bottom:8px; color:#7a5c00;">⚠️ ${escapeHtml(a)}</div>`).join('')}
-      <div style="overflow-x:auto;"><table><thead><tr><th>Competência</th><th>Base pago</th><th>Base devido / Gratificação</th><th>Diferença base</th>${nomesVerbas.map(n=>`<th>${escapeHtml(n)}</th>`).join('')}<th>Reflexo 13º</th><th>Reflexo 1/3 férias</th><th>Total do mês</th></tr></thead><tbody>${linhasHtml}</tbody></table></div>
+      <div style="overflow-x:auto;"><table><thead><tr><th>Competência</th><th>Base pago</th><th>Base devido / Gratificação</th><th>Diferença base</th>${nomesVerbas.map(n=>`<th>${escapeHtml(n)}</th>`).join('')}<th>Reflexo 13º</th><th>Reflexo 1/3 férias</th><th>Total nominal</th><th>Total corrigido</th></tr></thead><tbody>${linhasHtml}</tbody></table></div>
       <div class="panel" style="margin-top:14px;">
         <h4>A — Proventos</h4>
         <div class="irow"><span>Subtotal salarial</span><strong>${fmtMoney(r.resumo.subtotalSalarial)}</strong></div>
         <div class="irow"><span>Subtotal indenizatório (1/3 férias)</span><strong>${fmtMoney(r.resumo.subtotalIndenizatorio)}</strong></div>
-        <div class="irow" style="border-top:1px solid var(--line); padding-top:6px;"><span>Soma (A)</span><strong>${fmtMoney(r.resumo.somaA)}</strong></div>
-        <h4 style="margin-top:12px;">B — Descontos</h4>
+        <div class="irow" style="border-top:1px solid var(--line); padding-top:6px;"><span>Soma nominal (A)</span><strong>${fmtMoney(r.resumo.somaA)}</strong></div>
+        <div class="irow"><span>Correção monetária (3 regimes, com pró-rata — ver aviso acima)</span><strong style="color:var(--success);">+ ${fmtMoney(r.resumo.diferencaCorrecao)}</strong></div>
+        <div class="irow"><span>Soma corrigida (A), até ${fmtDate(r.dataCorrecaoAte)}</span><strong>${fmtMoney(r.resumo.somaACorrigida)}</strong></div>
+        <h4 style="margin-top:12px;">B — Descontos${ajuda('Calculados sobre os valores NOMINAIS históricos, como determina a legislação tributária.')}</h4>
         <div class="irow"><span>Desconto previdenciário (${r.regimePrevidenciario==='rpps'?'RPPS, alíquota fixa':'INSS, progressivo'} mês a mês)</span><strong>${fmtMoney(r.resumo.somaInss)}</strong></div>
         <div class="irow"><span>Desconto IRRF</span><strong>${r.resumo.irrfAtivo? fmtMoney(r.resumo.somaIrrf) : 'Sem incidência'}</strong></div>
         <div class="irow" style="border-top:1px solid var(--line); padding-top:6px;"><span>Soma (B)</span><strong>${fmtMoney(r.resumo.somaB)}</strong></div>
-        <div class="irow" style="margin-top:6px;"><span>Valor líquido devido à parte autora (A − B)</span><strong style="color:var(--gold-dark); font-size:16px;">${fmtMoney(r.resumo.valorLiquido)}</strong></div>
+        <div class="irow" style="margin-top:6px;"><span>Valor líquido nominal (A − B)</span><strong>${fmtMoney(r.resumo.valorLiquido)}</strong></div>
+        <div class="irow"><span>Valor líquido CORRIGIDO devido à parte autora, até ${fmtDate(r.dataCorrecaoAte)}</span><strong style="color:var(--gold-dark); font-size:16px;">${fmtMoney(r.resumo.valorLiquidoCorrigido)}</strong></div>
         <h4 style="margin-top:12px;">C — Valores devidos pelo município</h4>
-        <div class="irow"><span>Valor líquido devido à parte autora</span><strong>${fmtMoney(r.resumo.valorLiquido)}</strong></div>
-        <div class="irow"><span>+ Previdência retida</span><strong>${fmtMoney(r.resumo.somaInss)}</strong></div>
-        <div class="irow"><span>+ IRRF retido</span><strong>${r.resumo.irrfAtivo? fmtMoney(r.resumo.somaIrrf) : 'R$ 0,00'}</strong></div>
-        <div class="irow"><span>+ Contribuição previdenciária patronal (${r.resumo.percentualPatronal}%)</span><strong>${fmtMoney(r.resumo.contribuicaoPatronal)}</strong></div>
-        <div class="irow" style="border-top:1px solid var(--line); padding-top:6px; margin-top:6px;"><span>Valor total devido (C)</span><strong style="color:var(--gold-dark); font-size:18px;">${fmtMoney(r.resumo.totalC)}</strong></div>
+        <div class="irow"><span>Valor líquido corrigido devido à parte autora</span><strong>${fmtMoney(r.resumo.valorLiquidoCorrigido)}</strong></div>
+        <div class="irow"><span>+ Previdência retida (nominal)</span><strong>${fmtMoney(r.resumo.somaInss)}</strong></div>
+        <div class="irow"><span>+ IRRF retido (nominal)</span><strong>${r.resumo.irrfAtivo? fmtMoney(r.resumo.somaIrrf) : 'R$ 0,00'}</strong></div>
+        <div class="irow"><span>+ Contribuição previdenciária patronal (${r.resumo.percentualPatronal}%, nominal)</span><strong>${fmtMoney(r.resumo.contribuicaoPatronal)}</strong></div>
+        <div class="irow" style="border-top:1px solid var(--line); padding-top:6px; margin-top:6px;"><span>Valor total devido (C), corrigido até ${fmtDate(r.dataCorrecaoAte)}</span><strong style="color:var(--gold-dark); font-size:18px;">${fmtMoney(r.resumo.totalCCorrigido)}</strong></div>
       </div>
       <button class="btn btn-gold" style="margin-top:14px;" onclick="gerarDocumentoPccr()">📄 Gerar documento (Word, timbrado)</button>
       <div id="pccr-doc-status" style="margin-top:8px;"></div>`;
