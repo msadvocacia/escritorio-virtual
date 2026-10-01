@@ -24,40 +24,6 @@ router.get('/', requireAuth, requireRole('master', 'socio'), async (req, res) =>
 // Lista "básica" (só id/nome/tipo/oab/ativo, sem nenhum dado sensível) de sócios e
 // associados — acessível a QUALQUER usuário autenticado (inclusive associado),
 // para popular seletores como "profissional vinculado" no cadastro de processo.
-// Contrato assinado (PDF escaneado, por exemplo) — só sócio/master enviam;
-// o próprio usuário pode ver/baixar/imprimir o seu, mas nunca editar (é só
-// um arquivo guardado, sem edição pelo sistema).
-router.post('/:id/contrato-assinado', requireAuth, requireRole('master', 'socio'), async (req, res) => {
-  const { nomeArquivo, conteudoBase64 } = req.body || {};
-  if (!nomeArquivo || !conteudoBase64) return res.status(400).json({ erro: 'Arquivo inválido.' });
-  if (conteudoBase64.length > 14 * 1024 * 1024) return res.status(413).json({ erro: 'Arquivo muito grande (máximo ~10MB).' });
-  const usuarios = await getCollection('usuarios', []);
-  const alvo = usuarios.find((u) => u.id === req.params.id);
-  if (!alvo) return res.status(404).json({ erro: 'Usuário não encontrado.' });
-  alvo.contratoAssinado = { nome: nomeArquivo, conteudoBase64, enviadoPor: req.user.id, enviadoEm: new Date().toISOString() };
-  await setCollection('usuarios', usuarios);
-  res.json({ nome: alvo.contratoAssinado.nome, enviadoEm: alvo.contratoAssinado.enviadoEm });
-});
-
-router.get('/:id/contrato-assinado', requireAuth, async (req, res) => {
-  if (!isMaster(req.user) && !isSocio(req.user) && req.user.id !== req.params.id) {
-    return res.status(403).json({ erro: 'Sem acesso a este arquivo.' });
-  }
-  const usuarios = await getCollection('usuarios', []);
-  const alvo = usuarios.find((u) => u.id === req.params.id);
-  if (!alvo || !alvo.contratoAssinado) return res.status(404).json({ erro: 'Nenhum contrato assinado enviado ainda.' });
-  res.json(alvo.contratoAssinado);
-});
-
-router.delete('/:id/contrato-assinado', requireAuth, requireRole('master', 'socio'), async (req, res) => {
-  const usuarios = await getCollection('usuarios', []);
-  const alvo = usuarios.find((u) => u.id === req.params.id);
-  if (!alvo) return res.status(404).json({ erro: 'Usuário não encontrado.' });
-  delete alvo.contratoAssinado;
-  await setCollection('usuarios', usuarios);
-  res.json({ ok: true });
-});
-
 router.get('/basico', requireAuth, async (req, res) => {
   const usuarios = await getCollection('usuarios', []);
   const lista = usuarios

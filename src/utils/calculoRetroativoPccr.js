@@ -1,5 +1,4 @@
 const { calcularInssProgressivo, obterParametrosCalculo, obterAliquotaRpps, obterAliquotaPatronalRpps } = require('./parametrosCalculo');
-const { calcularCorrecaoComTransicaoSelic } = require('./correcaoMonetaria');
 
 /*
   Módulo de retroativos de Plano de Cargos e Salários (PCCR) — duas modalidades:
@@ -35,12 +34,11 @@ function competenciaAnterior(competencia, meses) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
-async function calcularRetroativoPccr({ modalidade, dataProtocolo, meses, irrfAtivo, irrfPercentual, contribuicaoPatronalPercentual, regimePrevidenciario, dataAtualizacao }) {
+async function calcularRetroativoPccr({ modalidade, dataProtocolo, meses, irrfAtivo, irrfPercentual, contribuicaoPatronalPercentual, regimePrevidenciario }) {
   if (!['nivel', 'gratificacao'].includes(modalidade)) throw new Error('Modalidade inválida.');
   if (!dataProtocolo) throw new Error('Informe a data de protocolo do processo administrativo.');
   if (!Array.isArray(meses) || !meses.length) throw new Error('Informe ao menos um mês.');
   const regime = regimePrevidenciario === 'rpps' ? 'rpps' : 'rgps';
-  const dataCorrecaoAte = dataAtualizacao || new Date().toISOString().slice(0, 10);
 
   const params = await obterParametrosCalculo();
 
@@ -72,22 +70,6 @@ async function calcularRetroativoPccr({ modalidade, dataProtocolo, meses, irrfAt
     const reflexoFerias = (!cortadoPorPrescricao && m.incluirFerias) ? valorBase / 3 : 0;
     const totalMes = valorBase + reflexo13 + reflexoFerias;
 
-    // Correção monetária automática, mês a mês, com três regimes sucessivos
-    // e pró-rata nominal nas pontas — buscados ao vivo no Banco Central. A
-    // contagem começa do ÚLTIMO dia do mês de competência (quando o salário
-    // efetivamente vence), não do dia 1, já que o pró-rata agora conta dias
-    // dentro do próprio mês.
-    let totalMesCorrigido = totalMes;
-    let fasesCorrecao = [];
-    if (totalMes > 0 && !cortadoPorPrescricao) {
-      const [anoComp, mesComp] = m.competencia.split('-').map(Number);
-      const ultimoDiaCompetencia = new Date(anoComp, mesComp, 0).getDate();
-      const dataInicioCorrecao = `${m.competencia}-${String(ultimoDiaCompetencia).padStart(2, '0')}`;
-      const rCorrecao = await calcularCorrecaoComTransicaoSelic(totalMes, dataInicioCorrecao, dataCorrecaoAte);
-      totalMesCorrigido = rCorrecao.valorFinal;
-      fasesCorrecao = rCorrecao.fases;
-    }
-
     linhas.push({
       competencia: m.competencia,
       cortadoPorPrescricao,
@@ -100,8 +82,6 @@ async function calcularRetroativoPccr({ modalidade, dataProtocolo, meses, irrfAt
       reflexoFerias,
       valorBase,
       totalMes,
-      totalMesCorrigido,
-      fasesCorrecao,
     });
   }
 
@@ -109,8 +89,6 @@ async function calcularRetroativoPccr({ modalidade, dataProtocolo, meses, irrfAt
   const subtotalSalarial = linhas.reduce((s, l) => s + l.valorBase + l.reflexo13, 0);
   const subtotalIndenizatorio = linhas.reduce((s, l) => s + l.reflexoFerias, 0);
   const somaA = subtotalSalarial + subtotalIndenizatorio;
-  const somaACorrigida = linhas.reduce((s, l) => s + l.totalMesCorrigido, 0);
-  const diferencaCorrecao = somaACorrigida - somaA;
 
   // B — Descontos previdenciários. Dois regimes possíveis:
   //   RGPS (INSS nacional): tabela progressiva por faixa, escolhida pelo ano da competência.
@@ -141,7 +119,6 @@ async function calcularRetroativoPccr({ modalidade, dataProtocolo, meses, irrfAt
   const somaB = somaInss + somaIrrf;
 
   const valorLiquido = somaA - somaB;
-  const valorLiquidoCorrigido = somaACorrigida - somaB;
 
   // C — Valores devidos pelo município (empregador). No RPPS, a alíquota
   // patronal também costuma ser fixada pela mesma lei municipal (não os 20%
@@ -158,7 +135,6 @@ async function calcularRetroativoPccr({ modalidade, dataProtocolo, meses, irrfAt
   }
   const contribuicaoPatronal = subtotalSalarial * (percentualPatronalEfetivo / 100);
   const totalC = valorLiquido + somaInss + somaIrrf + contribuicaoPatronal;
-  const totalCCorrigido = valorLiquidoCorrigido + somaInss + somaIrrf + contribuicaoPatronal;
 
   const avisos = [];
   if (anosSemTabelaExata.size) {
@@ -167,21 +143,18 @@ async function calcularRetroativoPccr({ modalidade, dataProtocolo, meses, irrfAt
   if (regime === 'rpps' && avisoRppsSemAliquota) {
     avisos.push('Nenhuma alíquota de RPPS cadastrada para os anos deste cálculo — o desconto previdenciário ficou zerado. Cadastre a alíquota da previdência própria deste município em "Parâmetros de Cálculo" (confira a lei municipal aplicável).');
   }
-  avisos.push('Correção monetária automática, mês a mês, com pró-rata nominal (dia a dia) nas pontas, em três regimes sucessivos: IPCA-E + juros de mora pela poupança até 08/12/2021; Selic acumulada de 09/12/2021 a 29/08/2024 (Art. 3º da EC nº 113/2021); IPCA-E + Taxa Legal (Selic − IPCA-15, nunca negativa, publicada pelo Banco Central) a partir de 30/08/2024 (arts. 389 e 406 do Código Civil, Lei nº 14.905/2024) — buscados ao vivo no Banco Central. Os descontos de INSS/IRRF e a contribuição patronal continuam calculados sobre os valores NOMINAIS históricos.');
-  avisos.push('O índice usado na fase mais recente (a partir de 30/08/2024) é o IPCA-E, seguindo a sentença deste tipo de caso — se outra ação tiver decisão determinando um índice diferente (ex: IPCA-15, o padrão genérico da lei), me avise para eu ajustar esse cálculo especificamente.');
 
   return {
     modalidade,
     regimePrevidenciario: regime,
     competenciaLimitePrescricao: competenciaLimite,
-    dataCorrecaoAte,
     linhas,
     avisos,
     resumo: {
-      subtotalSalarial, subtotalIndenizatorio, somaA, somaACorrigida, diferencaCorrecao,
+      subtotalSalarial, subtotalIndenizatorio, somaA,
       somaInss, irrfAtivo: !!irrfAtivo, somaIrrf, somaB,
-      valorLiquido, valorLiquidoCorrigido,
-      percentualPatronal: percentualPatronalEfetivo, contribuicaoPatronal, totalC, totalCCorrigido,
+      valorLiquido,
+      percentualPatronal: percentualPatronalEfetivo, contribuicaoPatronal, totalC,
     },
   };
 }
