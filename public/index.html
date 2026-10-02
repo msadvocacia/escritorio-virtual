@@ -168,8 +168,9 @@
   .modal-overlay{ display:none; position:fixed; inset:0; background:rgba(22,21,18,.45); z-index:50; align-items:flex-start; justify-content:center; padding:40px 16px; overflow:auto; }
   .modal-overlay.open{ display:flex; }
   .modal{ background:#fff; border-radius:12px; width:100%; max-width:600px; box-shadow:0 20px 60px rgba(0,0,0,.25); animation:modalIn .16s ease; }
+  .modal.dragging{ animation:none; }
   @keyframes modalIn{ from{opacity:0;transform:translateY(-8px);} to{opacity:1;transform:none;} }
-  .modal-head{ padding:18px 22px; border-bottom:1px solid var(--line); display:flex; align-items:center; justify-content:space-between; }
+  .modal-head{ padding:18px 22px; border-bottom:1px solid var(--line); display:flex; align-items:center; justify-content:space-between; cursor:move; user-select:none; }
   .modal-head h3{ margin:0; font-size:16px; }
   .modal-close{ background:none; border:none; cursor:pointer; font-size:18px; color:var(--ink-soft); }
   .modal-body{ padding:20px 22px; max-height:70vh; overflow:auto; }
@@ -642,6 +643,7 @@
         <div id="ap-selecao-usuario" style="display:none;"></div>
         <div id="ap-dashboard" style="display:none;">
           <div id="ap-voltar-master" style="display:none; margin-bottom:10px;"><button class="btn btn-ghost btn-sm" onclick="renderAgendaPessoalPage(true)">← Voltar à lista de usuários</button></div>
+          <div id="ap-dono-banner" style="display:none; margin-bottom:12px;"></div>
           <div class="pill-select" style="margin-bottom:14px;" id="ap-tabs">
             <button class="fin-tab active" data-tab="ativos" onclick="setAgendaPessoalTab('ativos')">Ativos</button>
             <button class="fin-tab" data-tab="lixeira" onclick="setAgendaPessoalTab('lixeira')">🗑 Lixeira</button>
@@ -721,10 +723,16 @@ async function apiFetch(path, options={}){
   try{ body = await resp.json(); }catch(e){ /* resposta sem corpo JSON */ }
   if(!resp.ok){
     if(resp.status===401){ logout(); }
-    const msg = (body && body.erro) || 'Erro de comunicação com o servidor.';
+    const msg = (body && body.erro) || mensagemErroHttp(resp.status);
     throw new Error(msg);
   }
   return body;
+}
+function mensagemErroHttp(status){
+  if(status===413) return 'Arquivo grande demais para o servidor aceitar (limite atual: 16MB). Tente um arquivo menor ou comprima o PDF antes de enviar.';
+  if(status===504 || status===502 || status===503) return 'O servidor demorou demais para responder (ou está temporariamente fora do ar). Tente novamente em instantes.';
+  if(status===0) return 'Não foi possível conectar ao servidor — confira sua internet.';
+  return 'Erro de comunicação com o servidor.';
 }
 
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
@@ -736,7 +744,7 @@ async function apiFetchUpload(path, formData){
   try{ body = await resp.json(); }catch(e){ /* resposta sem corpo JSON */ }
   if(!resp.ok){
     if(resp.status===401){ logout(); }
-    const msg = (body && body.erro) || 'Erro de comunicação com o servidor.';
+    const msg = (body && body.erro) || mensagemErroHttp(resp.status);
     throw new Error(msg);
   }
   return body;
@@ -1343,8 +1351,52 @@ function openModal(title, bodyHtml, onSave){
   newBtn.style.display = ''; // sempre visível por padrão (uma tela anterior pode tê-lo escondido)
   newBtn.textContent = 'Salvar'; // sempre reseta o texto (uma tela anterior pode tê-lo renomeado)
   newBtn.addEventListener('click', onSave);
+  resetarPosicaoModal(document.querySelector('#modal-overlay .modal'));
 }
 function closeModal(){ document.getElementById('modal-overlay').classList.remove('open'); }
+// Pop-ups podem ser arrastados pelo título, para dar espaço de ver o que
+// está atrás e preencher campos sem fechar — a posição volta ao centro
+// sempre que um novo pop-up é aberto.
+function resetarPosicaoModal(modalEl){
+  if(!modalEl) return;
+  modalEl.style.position = '';
+  modalEl.style.left = '';
+  modalEl.style.top = '';
+  modalEl.style.margin = '';
+}
+function tornarArrastavel(modalEl, alcaEl){
+  if(!modalEl || !alcaEl || alcaEl.dataset.arrastavelLigado) return;
+  alcaEl.dataset.arrastavelLigado = '1';
+  let arrastando = false, offsetX = 0, offsetY = 0;
+  alcaEl.addEventListener('mousedown', (ev)=>{
+    if(ev.target.closest('.modal-close')) return; // não arrasta clicando no X
+    arrastando = true;
+    modalEl.classList.add('dragging');
+    const rect = modalEl.getBoundingClientRect();
+    offsetX = ev.clientX - rect.left;
+    offsetY = ev.clientY - rect.top;
+    modalEl.style.position = 'fixed';
+    modalEl.style.margin = '0';
+    modalEl.style.left = rect.left+'px';
+    modalEl.style.top = rect.top+'px';
+    ev.preventDefault();
+  });
+  document.addEventListener('mousemove', (ev)=>{
+    if(!arrastando) return;
+    const maxX = window.innerWidth - 60, maxY = window.innerHeight - 40;
+    modalEl.style.left = Math.min(Math.max(ev.clientX-offsetX, -modalEl.offsetWidth+60), maxX)+'px';
+    modalEl.style.top = Math.min(Math.max(ev.clientY-offsetY, 0), maxY)+'px';
+  });
+  document.addEventListener('mouseup', ()=>{ arrastando=false; modalEl.classList.remove('dragging'); });
+}
+document.addEventListener('DOMContentLoaded', ()=>{
+  const modalEl = document.querySelector('#modal-overlay .modal');
+  const alcaEl = document.querySelector('#modal-overlay .modal-head');
+  tornarArrastavel(modalEl, alcaEl);
+  const modalPublicoEl = document.querySelector('#modal-public-overlay .modal');
+  const alcaPublicoEl = document.querySelector('#modal-public-overlay .modal-head');
+  tornarArrastavel(modalPublicoEl, alcaPublicoEl);
+});
 // ESC fecha o pop-up aberto, de qualquer tela do sistema.
 document.addEventListener('keydown', (ev)=>{
   if(ev.key==='Escape' && document.getElementById('modal-overlay')?.classList.contains('open')) closeModal();
@@ -1402,7 +1454,7 @@ async function submitAgendamentoPublico(){
    ============================================================ */
 function podeGerenciarUsuarios(){ return isMaster()||isSocio(); }
 function openUsuarioForm(id){
-  if(!podeGerenciarUsuarios()){ showToast('Sem pertarefa.'); return; }
+  if(!podeGerenciarUsuarios()){ showToast('Sem permissão.'); return; }
   const u = id? DB.usuarios.find(x=>x.id===id) : {tipo: isMaster()? 'socio':'associado', nome:'', login:'', oab:'', ativo:true, nacionalidade:'brasileiro(a)', estadoCivil:'solteiro(a)', rg:'', cpf:'', telefone:'', endereco:'', remunerado:false, formacaoEstagiario:'estudante', estagiarioVisivelPara:'todos', tutoresIds:[]};
   const tiposPermitidos = isMaster()? ['socio','associado','estagiario'] : ['associado','estagiario'];
   const tutoresDisponiveis = DB.usuarios.filter(x=>x.tipo==='socio'||x.tipo==='associado');
@@ -2453,14 +2505,25 @@ function buildParcelasPreview(total, n, primeiraData){
   return parcelas;
 }
 function toggleFormaPagamento(){ document.getElementById('hf-parcelado-box').style.display = document.querySelector('input[name="hf-forma"]:checked').value==='parcelado' ? 'block':'none'; }
-function updateParcelasPreview(){
+// Gera um campo de vencimento + valor EDITÁVEL por parcela (não só uma prévia
+// de leitura) — mesmo padrão usado no pagamento do processo, pra poder
+// ajustar o valor de cada parcela individualmente (ex: entrada maior).
+function atualizarCamposParcelasHonorario(parcelasExistentes){
+  const n = parseInt(document.getElementById('hf-parcelas').value)||2;
   const total = parseFloat(document.getElementById('hf-total').value)||0;
-  const n = parseInt(document.getElementById('hf-parcelas').value)||1;
-  const primeira = document.getElementById('hf-primeira').value;
   const box = document.getElementById('hf-preview'); if(!box) return;
-  const parcelas = buildParcelasPreview(total, n, primeira);
-  box.innerHTML = parcelas.map(p=>`<div class="irow"><span>Parcela ${p.numero} — ${fmtDate(p.vencimento)}</span><strong>${fmtMoney(p.valor)}</strong></div>`).join('') || '<span style="color:var(--ink-soft);">Preencha os campos acima.</span>';
+  const existentes = parcelasExistentes || [];
+  const primeira = document.getElementById('hf-primeira')?.value || existentes[0]?.vencimento || todayISO();
+  const sugestao = buildParcelasPreview(total, n, primeira);
+  let html = '';
+  for(let i=0;i<n;i++){
+    const ex = existentes[i];
+    const sug = sugestao[i];
+    html += `<div class="field-row"><div class="field"><label>Parcela ${i+1} — vencimento</label><input type="date" id="hf-parc-data-${i}" value="${ex?ex.vencimento:(sug?sug.vencimento:todayISO())}"></div><div class="field"><label>Valor</label><input type="number" step="0.01" id="hf-parc-valor-${i}" value="${ex?ex.valor:(sug?sug.valor:'')}"></div></div>`;
+  }
+  box.innerHTML = html;
 }
+function updateParcelasPreview(){ atualizarCamposParcelasHonorario(); }
 function openHonorarioForm(id){
   const h = id ? DB.honorarios.find(x=>x.id===id) : {clienteId:'',processoId:'',descricao:'',valorTotal:'',forma:'avista',parcelas:[],avistaStatus:'pendente',avistaPagoEm:null};
   const isParcelado = h.forma==='parcelado';
@@ -2477,7 +2540,7 @@ function openHonorarioForm(id){
     </div></div>
     <div id="hf-parcelado-box" style="display:${isParcelado?'block':'none'};">
       <div class="field-row"><div class="field"><label>Nº de parcelas</label><input type="number" min="2" id="hf-parcelas" value="${h.parcelas?.length||2}" oninput="updateParcelasPreview()"></div><div class="field"><label>1ª parcela</label><input type="date" id="hf-primeira" value="${h.parcelas?.[0]?.vencimento||todayISO()}" oninput="updateParcelasPreview()"></div></div>
-      <div class="field"><label>Prévia</label><div class="installments-preview" id="hf-preview"></div></div>
+      <div class="field"><label>Parcelas (vencimento e valor de cada uma, editáveis)</label><div id="hf-preview"></div></div>
     </div>
     <div id="hf-avista-box" style="display:${isParcelado?'none':'block'};"><div class="field"><label>Situação</label><select id="hf-avista-status"><option value="pendente" ${h.avistaStatus==='pendente'?'selected':''}>Pendente</option><option value="pago" ${h.avistaStatus==='pago'?'selected':''}>Pago</option></select></div></div>
   `;
@@ -2489,8 +2552,14 @@ function openHonorarioForm(id){
     let data = { clienteId, processoId: clienteId==='__escritorio__' ? '' : document.getElementById('hf-processo').value, descricao: document.getElementById('hf-desc').value.trim(), valorTotal, forma };
     if(forma==='parcelado'){
       const n = parseInt(document.getElementById('hf-parcelas').value)||2;
-      const primeira = document.getElementById('hf-primeira').value;
-      data.parcelas = buildParcelasPreview(valorTotal, n, primeira);
+      const parcelasAntigas = h.parcelas||[];
+      data.parcelas = [];
+      for(let i=0;i<n;i++){
+        const vencimento = document.getElementById('hf-parc-data-'+i)?.value || todayISO();
+        const valor = parseFloat(document.getElementById('hf-parc-valor-'+i)?.value)||0;
+        const antiga = parcelasAntigas[i];
+        data.parcelas.push({ id: antiga?.id || uid(), numero: i+1, vencimento, valor, status: antiga?.status || 'pendente', pagoEm: antiga?.pagoEm || null });
+      }
     } else { data.avistaStatus = document.getElementById('hf-avista-status').value; data.avistaPagoEm = data.avistaStatus==='pago'? todayISO():null; data.parcelas=[]; }
     if(id){
       await persistMutation('honorarios', arr=>{ const alvo = arr.find(x=>x.id===id); if(alvo) Object.assign(alvo, data); return arr; });
@@ -2499,7 +2568,7 @@ function openHonorarioForm(id){
     }
     renderFinanceiro(); renderDashboard(); closeModal(); showToast('Honorário salvo.');
   });
-  if(isParcelado) setTimeout(updateParcelasPreview, 0);
+  if(isParcelado) setTimeout(()=>atualizarCamposParcelasHonorario(h.parcelas), 0);
 }
 async function deleteHonorario(id){
   if(!confirm('Remover este honorário?')) return;
@@ -2605,7 +2674,7 @@ function imprimirRecibo(honId, parcelaId){
   dispararImpressao();
 }
 function openDespesaForm(id){
-  if(!(isMaster()||isSocio())){ showToast('Sem pertarefa.'); return; }
+  if(!(isMaster()||isSocio())){ showToast('Sem permissão.'); return; }
   const d = id ? DB.despesas.find(x=>x.id===id) : {descricao:'',categoria:'',data:todayISO(),valor:''};
   const body = `<div class="field"><label>Descrição</label><input id="df-desc" value="${escapeHtml(d.descricao)}"></div>
     <div class="field-row"><div class="field"><label>Categoria</label><input id="df-cat" value="${escapeHtml(d.categoria)}"></div><div class="field"><label>Data</label><input type="date" id="df-data" value="${d.data}"></div></div>
@@ -2976,8 +3045,8 @@ function formularioRescisaoTrabalhista(){
       <div class="field"><label>Saldo de FGTS já depositado (opcional — se vazio, estima 8% ao mês)${ajuda('Se você tiver o extrato do FGTS com o saldo real, informe aqui para um cálculo mais preciso. Se não tiver, deixe em branco — o sistema estima 8% do salário por mês trabalhado.')}</label><input type="number" step="0.01" id="rt-fgts" placeholder="Deixe vazio para estimar"></div>
     </div>
     <div class="field-row">
-      <div class="field"><label>Data de adtarefa${ajuda('A data em que o trabalhador começou a trabalhar (consta na carteira de trabalho ou no contrato).')}</label><input type="date" id="rt-admissao"></div>
-      <div class="field"><label>Data de detarefa${ajuda('A data em que o trabalhador foi dispensado (o último dia efetivamente trabalhado, salvo aviso prévio).')}</label><input type="date" id="rt-demissao"></div>
+      <div class="field"><label>Data de admissão${ajuda('A data em que o trabalhador começou a trabalhar (consta na carteira de trabalho ou no contrato).')}</label><input type="date" id="rt-admissao"></div>
+      <div class="field"><label>Data de demissão${ajuda('A data em que o trabalhador foi dispensado (o último dia efetivamente trabalhado, salvo aviso prévio).')}</label><input type="date" id="rt-demissao"></div>
     </div>
     <div class="field"><label><input type="checkbox" id="rt-aviso" checked style="width:auto; margin-right:6px;"> Aviso prévio indenizado (desmarque se foi trabalhado)${ajuda('Marque se a empresa pagou o aviso prévio em dinheiro, sem o trabalhador precisar cumprir esse período trabalhando. Desmarque se o trabalhador continuou trabalhando durante o aviso prévio (nesse caso, não há indenização extra por ele).')}</label></div>
     <button class="btn btn-gold" onclick="calcularRescisaoTrabalhista()">Calcular</button>
@@ -3305,7 +3374,7 @@ function formularioDesapropriacao(cat){
       <div class="field"><label>Índice de correção</label><select id="dsp-indice">${INDICES_DISPONIVEIS.map(i=>`<option value="${i.v}">${i.l}</option>`).join('')}</select></div>
     </div>
     <div class="field-row">
-      <div class="field"><label>Data da itarefa na posse${ajuda('A data em que o poder público tomou posse do imóvel/bem desapropriado — é a partir dela que os juros compensatórios começam a contar.')}</label><input type="date" id="dsp-data-inicial"></div>
+      <div class="field"><label>Data da imissão na posse${ajuda('A data em que o poder público tomou posse do imóvel/bem desapropriado — é a partir dela que os juros compensatórios começam a contar.')}</label><input type="date" id="dsp-data-inicial"></div>
       <div class="field"><label>Data do pagamento</label><input type="date" id="dsp-data-final" value="${todayISO()}"></div>
     </div>
     <div class="field-row">
@@ -3491,7 +3560,7 @@ async function calcularDistribuicaoLucros(){
 function formularioAmortizacao(cat){
   return `<h3>${escapeHtml(cat.titulo)} — Price x SAC</h3>
     ${campoVinculoCalculo()}
-    <div class="hint" style="margin-bottom:10px;">Compara os dois sistemas de amortização mais comuns em financiamentos. Análise de juros abusivos, capitalização indevida ou cotarefa de permanência exige perícia específica do contrato — ainda em construção.</div>
+    <div class="hint" style="margin-bottom:10px;">Compara os dois sistemas de amortização mais comuns em financiamentos. Análise de juros abusivos, capitalização indevida ou comissão de permanência exige perícia específica do contrato — ainda em construção.</div>
     <div class="field-row">
       <div class="field"><label>Valor financiado (R$)${ajuda('O valor total que foi (ou será) financiado — o preço do bem menos qualquer entrada já paga.')}</label><input type="number" step="0.01" id="am-valor"></div>
       <div class="field"><label>Taxa de juros ao mês (%)${ajuda('A taxa de juros mensal cobrada pelo banco/financeira, informada no contrato (procure "taxa de juros efetiva mensal" no CET do contrato).')}</label><input type="number" step="0.01" id="am-taxa"></div>
@@ -3698,11 +3767,14 @@ function formularioRetroativoPccr(cat){
       </div>
       <div class="field-row">
         <div class="field"><label>Processo${ajuda('O número do processo administrativo ou judicial, se já existir.')}</label><input id="pccr-processo"></div>
-        <div class="field"><label>Data de adtarefa${ajuda('Quando o servidor começou a trabalhar no cargo.')}</label><input type="date" id="pccr-admissao"></div>
+        <div class="field"><label>Data de admissão${ajuda('Quando o servidor começou a trabalhar no cargo.')}</label><input type="date" id="pccr-admissao"></div>
       </div>
       <div class="field-row">
         <div class="field"><label>Data de protocolo${ajuda('A data em que o pedido administrativo (ou a ação judicial) foi protocolado. É a partir dela que o sistema calcula o corte de 5 anos (prescrição quinquenal) — tudo antes desse corte não entra no cálculo. Vem preenchida com a data de hoje por padrão (para simular "a partir de agora, para trás") — troque se já existir um protocolo/ação com data diferente.')}</label><input type="date" id="pccr-protocolo" value="${todayISO()}"></div>
         <div class="field"><label>Data de implantação${ajuda('A data em que o benefício (novo nível ou gratificação) passou a ser efetivamente pago no contracheque. Marca o fim do período retroativo.')}</label><input type="date" id="pccr-implantacao"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Atualizar o valor até${ajuda('Até quando trazer o valor devido a valor de hoje. Correção automática, com pró-rata dia a dia nas pontas, em três regimes: IPCA-E + poupança até 08/12/2021; Selic pura de 09/12/2021 a 29/08/2024 (EC 113/2021); IPCA-E + Taxa Legal a partir de 30/08/2024 (Lei 14.905/2024) — buscados ao vivo no Banco Central.')}</label><input type="date" id="pccr-data-atualizacao" value="${todayISO()}"></div>
       </div>
     </fieldset>
     <fieldset id="pccr-verbas-box" style="margin-top:10px;"><legend>Nomes das verbas percentuais incidentes sobre o base (ex: Anuênio, Insalubridade)${ajuda('Verbas que são calculadas como um percentual do salário-base (ex: anuênio 17%, insalubridade 20%). Quando o base muda (mudança de nível), essas verbas mudam junto, na mesma proporção — por isso o sistema calcula a diferença de cada uma automaticamente.')}</legend>
@@ -3712,6 +3784,16 @@ function formularioRetroativoPccr(cat){
         <button class="btn btn-ghost" style="align-self:flex-end;" onclick="adicionarNomeVerbaPccr()">+ Adicionar</button>
       </div>
       <div id="pccr-verbas-lista" style="margin-top:8px;"></div>
+    </fieldset>
+    <fieldset id="pccr-verbas-box-anuenio" style="margin-top:10px;"><legend>Anuênio automático (opcional)${ajuda('Em vez de digitar o percentual de anuênio em cada período (e lembrar de atualizar quando ele sobe), o sistema calcula sozinho: X% por ano completo de serviço contado a partir da data de admissão, respeitando uma carência mínima e um teto — exatamente os três números que a lei municipal de anuênio costuma trazer. Ative aqui e NÃO cadastre "Anuênio" como verba manual acima, para não duplicar.')}</legend>
+      <label style="display:block; margin-bottom:8px;"><input type="checkbox" id="pccr-anuenio-auto" style="width:auto; margin-right:6px;" onchange="document.getElementById('pccr-anuenio-auto-campos').style.display=this.checked?'block':'none';"> Calcular o anuênio automaticamente (usa a "Data de admissão" informada acima)</label>
+      <div id="pccr-anuenio-auto-campos" style="display:none;">
+        <div class="field-row">
+          <div class="field"><label>% por ano completo</label><input type="number" step="0.01" id="pccr-anuenio-percentual" value="1"></div>
+          <div class="field"><label>Carência (anos)${ajuda('Anos completos de serviço necessários para começar a ter direito ao anuênio — confira na lei municipal do caso.')}</label><input type="number" step="1" id="pccr-anuenio-carencia" value="5"></div>
+          <div class="field"><label>Teto (%)</label><input type="number" step="0.01" id="pccr-anuenio-teto" value="35"></div>
+        </div>
+      </div>
     </fieldset>
     <fieldset style="margin-top:10px;"><legend>📎 Importar da ficha financeira (PDF) — opcional${ajuda('Envia o PDF da ficha financeira do servidor. O sistema tenta identificar salário-base, anuênio, insalubridade, 13º, 1/3 férias, descontos e totais de cada mês, e pré-preenche os campos abaixo para você conferir.')}</legend>
       <div class="hint" style="margin-bottom:8px;">Envia o PDF, o sistema tenta ler o salário-base e os percentuais de cada verba, mês a mês, e <strong>pré-preenche a lista abaixo para você conferir e corrigir</strong> — nunca calcula direto do arquivo. O arquivo não é salvo em nenhum lugar, só é lido nesta hora. Só funciona com PDF que tenha texto de verdade (não escaneado/foto).</div>
@@ -3757,6 +3839,10 @@ function formularioRetroativoPccr(cat){
       <div class="hint" id="pccr-periodo-nivel-selecionado" style="margin-bottom:8px;"></div>
       <div id="pccr-periodo-verbas-campos"></div>
       <div class="field"><label>Mês de férias de referência (opcional)${ajuda('Informe o mês/ano em que o servidor tira férias (ex: julho/2019). O sistema aplica o reflexo de 1/3 de férias automaticamente NESSE MÊS TODO ANO, a partir do ano informado até o fim deste período — não precisa repetir para cada ano. Deixe em branco se não houve férias neste período.')}</label><input type="month" id="pccr-periodo-mes-ferias"></div>
+      <div class="field-row">
+        <div class="field"><label>Dia de início deste período (opcional)${ajuda('Preencha só se este período começar NO MEIO do mês (ex: a mudança foi implantada no dia 17) — prorrateia o primeiro mês deste período proporcionalmente. Deixe em branco se começar no dia 1.')}</label><input type="number" min="1" max="31" id="pccr-periodo-dia-inicio" placeholder="Deixe em branco = dia 1"></div>
+        <div class="field"><label>Dia de fim deste período (opcional)${ajuda('Preencha só se este período terminar NO MEIO do mês (ex: a implantação ocorreu no dia 27) — prorrateia o último mês deste período proporcionalmente. Deixe em branco se for até o fim do mês.')}</label><input type="number" min="1" max="31" id="pccr-periodo-dia-fim" placeholder="Deixe em branco = mês inteiro"></div>
+      </div>
       <div class="hint">O reflexo de 13º salário é aplicado automaticamente em todo mês de dezembro dentro do período (e no mês da rescisão, se houver, mas isso ainda não é automático — adicione manualmente se for o caso).</div>
       <button class="btn btn-gold" style="margin-top:8px;" onclick="adicionarPeriodoPccr()">+ Adicionar período (gera os meses automaticamente)</button>
     </fieldset>
@@ -3829,6 +3915,8 @@ function adicionarPeriodoPccr(){
   const ate = document.getElementById('pccr-periodo-ate').value;
   const basePago = parseFloat(document.getElementById('pccr-periodo-basepago').value);
   const mesFerias = document.getElementById('pccr-periodo-mes-ferias').value;
+  const diaInicio = parseInt(document.getElementById('pccr-periodo-dia-inicio').value) || null;
+  const diaFim = parseInt(document.getElementById('pccr-periodo-dia-fim').value) || null;
   if(!de || !ate || !basePago){ showToast('Preencha "de", "até" e o base pago.'); return; }
   if(de>ate){ showToast('A data final precisa ser depois da inicial.'); return; }
   const competencias = gerarSequenciaCompetencias(de, ate);
@@ -3846,7 +3934,7 @@ function adicionarPeriodoPccr(){
   const mesFeriasMM = mesFerias ? mesFerias.slice(5, 7) : null;
   const anoFeriasReferencia = mesFerias ? parseInt(mesFerias.slice(0, 4), 10) : null;
 
-  competencias.forEach(competencia=>{
+  competencias.forEach((competencia, idx)=>{
     const mes = competencia.slice(5,7);
     const anoCompetencia = parseInt(competencia.slice(0,4), 10);
     const incluir13 = mes==='12';
@@ -3856,10 +3944,13 @@ function adicionarPeriodoPccr(){
     const incluirFerias = mesFeriasMM!=null && mes===mesFeriasMM && anoCompetencia>=anoFeriasReferencia;
     // remove um mês já existente com a mesma competência (evita duplicar se períodos se sobrepuserem)
     PCCR_MESES = PCCR_MESES.filter(m=>m.competencia!==competencia);
+    const extra = {};
+    if(idx===0 && diaInicio) extra.diaInicio = diaInicio;
+    if(idx===competencias.length-1 && diaFim) extra.diaFim = diaFim;
     if(PCCR_MODALIDADE==='nivel'){
-      PCCR_MESES.push({competencia, basePago, baseDevido, verbasPercentuais, incluir13, incluirFerias});
+      PCCR_MESES.push({competencia, basePago, baseDevido, verbasPercentuais, incluir13, incluirFerias, ...extra});
     } else {
-      PCCR_MESES.push({competencia, basePago, percentualGratificacao, incluir13, incluirFerias});
+      PCCR_MESES.push({competencia, basePago, percentualGratificacao, incluir13, incluirFerias, ...extra});
     }
   });
   PCCR_MESES.sort((a,b)=>a.competencia.localeCompare(b.competencia));
@@ -4001,9 +4092,23 @@ async function calcularRetroativoPccrUI(){
   const patronalInput = document.getElementById('pccr-patronal').value;
   const contribuicaoPatronalPercentual = patronalInput? parseFloat(patronalInput) : null;
   const regimePrevidenciario = document.getElementById('pccr-regime').value;
+  const dataAtualizacao = document.getElementById('pccr-data-atualizacao').value || todayISO();
   const box = document.getElementById('pccr-resultado');
   box.innerHTML = '<div class="empty">Calculando...</div>';
-  const payload = { modalidade: PCCR_MODALIDADE, dataProtocolo, meses: PCCR_MESES, irrfAtivo, irrfPercentual, contribuicaoPatronalPercentual, regimePrevidenciario };
+  const anuenioAuto = document.getElementById('pccr-anuenio-auto').checked;
+  const dataAdmissaoPccr = document.getElementById('pccr-admissao').value;
+  let configSalarial = null;
+  if(anuenioAuto){
+    if(!dataAdmissaoPccr){ showToast('Informe a Data de admissão para calcular o anuênio automaticamente.'); return; }
+    configSalarial = {
+      dataAdmissao: dataAdmissaoPccr,
+      anuenioAtivo: true,
+      anuenioPercentualPorAno: parseFloat(document.getElementById('pccr-anuenio-percentual').value) || 1,
+      anuenioCarenciaAnos: parseFloat(document.getElementById('pccr-anuenio-carencia').value) ?? 5,
+      anuenioTeto: parseFloat(document.getElementById('pccr-anuenio-teto').value) ?? 35,
+    };
+  }
+  const payload = { modalidade: PCCR_MODALIDADE, dataProtocolo, meses: PCCR_MESES, irrfAtivo, irrfPercentual, contribuicaoPatronalPercentual, regimePrevidenciario, dataAtualizacao, configSalarial };
   try{
     const r = await apiFetch('/api/calculos/retroativo-pccr', { method:'POST', body: JSON.stringify(payload) });
     PCCR_ULTIMO_CALCULO = payload; // guarda para o botão de gerar documento
@@ -4022,29 +4127,33 @@ async function calcularRetroativoPccrUI(){
       ${celulasVerbas}
       <td>${l.reflexo13? fmtMoney(l.reflexo13):'—'}</td>
       <td>${l.reflexoFerias? fmtMoney(l.reflexoFerias):'—'}</td>
-      <td><strong>${fmtMoney(l.totalMes)}</strong></td>
+      <td>${fmtMoney(l.totalMes)}</td>
+      <td><strong>${fmtMoney(l.totalMesCorrigido)}</strong></td>
     </tr>`;
     }).join('');
     box.innerHTML = `
-      <div class="hint" style="margin-bottom:8px;">Data-limite de prescrição quinquenal: ${fmtDate(r.competenciaLimitePrescricao+'-01')}. Meses antes dessa data aparecem esmaecidos e zerados. Regime previdenciário usado: ${r.regimePrevidenciario==='rpps'?'RPPS (previdência própria)':'RGPS (INSS nacional)'}.</div>
+      <div class="hint" style="margin-bottom:8px;">Data-limite de prescrição quinquenal: ${fmtDate(r.competenciaLimitePrescricao+'-01')}. Meses antes dessa data aparecem esmaecidos e zerados. Regime previdenciário usado: ${r.regimePrevidenciario==='rpps'?'RPPS (previdência própria)':'RGPS (INSS nacional)'}. Valores corrigidos até ${fmtDate(r.dataCorrecaoAte)}.</div>
       ${(r.avisos||[]).map(a=>`<div class="hint" style="background:#fff3cd; border:1px solid #ffe08a; padding:8px; border-radius:6px; margin-bottom:8px; color:#7a5c00;">⚠️ ${escapeHtml(a)}</div>`).join('')}
-      <div style="overflow-x:auto;"><table><thead><tr><th>Competência</th><th>Base pago</th><th>Base devido / Gratificação</th><th>Diferença base</th>${nomesVerbas.map(n=>`<th>${escapeHtml(n)}</th>`).join('')}<th>Reflexo 13º</th><th>Reflexo 1/3 férias</th><th>Total do mês</th></tr></thead><tbody>${linhasHtml}</tbody></table></div>
+      <div style="overflow-x:auto;"><table><thead><tr><th>Competência</th><th>Base pago</th><th>Base devido / Gratificação</th><th>Diferença base</th>${nomesVerbas.map(n=>`<th>${escapeHtml(n)}</th>`).join('')}<th>Reflexo 13º</th><th>Reflexo 1/3 férias</th><th>Total nominal</th><th>Total corrigido</th></tr></thead><tbody>${linhasHtml}</tbody></table></div>
       <div class="panel" style="margin-top:14px;">
         <h4>A — Proventos</h4>
         <div class="irow"><span>Subtotal salarial</span><strong>${fmtMoney(r.resumo.subtotalSalarial)}</strong></div>
         <div class="irow"><span>Subtotal indenizatório (1/3 férias)</span><strong>${fmtMoney(r.resumo.subtotalIndenizatorio)}</strong></div>
-        <div class="irow" style="border-top:1px solid var(--line); padding-top:6px;"><span>Soma (A)</span><strong>${fmtMoney(r.resumo.somaA)}</strong></div>
-        <h4 style="margin-top:12px;">B — Descontos</h4>
+        <div class="irow" style="border-top:1px solid var(--line); padding-top:6px;"><span>Soma nominal (A)</span><strong>${fmtMoney(r.resumo.somaA)}</strong></div>
+        <div class="irow"><span>Correção monetária (3 regimes, com pró-rata — ver aviso acima)</span><strong style="color:var(--success);">+ ${fmtMoney(r.resumo.diferencaCorrecao)}</strong></div>
+        <div class="irow"><span>Soma corrigida (A), até ${fmtDate(r.dataCorrecaoAte)}</span><strong>${fmtMoney(r.resumo.somaACorrigida)}</strong></div>
+        <h4 style="margin-top:12px;">B — Descontos${ajuda('Calculados sobre os valores NOMINAIS históricos, como determina a legislação tributária.')}</h4>
         <div class="irow"><span>Desconto previdenciário (${r.regimePrevidenciario==='rpps'?'RPPS, alíquota fixa':'INSS, progressivo'} mês a mês)</span><strong>${fmtMoney(r.resumo.somaInss)}</strong></div>
         <div class="irow"><span>Desconto IRRF</span><strong>${r.resumo.irrfAtivo? fmtMoney(r.resumo.somaIrrf) : 'Sem incidência'}</strong></div>
         <div class="irow" style="border-top:1px solid var(--line); padding-top:6px;"><span>Soma (B)</span><strong>${fmtMoney(r.resumo.somaB)}</strong></div>
-        <div class="irow" style="margin-top:6px;"><span>Valor líquido devido à parte autora (A − B)</span><strong style="color:var(--gold-dark); font-size:16px;">${fmtMoney(r.resumo.valorLiquido)}</strong></div>
+        <div class="irow" style="margin-top:6px;"><span>Valor líquido nominal (A − B)</span><strong>${fmtMoney(r.resumo.valorLiquido)}</strong></div>
+        <div class="irow"><span>Valor líquido CORRIGIDO devido à parte autora, até ${fmtDate(r.dataCorrecaoAte)}</span><strong style="color:var(--gold-dark); font-size:16px;">${fmtMoney(r.resumo.valorLiquidoCorrigido)}</strong></div>
         <h4 style="margin-top:12px;">C — Valores devidos pelo município</h4>
-        <div class="irow"><span>Valor líquido devido à parte autora</span><strong>${fmtMoney(r.resumo.valorLiquido)}</strong></div>
-        <div class="irow"><span>+ Previdência retida</span><strong>${fmtMoney(r.resumo.somaInss)}</strong></div>
-        <div class="irow"><span>+ IRRF retido</span><strong>${r.resumo.irrfAtivo? fmtMoney(r.resumo.somaIrrf) : 'R$ 0,00'}</strong></div>
-        <div class="irow"><span>+ Contribuição previdenciária patronal (${r.resumo.percentualPatronal}%)</span><strong>${fmtMoney(r.resumo.contribuicaoPatronal)}</strong></div>
-        <div class="irow" style="border-top:1px solid var(--line); padding-top:6px; margin-top:6px;"><span>Valor total devido (C)</span><strong style="color:var(--gold-dark); font-size:18px;">${fmtMoney(r.resumo.totalC)}</strong></div>
+        <div class="irow"><span>Valor líquido corrigido devido à parte autora</span><strong>${fmtMoney(r.resumo.valorLiquidoCorrigido)}</strong></div>
+        <div class="irow"><span>+ Previdência retida (nominal)</span><strong>${fmtMoney(r.resumo.somaInss)}</strong></div>
+        <div class="irow"><span>+ IRRF retido (nominal)</span><strong>${r.resumo.irrfAtivo? fmtMoney(r.resumo.somaIrrf) : 'R$ 0,00'}</strong></div>
+        <div class="irow"><span>+ Contribuição previdenciária patronal (${r.resumo.percentualPatronal}%, nominal)</span><strong>${fmtMoney(r.resumo.contribuicaoPatronal)}</strong></div>
+        <div class="irow" style="border-top:1px solid var(--line); padding-top:6px; margin-top:6px;"><span>Valor total devido (C), corrigido até ${fmtDate(r.dataCorrecaoAte)}</span><strong style="color:var(--gold-dark); font-size:18px;">${fmtMoney(r.resumo.totalCCorrigido)}</strong></div>
       </div>
       <button class="btn btn-gold" style="margin-top:14px;" onclick="gerarDocumentoPccr()">📄 Gerar documento (Word, timbrado)</button>
       <div id="pccr-doc-status" style="margin-top:8px;"></div>`;
@@ -4646,7 +4755,7 @@ async function renderAgendaPessoalPage(forcarSelecao){
       document.getElementById('ap-btn-novo').style.display='none';
       try{
         const usuarios = await apiFetch('/api/agenda-pessoal/usuarios');
-        document.getElementById('ap-selecao-usuario').innerHTML = usuarios.length? usuarios.map(u=>`<div class="list-row" style="cursor:pointer;" onclick="selecionarUsuarioAgendaPessoal('${u.id}','${escapeHtml(u.nome)}')"><div><div class="rtitle">${escapeHtml(u.nome)}</div><div class="rsub">${u.tipo==='socio'?'Sócio':'Associado'}</div></div></div>`).join('') : '<div class="empty">Nenhum sócio ou associado cadastrado.</div>';
+        document.getElementById('ap-selecao-usuario').innerHTML = usuarios.length? usuarios.map(u=>`<div class="list-row" style="cursor:pointer;" onclick="selecionarUsuarioAgendaPessoal('${u.id}','${escapeHtml(u.nome)}','${u.tipo}')"><div><div class="rtitle">${escapeHtml(u.nome)}</div><div class="rsub">${u.tipo==='socio'?'Sócio':'Associado'}</div></div></div>`).join('') : '<div class="empty">Nenhum sócio ou associado cadastrado.</div>';
       }catch(e){ showToast(e.message||'Não foi possível carregar a lista.'); }
       return;
     }
@@ -4656,10 +4765,17 @@ async function renderAgendaPessoalPage(forcarSelecao){
   document.getElementById('ap-dashboard').style.display='block';
   document.getElementById('ap-btn-novo').style.display='inline-flex';
   document.getElementById('ap-voltar-master').style.display = CURRENT_USER.tipo==='master' ? 'block':'none';
+  const donoBanner = document.getElementById('ap-dono-banner');
+  if(CURRENT_USER.tipo==='master' && AP_USUARIO_SELECIONADO){
+    donoBanner.style.display = 'block';
+    donoBanner.innerHTML = `<div class="hint" style="background:#eef4ff; border:1px solid #c7dbff; padding:8px 12px; border-radius:6px;">📋 Agenda de <strong>${escapeHtml(AP_USUARIO_SELECIONADO.nome)}</strong> — <strong>${AP_USUARIO_SELECIONADO.tipo==='socio'?'Sócio':'Associado'}</strong></div>`;
+  } else {
+    donoBanner.style.display = 'none';
+  }
   await carregarAgendaPessoal();
 }
-function selecionarUsuarioAgendaPessoal(id, nome){
-  AP_USUARIO_SELECIONADO = {id, nome};
+function selecionarUsuarioAgendaPessoal(id, nome, tipo){
+  AP_USUARIO_SELECIONADO = {id, nome, tipo};
   renderAgendaPessoalPage();
 }
 async function carregarAgendaPessoal(){

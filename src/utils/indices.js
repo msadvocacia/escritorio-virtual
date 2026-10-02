@@ -15,12 +15,21 @@ const DataCollection = require('../models/DataCollection');
 const SERIES = {
   INPC: 188,     // IBGE, mensal
   IPCA: 433,     // IBGE, mensal
-  'IPCA-E': 433, // Aproximação: usamos o IPCA mensal (IBGE) como proxy do IPCA-E.
-                 // O IPCA-E "oficial" usado em precatórios é composto trimestralmente a
-                 // partir do IPCA-15; para esse uso específico, confira a tabela oficial
-                 // do tribunal antes de protocolar — ver aviso na tela.
+  'IPCA-E': 10764,  // IBGE/BCB — série própria do IPCA-E (Índice de Preços ao Consumidor Amplo
+                     // Especial). Usada nos cálculos judiciais contra a Fazenda Pública até
+                     // 08/12/2021 (Manual da Justiça Federal) e, quando a sentença do caso
+                     // determinar, também depois de 30/08/2024 (a Lei 14.905/2024 prevê IPCA-15
+                     // como padrão, mas a decisão judicial de cada processo pode fixar outro índice —
+                     // confira sempre a sentença/decisão antes de escolher, já que isso muda o valor).
+  'IPCA-15': 7478,  // IBGE/BCB — "prévia" mensal do IPCA, índice de correção padrão do
+                     // art. 389 do Código Civil (redação da Lei 14.905/2024) a partir de 30/08/2024.
   SELIC: 432,    // meta Selic, mensal (% a.a.); para acumulado mensal usamos a série 4390
   SELIC_ACUMULADA_MES: 4390, // Selic acumulada no mês (% a.m.) — a usada em atualização monetária
+  TAXA_LEGAL: 29543, // "Taxa Legal" do art. 406, §1º do Código Civil (Lei nº 14.905/2024) — o
+                      // próprio Banco Central já publica esse valor pronto mensalmente (metodologia
+                      // da Resolução CMN nº 5.171/2024), então usamos direto em vez de reconstruir a
+                      // conta a partir da Selic e do IPCA-15 separados.
+  POUPANCA: 196, // Rendimento mensal da caderneta de poupança (série oficial do BCB)
   IGPM: 189,     // FGV, mensal
   TR: 226,       // Taxa Referencial, mensal
 };

@@ -1,4 +1,5 @@
 const { calcularInssProgressivo, obterParametrosCalculo, obterAliquotaRpps, obterAliquotaPatronalRpps } = require('./parametrosCalculo');
+const { calcularCorrecaoComTransicaoSelic } = require('./correcaoMonetaria');
 
 /*
   Módulo de retroativos de Plano de Cargos e Salários (PCCR) — duas modalidades:
@@ -34,11 +35,76 @@ function competenciaAnterior(competencia, meses) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
-async function calcularRetroativoPccr({ modalidade, dataProtocolo, meses, irrfAtivo, irrfPercentual, contribuicaoPatronalPercentual, regimePrevidenciario }) {
+// Último dia do mês ANTERIOR a uma data — os índices (IPCA-E, Taxa Legal) do
+// mês corrente ainda não estão publicados quando o cálculo é gerado, então a
+// correção para no último mês já fechado, não no dia exato da emissão.
+function ultimoDiaMesAnterior(dataISO) {
+  const [ano, mes] = dataISO.split('-').map(Number);
+  const d = new Date(ano, mes - 1, 0); // dia 0 do mês informado = último dia do mês anterior
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// Anos completos de serviço numa competência, a partir da data de admissão
+// (o dia exato do mês não muda o resultado — o anuênio vira no mês-aniversário).
+function anosCompletosServico(dataAdmissaoISO, competenciaISO) {
+  const [anoAdm, mesAdm] = dataAdmissaoISO.split('-').map(Number);
+  const [anoComp, mesComp] = competenciaISO.split('-').map(Number);
+  let anos = anoComp - anoAdm;
+  if (mesComp < mesAdm) anos -= 1;
+  return Math.max(anos, 0);
+}
+
+function aplicarReajustesEmCadeia(valorInicial, competenciaInicial, reajustes, competencia) {
+  let valor = valorInicial;
+  for (const r of [...(reajustes || [])].sort((a, b) => a.competencia.localeCompare(b.competencia))) {
+    if (r.competencia <= competenciaInicial) continue; // já embutido no valor inicial
+    if (r.competencia > competencia) break; // ainda não vigorava nesta competência
+    valor *= 1 + (r.percentual || 0) / 100;
+  }
+  return valor;
+}
+
+/**
+ * Calcula basePago, baseDevido e o percentual de anuênio para UMA competência,
+ * a partir de uma configuração automática — em vez de digitar um valor fixo
+ * (ou um novo valor a cada reajuste) para cada mês:
+ *   - um valor inicial de referência para cada um (base pago e base devido);
+ *   - duas listas de reajustes INDEPENDENTES — reajustesBasePago e
+ *     reajustesBaseDevido — já que, na prática, o salário realmente pago
+ *     continua evoluindo normalmente (reajustes gerais, mudanças de classe)
+ *     enquanto o valor "devido" de referência pode ficar fixo, ou vice-versa;
+ *     cada reajuste tem a competência em que passou a vigorar e o percentual,
+ *     aplicados EM CADEIA a partir do valor vigente até ali;
+ *   - o anuênio, calculado automaticamente como X% por ano completo de
+ *     serviço a partir da data de admissão, respeitando uma carência mínima
+ *     de anos e um teto máximo (ambos configuráveis — CONFIRME contra a lei
+ *     municipal do caso, já que isso varia).
+ */
+function calcularBaseEAnuenioAutomatico(config, competencia) {
+  const basePago = aplicarReajustesEmCadeia(config.basePagoInicial || 0, config.competenciaInicial, config.reajustesBasePago, competencia);
+  const baseDevido = aplicarReajustesEmCadeia(config.baseDevidoInicial || 0, config.competenciaInicial, config.reajustesBaseDevido, competencia);
+  let anuenioPercentual = 0;
+  if (config.anuenioAtivo && config.dataAdmissao) {
+    const anos = anosCompletosServico(config.dataAdmissao, competencia);
+    const carencia = config.anuenioCarenciaAnos ?? 5;
+    if (anos > carencia) {
+      anuenioPercentual = anos * (config.anuenioPercentualPorAno ?? 1);
+      const teto = config.anuenioTeto ?? 35;
+      anuenioPercentual = Math.min(anuenioPercentual, teto);
+    }
+  }
+  return { basePago, baseDevido, anuenioPercentual };
+}
+
+async function calcularRetroativoPccr({ modalidade, dataProtocolo, meses, irrfAtivo, irrfPercentual, contribuicaoPatronalPercentual, regimePrevidenciario, dataAtualizacao, configSalarial }) {
   if (!['nivel', 'gratificacao'].includes(modalidade)) throw new Error('Modalidade inválida.');
   if (!dataProtocolo) throw new Error('Informe a data de protocolo do processo administrativo.');
   if (!Array.isArray(meses) || !meses.length) throw new Error('Informe ao menos um mês.');
   const regime = regimePrevidenciario === 'rpps' ? 'rpps' : 'rgps';
+  // A correção para no último mês JÁ FECHADO antes da data informada — o mês
+  // corrente ainda não tem IPCA-E/Taxa Legal publicados quando o cálculo é
+  // gerado (confirmado contra um cálculo real já homologado).
+  const dataCorrecaoAte = ultimoDiaMesAnterior(dataAtualizacao || new Date().toISOString().slice(0, 10));
 
   const params = await obterParametrosCalculo();
 
@@ -51,17 +117,49 @@ async function calcularRetroativoPccr({ modalidade, dataProtocolo, meses, irrfAt
     let valorBase = 0;
     let detalheVerbas = [];
 
+    // Se houver configSalarial, ela fornece basePago/baseDevido e o percentual
+    // de anuênio automaticamente para esta competência — mas um valor
+    // explicitamente informado no mês (m.basePago, m.baseDevido, ou uma verba
+    // "ANUENIO" já na lista) sempre tem prioridade sobre o automático.
+    let basePagoEfetivo = m.basePago;
+    let baseDevidoEfetivo = m.baseDevido;
+    let verbasEfetivas = m.verbasPercentuais || [];
+    if (configSalarial) {
+      const auto = calcularBaseEAnuenioAutomatico(configSalarial, m.competencia);
+      if (basePagoEfetivo == null) basePagoEfetivo = auto.basePago;
+      if (baseDevidoEfetivo == null) baseDevidoEfetivo = auto.baseDevido;
+      const jaTemAnuenio = verbasEfetivas.some((v) => /anu[eê]nio/i.test(v.nome));
+      if (!jaTemAnuenio && configSalarial.anuenioAtivo && auto.anuenioPercentual > 0) {
+        verbasEfetivas = [...verbasEfetivas, { nome: 'ANUÊNIO', percentual: auto.anuenioPercentual, automatico: true }];
+      }
+    }
+    // Mês parcial (primeiro ou último mês do período retroativo, quando o
+    // início ou o fim cai no meio do mês): prorrateia os PRÓPRIOS valores de
+    // base (não só o total), em "mês comercial" — o denominador é sempre 30
+    // dias, mas os dias usados são os dias reais do mês (não limitados a 30).
+    // Confirmado contra um cálculo real: do dia 17 ao dia 31 (mês de 31 dias
+    // reais), prorrateou como (31-17+1)/30 = 15/30 = 50%; e do dia 1 ao 27
+    // (mês de 30 dias), (27-1+1)/30 = 90%, nos dois níveis.
+    if (m.diaInicio || m.diaFim) {
+      const diaInicio = m.diaInicio || 1;
+      const [anoComp, mesComp] = m.competencia.split('-').map(Number);
+      const diaFim = m.diaFim || new Date(anoComp, mesComp, 0).getDate();
+      const fracao = Math.max(diaFim - diaInicio + 1, 0) / 30;
+      if (basePagoEfetivo != null) basePagoEfetivo *= fracao;
+      if (baseDevidoEfetivo != null) baseDevidoEfetivo *= fracao;
+    }
+
     if (!cortadoPorPrescricao) {
       if (modalidade === 'nivel') {
-        const diferencaBase = (m.baseDevido || 0) - (m.basePago || 0);
-        detalheVerbas = (m.verbasPercentuais || []).map((v) => ({
+        const diferencaBase = (baseDevidoEfetivo || 0) - (basePagoEfetivo || 0);
+        detalheVerbas = verbasEfetivas.map((v) => ({
           nome: v.nome,
           percentual: v.percentual,
           valor: (v.percentual / 100) * diferencaBase,
         }));
         valorBase = diferencaBase + detalheVerbas.reduce((s, v) => s + v.valor, 0);
       } else {
-        const valorGratificacao = ((m.percentualGratificacao || 0) / 100) * (m.basePago || 0);
+        const valorGratificacao = ((m.percentualGratificacao || 0) / 100) * (basePagoEfetivo || 0);
         valorBase = valorGratificacao;
       }
     }
@@ -70,18 +168,36 @@ async function calcularRetroativoPccr({ modalidade, dataProtocolo, meses, irrfAt
     const reflexoFerias = (!cortadoPorPrescricao && m.incluirFerias) ? valorBase / 3 : 0;
     const totalMes = valorBase + reflexo13 + reflexoFerias;
 
+    // Correção monetária automática, mês a mês, com três regimes sucessivos
+    // e pró-rata nominal nas pontas — buscados ao vivo no Banco Central. A
+    // contagem começa do ÚLTIMO dia do mês de competência (quando o salário
+    // efetivamente vence), não do dia 1, já que o pró-rata agora conta dias
+    // dentro do próprio mês.
+    let totalMesCorrigido = totalMes;
+    let fasesCorrecao = [];
+    if (totalMes > 0 && !cortadoPorPrescricao) {
+      const [anoComp, mesComp] = m.competencia.split('-').map(Number);
+      const ultimoDiaCompetencia = new Date(anoComp, mesComp, 0).getDate();
+      const dataInicioCorrecao = `${m.competencia}-${String(ultimoDiaCompetencia).padStart(2, '0')}`;
+      const rCorrecao = await calcularCorrecaoComTransicaoSelic(totalMes, dataInicioCorrecao, dataCorrecaoAte);
+      totalMesCorrigido = rCorrecao.valorFinal;
+      fasesCorrecao = rCorrecao.fases;
+    }
+
     linhas.push({
       competencia: m.competencia,
       cortadoPorPrescricao,
-      basePago: m.basePago || 0,
-      baseDevido: modalidade === 'nivel' ? (m.baseDevido || 0) : null,
-      diferencaBase: modalidade === 'nivel' ? (cortadoPorPrescricao ? 0 : ((m.baseDevido || 0) - (m.basePago || 0))) : null,
+      basePago: basePagoEfetivo || 0,
+      baseDevido: modalidade === 'nivel' ? (baseDevidoEfetivo || 0) : null,
+      diferencaBase: modalidade === 'nivel' ? (cortadoPorPrescricao ? 0 : ((baseDevidoEfetivo || 0) - (basePagoEfetivo || 0))) : null,
       valorGratificacao: modalidade === 'gratificacao' ? valorBase : null,
       detalheVerbas,
       reflexo13,
       reflexoFerias,
       valorBase,
       totalMes,
+      totalMesCorrigido,
+      fasesCorrecao,
     });
   }
 
@@ -89,6 +205,8 @@ async function calcularRetroativoPccr({ modalidade, dataProtocolo, meses, irrfAt
   const subtotalSalarial = linhas.reduce((s, l) => s + l.valorBase + l.reflexo13, 0);
   const subtotalIndenizatorio = linhas.reduce((s, l) => s + l.reflexoFerias, 0);
   const somaA = subtotalSalarial + subtotalIndenizatorio;
+  const somaACorrigida = linhas.reduce((s, l) => s + l.totalMesCorrigido, 0);
+  const diferencaCorrecao = somaACorrigida - somaA;
 
   // B — Descontos previdenciários. Dois regimes possíveis:
   //   RGPS (INSS nacional): tabela progressiva por faixa, escolhida pelo ano da competência.
@@ -119,6 +237,7 @@ async function calcularRetroativoPccr({ modalidade, dataProtocolo, meses, irrfAt
   const somaB = somaInss + somaIrrf;
 
   const valorLiquido = somaA - somaB;
+  const valorLiquidoCorrigido = somaACorrigida - somaB;
 
   // C — Valores devidos pelo município (empregador). No RPPS, a alíquota
   // patronal também costuma ser fixada pela mesma lei municipal (não os 20%
@@ -135,6 +254,7 @@ async function calcularRetroativoPccr({ modalidade, dataProtocolo, meses, irrfAt
   }
   const contribuicaoPatronal = subtotalSalarial * (percentualPatronalEfetivo / 100);
   const totalC = valorLiquido + somaInss + somaIrrf + contribuicaoPatronal;
+  const totalCCorrigido = valorLiquidoCorrigido + somaInss + somaIrrf + contribuicaoPatronal;
 
   const avisos = [];
   if (anosSemTabelaExata.size) {
@@ -143,18 +263,24 @@ async function calcularRetroativoPccr({ modalidade, dataProtocolo, meses, irrfAt
   if (regime === 'rpps' && avisoRppsSemAliquota) {
     avisos.push('Nenhuma alíquota de RPPS cadastrada para os anos deste cálculo — o desconto previdenciário ficou zerado. Cadastre a alíquota da previdência própria deste município em "Parâmetros de Cálculo" (confira a lei municipal aplicável).');
   }
+  if (configSalarial?.anuenioAtivo) {
+    avisos.push(`Anuênio calculado automaticamente (${configSalarial.anuenioPercentualPorAno ?? 1}% por ano completo de serviço, carência de ${configSalarial.anuenioCarenciaAnos ?? 5} anos, teto de ${configSalarial.anuenioTeto ?? 35}%) a partir da data de admissão informada — CONFIRME esses três números contra a lei municipal do caso antes de usar em petição, já que variam por município.`);
+  }
+  avisos.push('Correção monetária automática, mês a mês, com pró-rata nominal nas pontas, em três regimes sucessivos: IPCA-E + juros de mora pela poupança até 08/12/2021; Selic acumulada de 09/12/2021 a 29/08/2024 (Art. 3º da EC nº 113/2021); IPCA-E + Taxa Legal (Selic − IPCA-15, nunca negativa) a partir de 30/08/2024 (arts. 389 e 406 do Código Civil, Lei nº 14.905/2024) — buscados ao vivo no Banco Central. A correção para no último mês já fechado antes da data de atualização (o mês corrente ainda não tem índice publicado). Os descontos de INSS/IRRF e a contribuição patronal continuam calculados sobre os valores NOMINAIS históricos.');
+  avisos.push('A fase de correção monetária (IPCA-E) está confirmada exata contra um cálculo real já homologado. A fase de juros (Taxa Legal) foi testada contra o mesmo caso e ficou muito próxima, mas não bateu dígito a dígito — a diferença encontrada foi de cerca de 0,44% do valor total. Confira o resultado antes de protocolar, e me avise se conseguir a memória de cálculo detalhada do perito/calculista contrário para eu calibrar com precisão.');
 
   return {
     modalidade,
     regimePrevidenciario: regime,
     competenciaLimitePrescricao: competenciaLimite,
+    dataCorrecaoAte,
     linhas,
     avisos,
     resumo: {
-      subtotalSalarial, subtotalIndenizatorio, somaA,
+      subtotalSalarial, subtotalIndenizatorio, somaA, somaACorrigida, diferencaCorrecao,
       somaInss, irrfAtivo: !!irrfAtivo, somaIrrf, somaB,
-      valorLiquido,
-      percentualPatronal: percentualPatronalEfetivo, contribuicaoPatronal, totalC,
+      valorLiquido, valorLiquidoCorrigido,
+      percentualPatronal: percentualPatronalEfetivo, contribuicaoPatronal, totalC, totalCCorrigido,
     },
   };
 }

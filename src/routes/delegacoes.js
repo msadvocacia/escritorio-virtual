@@ -204,7 +204,7 @@ router.delete('/:id/arquivo/:arquivoId', requireAuth, async (req, res) => {
 // Permite delegar a tarefa a mais um tutor/responsável (ex: um segundo
 // sócio/associado acompanhando o mesmo estagiário).
 router.patch('/:id/tutores', requireAuth, async (req, res) => {
-  if (!isMaster(req.user) && !isSocio(req.user)) return res.status(403).json({ erro: 'Sem pertarefa.' });
+  if (!isMaster(req.user) && !isSocio(req.user)) return res.status(403).json({ erro: 'Sem permissão.' });
   const { tutoresIds } = req.body || {};
   if (!Array.isArray(tutoresIds)) return res.status(400).json({ erro: 'Lista de tutores inválida.' });
   const todas = await getCollection('delegacoes', []);
