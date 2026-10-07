@@ -11,6 +11,7 @@ const F = require('../utils/financeiro');
 const T = require('../utils/textoJuridico');
 const D = require('../utils/docxBuilder');
 const { calcularRetroativoPccr } = require('../utils/calculoRetroativoPccr');
+const { calcularAposentadoria } = require('../utils/calculoAposentadoria');
 
 const router = express.Router();
 
@@ -502,7 +503,7 @@ router.post('/retroativo-pccr', requireAuth, requireRole('master', 'socio', 'ass
       D.blank(),
       gradeCabecalho,
       D.blank(),
-      D.paragraph(D.run(`Data-limite de prescrição quinquenal: ${resultado.competenciaLimitePrescricao}. Competências marcadas com "*" são anteriores a essa data e não entram no cálculo.`, { sizeHalfPt: SZ_INFO, italic: true })),
+      D.paragraph(D.run(resultado.aplicouPrescricao === false ? 'Cálculo realizado sem aplicação de prescrição quinquenal.' : `Data-limite de prescrição quinquenal: ${resultado.competenciaLimitePrescricao}. Competências marcadas com "*" são anteriores a essa data e não entram no cálculo.`, { sizeHalfPt: SZ_INFO, italic: true })),
       D.blank(),
       D.tabela(cabecalhoTabela, linhasTabelaCorpo, { largurasCm, sizeHalfPt: SZ, sizeHalfPtCabecalho: SZ_CABECALHO_TABELA }),
       D.blank(),
@@ -546,6 +547,150 @@ router.post('/retroativo-pccr', requireAuth, requireRole('master', 'socio', 'ass
   } catch (e) {
     console.error(e);
     res.status(500).json({ erro: 'Não foi possível gerar o documento.' });
+  }
+});
+
+// Relatório auditável (memória de cálculo) — vale para Retroativos PCCR e
+// Aposentadoria. O cálculo é REFEITO no servidor com os mesmos dados (nunca
+// aceita valores prontos do navegador), para que o relatório e a impressão
+// digital correspondam exatamente ao que o motor produz, com os índices
+// consultados no Banco Central no momento da emissão.
+router.post('/relatorio-auditavel', requireAuth, requireRole('master', 'socio', 'associado'), async (req, res) => {
+  const { tipo, cabecalho, ...dadosCalculo } = req.body || {};
+  if (tipo !== 'pccr' && tipo !== 'aposentadoria') return res.status(400).json({ erro: 'Tipo de cálculo inválido.' });
+  let resultado;
+  try {
+    resultado = tipo === 'pccr' ? await calcularRetroativoPccr(dadosCalculo) : await calcularAposentadoria(dadosCalculo);
+  } catch (e) {
+    return res.status(400).json({ erro: e.message || 'Não foi possível calcular.' });
+  }
+  const mem = resultado.memoriaCorrecao;
+  if (!mem) return res.status(500).json({ erro: 'Memória de cálculo indisponível.' });
+
+  const SZ = 15, SZ_TXT = 19, SZ_TIT = 22;
+  const cab = cabecalho || {};
+  const br = (iso) => (iso ? iso.split('-').reverse().join('/') : '');
+  const brMes = (m) => (m ? m.split('-').reverse().join('/') : '');
+  const brDataHora = (iso) => { const d = new Date(iso); return d.toLocaleString('pt-BR', { timeZone: 'America/Bahia' }); };
+  const tit = (t) => D.paragraph(D.run(t, { bold: true, sizeHalfPt: SZ_TIT }), { justify: false });
+  const txt = (t, o = {}) => D.paragraph(D.run(t, { sizeHalfPt: SZ_TXT, ...o }));
+  const campo = (label, valor) => (valor ? [D.run(label, { bold: true, sizeHalfPt: SZ_TXT }), D.run(String(valor), { sizeHalfPt: SZ_TXT })] : '');
+
+  // Avisos internos de cautela para o advogado (conferir lei municipal, calibragem da Taxa Legal)
+  // não vão para o relatório, que pode ser entregue à outra parte.
+  const avisosDoRelatorio = (resultado.avisos || []).filter((a) => !/0,44%|é aproximada|Confira o resultado antes de protocolar|CONFIRME|calibrar/i.test(a));
+
+  try {
+    const grade = D.grade([
+      [campo('Nome: ', cab.nome), campo('Matrícula: ', cab.matricula), campo('Função: ', cab.funcao)],
+      [campo('Processo: ', cab.processo), campo('Protocolo: ', br(dadosCalculo.dataProtocolo)), campo('Emitido em: ', brDataHora(new Date().toISOString()))],
+    ], { largurasCm: [8.5, 8.5, 8.5] });
+
+    // 1. Resumo
+    const R = resultado.resumo || {};
+    let linhasResumo;
+    if (tipo === 'pccr') {
+      linhasResumo = [
+        ['Soma nominal dos proventos devidos (A)', T.fmtMoney(R.somaA)],
+        ['Correção monetária e juros de mora', T.fmtMoney(R.diferencaCorrecao)],
+        ['Soma corrigida (A)', T.fmtMoney(R.somaACorrigida)],
+        ['Descontos (B), sobre valores nominais', T.fmtMoney(R.somaB)],
+        ['Valor líquido corrigido (A − B)', T.fmtMoney(R.valorLiquidoCorrigido)],
+        ['Valor total devido pelo Município (C), corrigido', T.fmtMoney(R.totalCCorrigido)],
+      ];
+    } else {
+      const parte = (rotulo, x) => x ? [[`${rotulo} — soma nominal (A)`, T.fmtMoney(x.somaA)], [`${rotulo} — correção e juros`, T.fmtMoney(x.diferencaCorrecao)], [`${rotulo} — soma corrigida (A)`, T.fmtMoney(x.somaACorrigida)], [`${rotulo} — valor total devido (C), corrigido`, T.fmtMoney(x.totalCCorrigido)]] : [];
+      linhasResumo = [
+        ...parte('Aposentadoria devida', R.aposentadoria && R.aposentadoria.somaA != null && dadosCalculo.modalidade !== 'abono' ? R.aposentadoria : null),
+        ...parte('Abono de permanência', R.abono && dadosCalculo.modalidade !== 'aposentadoria' ? R.abono : null),
+        ...(dadosCalculo.modalidade === 'ambos' ? [['TOTAL GERAL (C), corrigido', T.fmtMoney(R.total && R.total.totalCCorrigido)]] : []),
+      ];
+    }
+
+    // 3. Fontes
+    const rotOrigem = { bcb: 'Banco Central (consulta direta)', cache: 'Cache do sistema (< 24 h)', 'cache-vencido': 'Cache vencido (BCB indisponível)' };
+    const linhasFontes = mem.fontes.map((f) => [f.indice, String(f.serieBCB), f.descricao, f.origens.map((o) => rotOrigem[o] || o).join('; '), brDataHora(f.consultadoAte)]);
+
+    // 4. Tabela de índices: pares (mês / %) em 5 blocos por linha
+    const blocosIndices = [];
+    Object.entries(mem.tabelaIndices).forEach(([nome, lista]) => {
+      const POR_LINHA = 6;
+      const linhas = [];
+      for (let i = 0; i < lista.length; i += POR_LINHA) {
+        const fatia = lista.slice(i, i + POR_LINHA);
+        while (fatia.length < POR_LINHA) fatia.push(null);
+        linhas.push(fatia.map((x) => (x ? `${brMes(x.mes)}: ${String(x.valor).replace('.', ',')}%` : '')));
+      }
+      blocosIndices.push(D.paragraph(D.run(`${nome} — ${(mem.fontes.find((f) => f.indice === nome) || {}).descricao || ''}`, { bold: true, sizeHalfPt: SZ_TXT }), { justify: false }));
+      blocosIndices.push(D.tabela(Array(POR_LINHA).fill('Mês: % no mês'), linhas, { largurasCm: Array(POR_LINHA).fill(4.2), sizeHalfPt: SZ, sizeHalfPtCabecalho: SZ }));
+      blocosIndices.push(D.blank());
+    });
+
+    // 5. Lançamentos: uma coluna por fase usada
+    const fasesUsadas = mem.metodologia.map((m) => m.chave);
+    const rotFase = { 'ipca-e+poupanca': '1ª fase (IPCA-E + poupança)', selic: '2ª fase (Selic)', 'ipca-e+taxalegal': '3ª fase (IPCA-E + Taxa Legal)' };
+    const cabLanc = ['Competência', 'Parte', 'Valor nominal', ...fasesUsadas.map((f) => rotFase[f] + ' — fator / juros %'), 'Fator global', 'Valor corrigido'];
+    const fmtFator = (n) => Number(n).toFixed(6).replace('.', ',');
+    const linhasLanc = mem.lancamentos.map((l) => [
+      brMes(l.competencia), l.parte, T.fmtNumero(l.valorNominal),
+      ...fasesUsadas.map((chave) => {
+        const f = l.fases.find((x) => x.regime === chave);
+        if (!f) return '-';
+        return chave === 'selic' ? fmtFator(f.fatorCorrecao) : `${fmtFator(f.fatorCorrecao)} / ${Number(f.jurosPercentual).toFixed(4).replace('.', ',')}%`;
+      }),
+      fmtFator(l.fatorGlobal), D.run(T.fmtNumero(l.valorCorrigido), { bold: true, sizeHalfPt: SZ }),
+    ]);
+    const largurasLanc = (() => {
+      const fixas = [1.9, 3.2, 2.2, 2.0, 2.4];
+      const restante = 25.5 - fixas.reduce((a, b) => a + b, 0);
+      const wf = Math.max(restante / Math.max(fasesUsadas.length, 1), 3);
+      return [1.9, 3.2, 2.2, ...fasesUsadas.map(() => wf), 2.0, 2.4];
+    })();
+
+    const corpo = [
+      D.paragraph(D.run('RELATÓRIO AUDITÁVEL — MEMÓRIA DE CÁLCULO', { bold: true, sizeHalfPt: 26 }), { center: true, justify: false }),
+      D.paragraph(D.run(tipo === 'pccr' ? 'Retroativos do Plano de Cargos e Salários (PCCR)' : 'Aposentadoria devida e/ou Abono de permanência', { bold: true, sizeHalfPt: SZ_TXT + 2 }), { center: true, justify: false }),
+      D.blank(),
+      grade,
+      D.blank(),
+      tit('1. Resultado'),
+      D.tabela(['Item', 'Valor'], linhasResumo, { largurasCm: [18, 7.5], sizeHalfPt: SZ_TXT }),
+      D.blank(),
+      tit('2. Parâmetros adotados'),
+      txt(`Valores atualizados até ${br(mem.dataCorrecaoAte)} (último dia do último mês fechado anterior à data de atualização).` + (resultado.aplicouPrescricao === false ? ' Cálculo realizado sem aplicação de prescrição quinquenal.' : (resultado.competenciaLimitePrescricao ? ` Prescrição quinquenal aplicada: competências anteriores a ${brMes(resultado.competenciaLimitePrescricao)} não entram no cálculo.` : ''))),
+      txt('Regime previdenciário dos descontos: ' + (resultado.regimePrevidenciario === 'rgps' ? 'RGPS (INSS)' : 'RPPS (previdência própria)') + '.'),
+      D.blank(),
+      tit('3. Metodologia e base legal'),
+      ...mem.metodologia.map((m) => D.paragraph([D.run(`${m.fase} — ${m.periodo}: `, { bold: true, sizeHalfPt: SZ_TXT }), D.run(`${m.regra} Base: ${m.baseLegal}`, { sizeHalfPt: SZ_TXT })])),
+      ...mem.convencoes.map((c) => D.paragraph(D.run('• ' + c, { sizeHalfPt: SZ_TXT }))),
+      D.blank(),
+      tit('4. Fontes oficiais dos índices'),
+      D.tabela(['Índice', 'Série SGS/BCB', 'Descrição', 'Origem da consulta', 'Consultado em'], linhasFontes, { largurasCm: [4.8, 2.3, 8.5, 6, 3.9], sizeHalfPt: SZ }),
+      txt('Endereço de consulta pública de cada série: https://api.bcb.gov.br/dados/serie/bcdata.sgs.{série}/dados?formato=json — qualquer das partes pode conferir os percentuais abaixo diretamente no Banco Central.', { italic: true }),
+      D.blank(),
+      tit('5. Índices mensais efetivamente utilizados'),
+      ...blocosIndices,
+      tit('6. Memória de cálculo por lançamento'),
+      txt('Cada valor devido foi corrigido individualmente. "Fator" é o produto de (1 + índice do mês × peso) na fase; "juros %" é a soma mensal (índice × peso) aplicada sobre o valor corrigido do início da fase. Meses das pontas entram pró-rata.', { italic: true }),
+      D.tabela(cabLanc, linhasLanc, { largurasCm: largurasLanc, sizeHalfPt: SZ, sizeHalfPtCabecalho: SZ }),
+      D.blank(),
+      D.paragraph([D.run('Total nominal: ', { bold: true, sizeHalfPt: SZ_TXT }), D.run(T.fmtMoney(mem.totais.nominal) + '   ', { sizeHalfPt: SZ_TXT }), D.run('Total corrigido: ', { bold: true, sizeHalfPt: SZ_TXT }), D.run(T.fmtMoney(mem.totais.corrigido) + '   ', { sizeHalfPt: SZ_TXT }), D.run('Correção e juros: ', { bold: true, sizeHalfPt: SZ_TXT }), D.run(T.fmtMoney(mem.totais.diferenca), { sizeHalfPt: SZ_TXT })]),
+      ...(mem.avisos.length || avisosDoRelatorio.length ? [D.blank(), tit('7. Ressalvas e avisos do cálculo'), ...mem.avisos.map((a) => D.paragraph(D.run('• ' + a, { sizeHalfPt: SZ_TXT }))), ...avisosDoRelatorio.map((a) => D.paragraph(D.run('• ' + a, { sizeHalfPt: SZ_TXT })))] : []),
+      D.blank(),
+      tit('Impressão digital do cálculo (SHA-256)'),
+      txt(mem.impressaoDigital, { italic: true }),
+      txt('Código calculado sobre a tabela de índices, a data de atualização e os valores nominal e corrigido de cada lançamento; qualquer alteração em um desses dados muda o código.', { italic: true }),
+      D.blank(),
+      D.paragraph(D.run(`Jequié/BA, ${T.fmtDateExtenso(todayISO())}.`, { sizeHalfPt: SZ_TXT }), { indentCm: 2, justify: false }),
+    ].join('');
+
+    const buffer = gerarDocxComCorpo(corpo, { margemInferiorTwips: 1843, paisagem: true });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="Relatorio Auditavel - ${(cab.nome || 'calculo').replace(/[^\w\- ]/g, '')}.docx"`);
+    res.send(buffer);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ erro: 'Não foi possível gerar o relatório auditável.' });
   }
 });
 

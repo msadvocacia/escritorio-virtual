@@ -140,6 +140,53 @@ const CAMPOS_FICHA_FINANCEIRA = [
   // genericamente (ver VERBAS_CONHECIDAS), para não perder informação.
 ];
 
+// ---- Leitura COMPLETA da ficha: todas as rubricas (proventos e descontos), mês a mês ----
+
+// Linhas que NÃO são rubricas (totais, cabeçalhos, bases de cálculo...).
+const REGEX_LINHA_NAO_RUBRICA = /^TOTAL|TOTAL\s*(DE\s*)?(PROVENTOS|DESCONTOS|L[IÍ]QUIDO)|L[IÍ]QUIDO|BASE\s*(DE)?\s*C[AÁ]LCULO|MARGEM|COMPET[EÊ]NCIA|MATR[IÍ]CULA|P[AÁ]GINA|^NOME\b|^CARGO\b|^FUN[CÇ][AÃ]O\b|^LOTA[CÇ][AÃ]O/;
+// Nomes que indicam DESCONTO/retenção quando a ficha não separa em seções.
+const REGEX_DESCONTO = /INSS|PREVID[EÊ]NCIA|\bRPPS\b|\bRGPS\b|I\.?\s*R\.?\s*R\.?\s*F|IMPOSTO\s*DE\s*RENDA|SIND(ICATO|SMUJE|\b)|CONTRIB|EMPR[EÉ]STIMO|CONSIGN|\bFALTA|DESCONTO|PENS[AÃ]O\s*ALIM|MENSALIDADE|ADIANTAMENTO\s*DE|DEVOLU[CÇ][AÃ]O|PLANO\s*DE\s*SA[UÚ]DE|CAIXA\s*ESCOLAR|\bREPOSI[CÇ][AÃ]O/;
+// Rubricas percentuais que NÃO acompanham o salário-base (não entram como "verba sobre o base").
+const REGEX_NAO_ACOMPANHA_BASE = /13|1\/3|F[EÉ]RIAS|ADIANTAD|AJUSTE|RETROATIV|DIFEREN[CÇ]A|REFLEXO|PROPORCIONAL/;
+
+function limparNomeRubrica(texto) {
+  return String(texto || '').replace(/^\d+\s*[-–]\s*/, '').replace(/\s{2,}/g, ' ').trim();
+}
+
+/**
+ * Lê UMA linha da ficha como rubrica (provento ou desconto) para cada mês das
+ * colunas atuais — incluindo as que não conhecemos pelo nome (gratificações,
+ * abonos, diferenças, empréstimos...). Respeita as colunas vazias (um abono que
+ * só aparece em alguns meses fica só nesses meses). Devolve null se a linha
+ * não parece uma rubrica.
+ */
+function lerRubricaDaLinha(rotuloBruto, valoresCelulas, nCols, secao) {
+  const nome = limparNomeRubrica(rotuloBruto);
+  if (!nome || !/[A-Za-zÀ-ú]/.test(nome)) return null;
+  if (REGEX_LINHA_NAO_RUBRICA.test(nome.toUpperCase())) return null;
+  const numeros = valoresCelulas.map(paraNumero); // null = coluna vazia (mantém a posição)
+  if (!numeros.some((n) => n != null)) return null;
+
+  let porColuna = null; // [{percentual, valor}] na ordem das colunas
+  if (numeros.length >= 2 * nCols) {
+    const pares = [];
+    let pareceParesPercentuais = true;
+    for (let i = 0; i < nCols; i++) {
+      const pct = numeros[i * 2], val = numeros[i * 2 + 1];
+      if (pct != null && pct > 100) pareceParesPercentuais = false;
+      pares.push({ percentual: pct != null && pct <= 100 ? pct : null, valor: val });
+    }
+    if (pareceParesPercentuais) porColuna = pares;
+  }
+  if (!porColuna && numeros.length >= nCols) {
+    porColuna = numeros.slice(0, nCols).map((valor) => ({ percentual: null, valor }));
+  }
+  if (!porColuna) return null;
+
+  const tipo = secao || (REGEX_DESCONTO.test(nome.toUpperCase()) ? 'desconto' : 'provento');
+  return { nome, tipo, porColuna };
+}
+
 /**
  * Extrai, de linhas de tabela (uma linha = array de células, como devolvido
  * por getTable()), uma lista de {competencia, ...todosOsCamposReconhecidos}
@@ -148,6 +195,7 @@ const CAMPOS_FICHA_FINANCEIRA = [
 function parseFichaFinanceiraDeTabelas(linhasTabela) {
   const resultado = new Map(); // 'aaaa-mm' -> { campos: {chave: valor}, verbasExtras: Map(nome->percentual) }
   let competenciasAtuais = []; // [{mm, aaaa}], na ordem das colunas desta tabela/bloco
+  let secaoAtual = null; // 'provento' | 'desconto' | null — quando a ficha separa em seções
 
   const regexCompetencia = /^(\d{2})\/(\d{4})-\d+$/;
 
@@ -163,19 +211,56 @@ function parseFichaFinanceiraDeTabelas(linhasTabela) {
       competenciasAtuais = competenciasNaLinha;
       competenciasAtuais.forEach(({ mm, aaaa }) => {
         const chave = `${aaaa}-${mm}`;
-        if (!resultado.has(chave)) resultado.set(chave, { campos: {}, verbasExtras: new Map() });
+        if (!resultado.has(chave)) resultado.set(chave, { campos: {}, verbasExtras: new Map(), rubricas: [] });
       });
       continue;
     }
     if (!competenciasAtuais.length) continue;
 
-    const rotulo = celulas[0].toUpperCase();
+    // Quando a 1ª célula é só o CÓDIGO da rubrica (ex: "0001") e a descrição vem na 2ª, desloca.
+    let celulasLinha = celulas;
+    if (/^\d{1,5}$/.test(celulas[0]) && celulas[1] && /[A-Za-zÀ-ú]/.test(celulas[1])) celulasLinha = celulas.slice(1);
+
+    // Cabeçalhos de seção ("PROVENTOS", "DESCONTOS"), quando a ficha separa assim.
+    const textoSecao = celulasLinha[0].toUpperCase().replace(/[^A-ZÀ-Ú ]/g, '').trim();
+    if (celulasLinha.slice(1).every((c) => !c)) {
+      if (/^(PROVENTOS|VENCIMENTOS|VANTAGENS)$/.test(textoSecao)) { secaoAtual = 'provento'; continue; }
+      if (/^(DESCONTOS|DEDU[CÇ][OÕ]ES|RETEN[CÇ][OÕ]ES)$/.test(textoSecao)) { secaoAtual = 'desconto'; continue; }
+    }
+
+    // Leitura completa: TODA rubrica com valores, conhecida ou não.
+    const rubrica = lerRubricaDaLinha(celulasLinha[0], celulasLinha.slice(1), competenciasAtuais.length, secaoAtual);
+    if (rubrica) {
+      competenciasAtuais.forEach(({ mm, aaaa }, idx) => {
+        const dado = rubrica.porColuna[idx];
+        if (!dado || dado.valor == null || dado.valor === 0) return;
+        resultado.get(`${aaaa}-${mm}`).rubricas.push({ nome: rubrica.nome, tipo: rubrica.tipo, percentual: dado.percentual, valor: dado.valor });
+      });
+    }
+
+    const rotulo = celulasLinha[0].toUpperCase();
     const campoReconhecido = CAMPOS_FICHA_FINANCEIRA.find((c) => c.regex.test(rotulo));
     const verbaConhecida = !campoReconhecido && VERBAS_CONHECIDAS.find((v) => rotulo.includes(v));
     if (!campoReconhecido && !verbaConhecida) continue;
 
-    const numeros = celulas.slice(1).map(paraNumero).filter((n) => n != null);
+    const numeros = celulasLinha.slice(1).map(paraNumero).filter((n) => n != null);
     if (!numeros.length) continue;
+
+    // Com a leitura posicional (que respeita colunas vazias), os campos conhecidos
+    // também saem alinhados por mês — evita deslocar valores quando uma rubrica
+    // só aparece em alguns meses.
+    if (rubrica && campoReconhecido) {
+      competenciasAtuais.forEach(({ mm, aaaa }, idx) => {
+        const dado = rubrica.porColuna[idx];
+        if (!dado || dado.valor == null) return;
+        const campos = resultado.get(`${aaaa}-${mm}`).campos;
+        campos[campoReconhecido.chave] = dado.valor;
+        if (campoReconhecido.tipo !== 'valor_unico' && dado.percentual != null) campos[campoReconhecido.chave + 'Percentual'] = dado.percentual;
+      });
+      continue;
+    }
+    // Verbas "genéricas" já são cobertas pelas rubricas lidas acima.
+    if (rubrica && !campoReconhecido) continue;
 
     if (campoReconhecido?.tipo === 'valor_unico') {
       competenciasAtuais.forEach(({ mm, aaaa }, idx) => {
@@ -192,7 +277,7 @@ function parseFichaFinanceiraDeTabelas(linhasTabela) {
         if (valor != null) resultado.get(chave).campos[campoReconhecido.chave] = valor;
       });
     } else if (verbaConhecida) {
-      const nomeCompleto = celulas[0].replace(/^\d+\s*-\s*/, '').trim() || verbaConhecida;
+      const nomeCompleto = celulasLinha[0].replace(/^\d+\s*-\s*/, '').trim() || verbaConhecida;
       competenciasAtuais.forEach(({ mm, aaaa }, idx) => {
         const chave = `${aaaa}-${mm}`;
         const percentual = numeros[idx * 2];
@@ -201,15 +286,162 @@ function parseFichaFinanceiraDeTabelas(linhasTabela) {
     }
   }
 
-  return [...resultado.entries()]
+  const meses = [...resultado.entries()]
     .filter(([, v]) => v.campos.salarioBase != null)
-    .map(([competencia, v]) => ({
-      competencia,
-      basePago: v.campos.salarioBase,
-      ...v.campos,
-      verbasPercentuais: [...v.verbasExtras.entries()].map(([nome, percentual]) => ({ nome, percentual })),
-    }))
+    .map(([competencia, v]) => {
+      // Verbas percentuais que acompanham o salário-base (anuênio, insalubridade,
+      // gratificações em %...): vêm de TODAS as rubricas de provento com percentual
+      // lido no mês — mês a mês, então o que entra e sai esporadicamente fica certo.
+      const verbas = new Map(v.verbasExtras);
+      v.rubricas.forEach((r) => {
+        if (r.tipo !== 'provento' || r.percentual == null || r.percentual <= 0) return;
+        if (/SAL[AÁ]RIO\s*BASE|VENCIMENTO\s*BASE/i.test(r.nome) || REGEX_NAO_ACOMPANHA_BASE.test(r.nome.toUpperCase())) return;
+        if (!verbas.has(r.nome)) verbas.set(r.nome, r.percentual);
+      });
+      return {
+        competencia,
+        basePago: v.campos.salarioBase,
+        ...v.campos,
+        verbasPercentuais: [...verbas.entries()].map(([nome, percentual]) => ({ nome, percentual })),
+        rubricas: v.rubricas,
+        totalProventosRubricas: v.rubricas.filter((r) => r.tipo === 'provento').reduce((a, r) => a + r.valor, 0),
+        totalDescontosRubricas: v.rubricas.filter((r) => r.tipo === 'desconto').reduce((a, r) => a + r.valor, 0),
+      };
+    })
+    .map((m) => {
+      // Conferência: a soma das rubricas lidas precisa bater com o total impresso na ficha.
+      // Se não bater, alguma rubrica deixou de ser lida (ou foi classificada no lado errado).
+      const confere = (lido, impresso) => (impresso == null ? null : Math.abs(lido - impresso) < 0.05);
+      return { ...m, conferencia: { proventos: confere(m.totalProventosRubricas, m.totalProventos), descontos: confere(m.totalDescontosRubricas, m.totalDescontos) } };
+    })
     .sort((a, b) => a.competencia.localeCompare(b.competencia));
+  return meses;
+}
+
+/**
+ * Leitura da "FICHA FINANCEIRA COMPLETA - SINTÉTICA" a partir do TEXTO do PDF
+ * (formato do sistema de gestão de pessoas da prefeitura): blocos de 4 meses
+ * ("Eventos Tipo 01/2020-1 02/2020-1 ..."), uma linha por evento no formato
+ * "<código> - <NOME> <Provento|Desconto|Retenções> <ref> <valor> ..." — com
+ * "----" (um só traço) nos meses em que o evento não ocorreu. A tabela detectada
+ * pelo PDF não serve aqui (ela omite linhas), por isso a leitura é pelo texto.
+ * Os blocos podem ser interrompidos por quebra de página — o cabeçalho de meses
+ * continua valendo até aparecer o próximo "Eventos Tipo".
+ * Devolve null se o texto não tem esse formato.
+ */
+const REGEX_EVENTO_TEXTO = /^(\d+)\s*-\s*(.+?)\s+(Provento|Desconto|Reten[cç][oõ]es)\s+(.+)$/i;
+const REGEX_NAO_E_PERCENTUAL = /SAL[AÁ]RIO\s*BASE|HORAS|DIAS\s*TRABALHADOS/i;
+
+function tokensDoMes(tokens, nCols) {
+  // Cada mês ocupa "----" (vazio) OU dois tokens (referência, valor).
+  const porMes = [];
+  let i = 0;
+  for (let c = 0; c < nCols; c++) {
+    if (i >= tokens.length) return null;
+    if (/^-+$/.test(tokens[i])) { porMes.push(null); i += 1; continue; }
+    if (i + 1 >= tokens.length) return null;
+    porMes.push({ referencia: paraNumero(tokens[i]), valor: paraNumero(tokens[i + 1]) });
+    i += 2;
+  }
+  return i === tokens.length ? porMes : null;
+}
+
+function parseFichaFinanceiraDeTexto(texto) {
+  const linhas = String(texto || '').split(/\r?\n/).map((l) => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
+  const meses = new Map(); // 'aaaa-mm' -> { rubricas: [], totais: {} }
+  let colunas = []; // chaves 'aaaa-mm' do bloco atual
+  let temCabecalho = false;
+  let blocoTotal = false;
+  const naoAlinhadas = [];
+  const cabecalho = {};
+
+  for (const linha of linhas) {
+    let m;
+    if ((m = linha.match(/^Nome:\s*(\d+)\s*-\s*(.+?)\s+Centro de Custo:/i))) { cabecalho.matricula = m[1]; cabecalho.nome = m[2].trim(); continue; }
+    if ((m = linha.match(/Admiss[aã]o:\s*(\d{2})\/(\d{2})\/(\d{4})/i))) { cabecalho.admissao = `${m[3]}-${m[2]}-${m[1]}`; continue; }
+    if ((m = linha.match(/^Fun[cç][aã]o:\s*(.+?)\s+Classe\/N[ií]vel\/Letra:\s*(.+)$/i))) { cabecalho.funcao = m[1].trim(); cabecalho.classeNivel = m[2].trim(); continue; }
+
+    if (/^Eventos\s+Tipo\b/i.test(linha)) {
+      const comp = [...linha.matchAll(/(\d{2})\/(\d{4})-\d+/g)].map((x) => `${x[2]}-${x[1]}`);
+      if (comp.length) {
+        temCabecalho = true; blocoTotal = false; colunas = comp;
+        comp.forEach((k) => { if (!meses.has(k)) meses.set(k, { rubricas: [], totais: {} }); });
+      } else {
+        blocoTotal = true; colunas = []; // coluna "Total" (soma do período) — não é um mês
+      }
+      continue;
+    }
+    if (!colunas.length || blocoTotal) continue;
+
+    const mt = linha.match(/^Total\s+(Proventos|Descontos|L[ií]quido)\s+(.+)$/i);
+    if (mt) {
+      const chave = { proventos: 'totalProventos', descontos: 'totalDescontos', liquido: 'totalLiquido' }[mt[1].toLowerCase().replace('í', 'i')];
+      const valores = mt[2].split(' ').map(paraNumero);
+      if (valores.length === colunas.length) colunas.forEach((k, idx) => { if (valores[idx] != null) meses.get(k).totais[chave] = valores[idx]; });
+      continue;
+    }
+
+    const ev = linha.match(REGEX_EVENTO_TEXTO);
+    if (!ev) continue;
+    const [, codigo, nomeBruto, grupoBruto, resto] = ev;
+    const nome = nomeBruto.trim();
+    const grupo = /^reten/i.test(grupoBruto) ? 'Retenção' : (/^desc/i.test(grupoBruto) ? 'Desconto' : 'Provento');
+    const porMes = tokensDoMes(resto.split(' '), colunas.length);
+    if (!porMes) { naoAlinhadas.push(nome); continue; }
+    colunas.forEach((k, idx) => {
+      const d = porMes[idx];
+      if (!d || d.valor == null || d.valor === 0) return;
+      const ehPercentual = !REGEX_NAO_E_PERCENTUAL.test(nome) && d.referencia != null && d.referencia > 0 && d.referencia <= 100;
+      meses.get(k).rubricas.push({
+        codigo, nome, tipo: grupo === 'Provento' ? 'provento' : 'desconto', grupo,
+        percentual: ehPercentual ? d.referencia : null,
+        referencia: d.referencia,
+        valor: d.valor,
+      });
+    });
+  }
+  if (!temCabecalho) return null;
+
+  const resultado = [];
+  const mesesSemBase = [];
+  for (const [competencia, v] of [...meses.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+    const base = v.rubricas.find((r) => /SAL[AÁ]RIO\s*BASE/i.test(r.nome));
+    // Em afastamento com direitos integrais, o salário vem lançado em "HORAS AFASTADO COM DIREITOS INTEGRAIS"
+    // (e SALÁRIO BASE some da ficha naquele mês) — o valor é o mesmo salário, só mudou o evento.
+    const afastado = !base && v.rubricas.find((r) => /HORAS\s*AFASTADO\s*COM\s*DIREITOS\s*INTEGRAIS/i.test(r.nome));
+    const fonteBase = base || afastado;
+    if (!fonteBase) { if (v.rubricas.length) mesesSemBase.push(competencia); continue; }
+    // Mês misto (parte afastado, parte trabalhado — ex: 28 dias afastado + 2 dias trabalhados): o salário do mês é a soma.
+    const diasTrabalhados = afastado ? v.rubricas.find((r) => /DIAS\s*TRABALHADOS/i.test(r.nome)) : null;
+    const basePagoMes = fonteBase.valor + (diasTrabalhados ? diasTrabalhados.valor : 0);
+
+    const verbas = new Map();
+    v.rubricas.forEach((r) => {
+      if (r.tipo !== 'provento' || r.percentual == null) return;
+      if (REGEX_NAO_ACOMPANHA_BASE.test(r.nome.toUpperCase())) return;
+      if (!verbas.has(r.nome)) verbas.set(r.nome, r.percentual);
+    });
+    const soma = (tipo) => v.rubricas.filter((r) => r.tipo === tipo).reduce((a, r) => a + r.valor, 0);
+    const totalProventosRubricas = soma('provento');
+    const totalDescontosRubricas = soma('desconto');
+    const confere = (lido, impresso) => (impresso == null ? null : Math.abs(lido - impresso) < 0.05);
+    const campo = (re) => v.rubricas.find((r) => re.test(r.nome));
+    const anuenio = campo(/ANU[EÊ]NIO/i), insal = campo(/INSALUBRIDADE/i);
+    resultado.push({
+      competencia,
+      basePago: Math.round(basePagoMes * 100) / 100,
+      salarioBase: base ? base.valor : null,
+      baseVeioDeAfastamento: !!afastado,
+      anuenio: anuenio?.valor ?? null, anuenioPercentual: anuenio?.percentual ?? null,
+      insalubridade: insal?.valor ?? null, insalubridadePercentual: insal?.percentual ?? null,
+      ...v.totais,
+      verbasPercentuais: [...verbas.entries()].map(([nome, percentual]) => ({ nome, percentual })),
+      rubricas: v.rubricas,
+      totalProventosRubricas, totalDescontosRubricas,
+      conferencia: { proventos: confere(totalProventosRubricas, v.totais.totalProventos), descontos: confere(totalDescontosRubricas, v.totais.totalDescontos) },
+    });
+  }
+  return { meses: resultado, cabecalho, mesesSemBase, rubricasNaoAlinhadas: [...new Set(naoAlinhadas)] };
 }
 
 /**
@@ -392,6 +624,6 @@ function parseContrachequeDeTabelas(linhasTabela) {
 
 module.exports = {
   extrairTextoPdf, extrairTabelasPdf, linhasDeTextoTabulado, linhasDeTextoEspacado, pdfPareceEscaneado,
-  parseFichaFinanceiraDeTabelas, parseTabelaNiveis, parseTabelaNiveisDeTabelas,
+  parseFichaFinanceiraDeTabelas, parseFichaFinanceiraDeTexto, parseTabelaNiveis, parseTabelaNiveisDeTabelas,
   parseContrachequeDeTabelas,
 };

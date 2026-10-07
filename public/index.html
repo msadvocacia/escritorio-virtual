@@ -1180,9 +1180,32 @@ async function openTrocarSenha(forced){
     }catch(e){ showToast(e.message || 'Não foi possível trocar a senha.'); }
   });
 }
+// Visualiza, baixa ou imprime o contrato assinado do próprio usuário (arquivo só leitura).
+async function verMeuContrato(userId, acao){
+  try{
+    const arq = await apiFetch('/api/usuarios/'+userId+'/contrato-assinado');
+    const byteChars = atob(arq.conteudoBase64);
+    const bytes = new Uint8Array(byteChars.length);
+    for(let i=0;i<byteChars.length;i++) bytes[i] = byteChars.charCodeAt(i);
+    const ext = (arq.nome.split('.').pop()||'').toLowerCase();
+    const tipo = {pdf:'application/pdf', png:'image/png', jpg:'image/jpeg', jpeg:'image/jpeg', gif:'image/gif', webp:'image/webp'}[ext] || 'application/octet-stream';
+    const url = URL.createObjectURL(new Blob([bytes], {type:tipo}));
+    if(acao==='baixar'){
+      const a = document.createElement('a'); a.href=url; a.download=arq.nome; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url), 4000);
+      return;
+    }
+    const w = window.open(url, '_blank');
+    if(!w){ showToast('O navegador bloqueou a nova janela — permita pop-ups para este site.'); return; }
+    if(acao==='imprimir') w.addEventListener('load', ()=>{ try{ w.focus(); w.print(); }catch(e){} });
+  }catch(e){ showToast(e.message||'Não foi possível abrir o contrato.'); }
+}
 async function abrirMeuPerfil(){
   let meu;
   try{ meu = await apiFetch('/api/me'); }catch(e){ showToast('Não foi possível carregar seu perfil.'); return; }
+  // Contrato assinado do próprio usuário (qualquer perfil, inclusive sócio): só visualizar, baixar ou imprimir.
+  let meuContrato = null;
+  try{ if(meu.id) meuContrato = await apiFetch('/api/usuarios/'+meu.id+'/contrato-assinado'); }catch(e){ /* nenhum enviado ainda */ }
   const body = `
     <div class="hint">Nome, RG, CPF e situação (ativo/inativo) só podem ser alterados pelo administrador ou por um sócio. Aqui você pode atualizar seu telefone e endereço.</div>
     <div class="field"><label>Nome</label><input value="${escapeHtml(meu.nome)}" disabled></div>
@@ -1190,6 +1213,9 @@ async function abrirMeuPerfil(){
       <div class="field"><label>Telefone</label><input id="mp-telefone" value="${escapeHtml(meu.telefone||'')}" placeholder="(73) 9 9999-9999"></div>
       <div class="field"><label>Endereço</label><input id="mp-endereco" value="${escapeHtml(meu.endereco||'')}" placeholder="Rua, número, bairro, cidade/UF"></div>
     </div>
+    <fieldset style="margin-top:10px;"><legend>📄 Meu contrato assinado</legend>
+      ${meuContrato? `<div class="list-row"><div><div class="rtitle">${escapeHtml(meuContrato.nome)}</div><div class="rsub">Enviado em ${new Date(meuContrato.enviadoEm).toLocaleString('pt-BR')}</div></div><div class="rmeta"><button class="icon-btn" type="button" onclick="verMeuContrato('${meu.id}','ver')" title="Visualizar">👁</button><button class="icon-btn" type="button" onclick="verMeuContrato('${meu.id}','baixar')" title="Baixar">📥</button><button class="icon-btn" type="button" onclick="verMeuContrato('${meu.id}','imprimir')" title="Imprimir">🖨</button></div></div><div class="hint" style="margin-top:6px;">Você pode visualizar, baixar e imprimir, mas não alterar — a troca do arquivo é feita por um sócio ou pelo administrador.</div>` : '<div class="empty">Nenhum contrato assinado foi enviado para o seu usuário ainda.</div>'}
+    </fieldset>
   `;
   openModal('Meu perfil', body, async ()=>{
     try{
@@ -2947,7 +2973,282 @@ const CALCULO_CATEGORIAS = [
     itens:['Correção de expurgos inflacionários (Verão, Collor I e II)','Diferenças de FGTS não recolhido'] },
   { id:'retroativo-pccr', titulo:'17. Retroativos PCCR (Nível / Gratificação)', implementado:'retroativo-pccr',
     itens:['Retroativo por mudança de nível (reflexos em verbas percentuais)','Retroativo por implantação de gratificação','Prescrição quinquenal automática','Resumo A/B/C (proventos, descontos, valor devido pelo município)'] },
+  { id:'aposentadoria', titulo:'18. Aposentadoria (Abono de permanência / Aposentadoria devida)', implementado:'aposentadoria',
+    itens:['Abono de permanência devido e não pago','Aposentadoria devida e ainda não implantada','Leitura da ficha financeira completa','Correção monetária e juros automáticos','Resumo A/B/C discriminado por modalidade'] },
 ];
+/* ============ 18. APOSENTADORIA (abono de permanência / aposentadoria devida) ============ */
+let APOS_MESES = []; // [{competencia, basePago, rubricas:[{nome,tipo,grupo,percentual,valor}]}] — vindos da ficha financeira
+let APOS_COMPOSICAO_NOMES = []; // nomes das rubricas de provento que podem integrar o provento da aposentadoria
+function formularioAposentadoria(cat){
+  APOS_MESES = []; APOS_COMPOSICAO_NOMES = [];
+  return `<h3>${escapeHtml(cat.titulo)}</h3>
+    ${campoVinculoCalculo()}
+    <div class="hint" style="background:#fff3cd; border:1px solid #ffe08a; padding:10px; border-radius:8px; margin-bottom:12px; color:#7a5c00;">
+      Calcula o <strong>abono de permanência devido e não pago</strong> e/ou a <strong>aposentadoria devida e ainda não implantada</strong>, mês a mês, a partir da <strong>ficha financeira</strong> do servidor (PDF). Em "ambos", o resultado sai somado mas <strong>discriminado</strong> — cada modalidade com seus próprios valores, descontos e correção. Correção monetária e juros automáticos, nos mesmos três regimes do módulo de Retroativos PCCR.
+    </div>
+    <div class="field"><label>Modalidade${ajuda('Abono de permanência: o servidor já podia se aposentar, continuou trabalhando e o abono (igual à contribuição previdenciária) não foi pago desde a data devida. Aposentadoria: o benefício que deveria ter sido implantado e ainda não foi. "Ambos" calcula os dois, discriminados.')}</label><select id="apos-modalidade" onchange="mudarModalidadeAposentadoria()">
+      <option value="ambos">Ambos (aposentadoria + abono de permanência)</option>
+      <option value="aposentadoria">Tempo devido da implantação da aposentadoria</option>
+      <option value="abono">Tempo devido do abono de permanência</option>
+    </select></div>
+    <div class="field" id="apos-box-regra"><label>Regra de cálculo do provento da aposentadoria${ajuda('Define como o provento mensal devido é calculado. Integralidade e paridade: o provento é a remuneração do cargo efetivo de cada mês (acompanha os reajustes dos ativos). Proporcional: a remuneração do cargo vezes (tempo de contribuição ÷ tempo exigido). Valor informado: para benefício apurado por média ou outra regra que a ficha não reproduz. A escolha depende da regra a que o servidor tem direito (inclusive direito adquirido) — confirme a base legal no caso concreto.')}</label><select id="apos-regra" onchange="mudarRegraAposentadoria()">
+      <option value="integral">Integralidade e paridade (provento = remuneração do cargo efetivo, mês a mês)</option>
+      <option value="proporcional">Proporcional ao tempo de contribuição</option>
+      <option value="informado">Valor do provento informado (média ou outra regra)</option>
+    </select></div>
+    <div id="apos-regra-proporcional" style="display:none;" class="field-row3">
+      <div class="field"><label>Tempo de contribuição${ajuda('O tempo de contribuição total do servidor na data devida (já com o tempo averbado, se houver).')}</label><div style="display:flex; gap:6px;"><input type="number" min="0" id="apos-tc-anos" placeholder="anos"><input type="number" min="0" max="11" id="apos-tc-meses" placeholder="meses"><input type="number" min="0" max="30" id="apos-tc-dias" placeholder="dias"></div></div>
+      <div class="field"><label>Tempo exigido (anos)${ajuda('O tempo de contribuição que a regra exige para o provento integral (ex: 35 homem, 30 mulher — confira a regra aplicável).')}</label><input type="number" min="1" step="0.01" id="apos-tc-exigido" value="30"></div>
+    </div>
+    <div id="apos-regra-informado" style="display:none;" class="field-row">
+      <div class="field"><label>Provento mensal devido (R$)${ajuda('O valor do provento mensal que seria concedido (conforme o cálculo do IPREJ/ente ou o seu), valendo desde a data devida.')}</label><input type="number" step="0.01" id="apos-provento-informado"></div>
+      <label style="align-self:flex-end;"><input type="checkbox" id="apos-provento-acompanha" style="width:auto; margin-right:6px;"> Acompanhar a variação do salário-base da ficha (paridade)</label>
+    </div>
+    <fieldset><legend>Cabeçalho</legend>
+      <div class="field-row">
+        <div class="field"><label>Nome${ajuda('O nome completo do servidor, para aparecer no relatório.')}</label><input id="apos-nome"></div>
+        <div class="field"><label>Matrícula${ajuda('O número de matrícula do servidor (consta na ficha financeira).')}</label><input id="apos-matricula"></div>
+        <div class="field"><label>Função${ajuda('O cargo do servidor.')}</label><input id="apos-funcao"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Processo${ajuda('O número do processo administrativo ou judicial, se já existir.')}</label><input id="apos-processo"></div>
+        <div class="field"><label>Data de admissão${ajuda('Quando o servidor começou a trabalhar no cargo.')}</label><input type="date" id="apos-admissao"></div>
+      </div>
+      <div class="field-row3">
+        <div class="field"><label>Data de protocolo${ajuda('A data em que o pedido administrativo (ou a ação judicial) foi protocolado. É a partir dela que o sistema calcula o corte de 5 anos (prescrição quinquenal), se a opção ao lado estiver marcada.')}</label><input type="date" id="apos-protocolo" value="${todayISO()}"></div>
+        <div class="field"><label>Prescrição quinquenal${ajuda('Marcado: corta tudo anterior a 5 anos da data de protocolo (Decreto 20.910/32). Desmarcado: calcula todos os meses devidos, sem corte.')}</label><label style="font-weight:normal;"><input type="checkbox" id="apos-aplicar-prescricao" checked style="width:auto; margin-right:6px;"> Aplicar prescrição quinquenal</label></div>
+        <div class="field"><label>Atualizar o valor até${ajuda('Até quando trazer o valor devido a valor de hoje. Correção automática, mês a mês, em três regimes: IPCA-E + poupança até 08/12/2021; Selic pura de 09/12/2021 a 29/08/2024 (EC 113/2021); IPCA-E + Taxa Legal a partir de 30/08/2024 (Lei 14.905/2024) — buscados ao vivo no Banco Central.')}</label><input type="date" id="apos-data-atualizacao" value="${todayISO()}"></div>
+      </div>
+      <div class="field-row3">
+        <div class="field" id="apos-box-abono"><label>Abono de permanência: devido desde${ajuda('A data em que o servidor passou a ter direito ao abono (quando completou os requisitos da aposentadoria voluntária e optou por permanecer). Não é preciso informar quando foi implantado — a ficha financeira já mostra os meses em que o abono foi pago, e o sistema só cobra a diferença.')}</label><input type="date" id="apos-devida-abono"></div>
+        <div class="field" id="apos-box-apos"><label>Aposentadoria: devida desde${ajuda('A data em que a aposentadoria deveria ter sido implantada. O cálculo vai desta data até a data em "Devido até".')}</label><input type="date" id="apos-devida-aposentadoria"></div>
+        <div class="field"><label>Devido até${ajuda('Último dia do período devido (normalmente a data do cálculo). Se a ficha financeira terminar antes desta data, os meses seguintes são projetados repetindo o último mês da ficha (opção abaixo).')}</label><input type="date" id="apos-data-fim" value="${todayISO()}"></div>
+      </div>
+    </fieldset>
+    <fieldset style="margin-top:10px;"><legend>📎 Ficha financeira (PDF)${ajuda('Envia o PDF da ficha financeira (a "Ficha Financeira Completa"). O sistema lê todos os meses: salário-base, proventos (anuênio, insalubridade, gratificações, abono de permanência...) e retenções (fundo de previdência, IRRF), além do desconto sindical (SINDSMUJE). Os demais descontos (empréstimos, planos, cartões) não entram.')}</legend>
+      <div class="hint" style="margin-bottom:8px;">O arquivo não é salvo em nenhum lugar, só é lido nesta hora. Só funciona com PDF que tenha texto de verdade (não escaneado/foto).</div>
+      <div class="field-row">
+        <div class="field"><label>PDF da ficha financeira</label><input type="file" id="apos-upload-ficha" accept="application/pdf"></div>
+        <button class="btn btn-ghost" style="align-self:flex-end;" onclick="importarFichaAposentadoria()">Ler PDF e preencher</button>
+      </div>
+      <div id="apos-upload-status"></div>
+      <div id="apos-composicao-box" style="display:none; margin-top:10px;"></div>
+      <div id="apos-meses-lista" style="margin-top:8px;"></div>
+    </fieldset>
+    <fieldset style="margin-top:10px;"><legend>Opções do cálculo</legend>
+      <label style="display:block; margin-bottom:6px;" id="apos-opt-13abono"><input type="checkbox" id="apos-incluir13-abono" checked style="width:auto; margin-right:6px;"> Abono de permanência: incluir também o abono sobre o 13º (um valor igual ao do mês, todo dezembro)</label>
+      <label style="display:block; margin-bottom:6px;" id="apos-opt-13apos"><input type="checkbox" id="apos-incluir13-aposentadoria" checked style="width:auto; margin-right:6px;"> Aposentadoria: incluir o 13º (um provento a mais em todo dezembro)</label>
+      <label style="display:block; margin-bottom:6px;" id="apos-opt-abater">${''}<input type="checkbox" id="apos-abater" style="width:auto; margin-right:6px;"> Aposentadoria: abater do valor devido a remuneração que o servidor recebeu em atividade no mesmo mês (marque se ele continuou trabalhando e recebendo)</label>
+      <label style="display:block;"><input type="checkbox" id="apos-projetar" checked style="width:auto; margin-right:6px;"> Se a ficha terminar antes de "Devido até", projetar os meses seguintes repetindo o último mês da ficha</label>
+    </fieldset>
+    <fieldset style="margin-top:10px;"><legend>Parâmetros de desconto</legend>
+      <div class="field-row">
+        <div class="field"><label>Regime previdenciário</label><select id="apos-regime">
+          <option value="rpps">RPPS — Previdência própria do ente (usa o percentual lançado na ficha; senão, a alíquota cadastrada por ano)</option>
+          <option value="rgps">RGPS — INSS nacional (tabela progressiva)</option>
+        </select></div>
+        <div class="field"><label>Contribuição patronal (%, deixe vazio para não aplicar)${ajuda('No PCCR a contribuição patronal incide sobre a folha. Sobre proventos de aposentadoria, em regra não há contribuição patronal — por isso aqui, em branco, nada é aplicado.')}</label><input type="number" step="0.01" id="apos-patronal" placeholder="Ex: 25"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label><input type="checkbox" id="apos-irrf-ativo" style="width:auto; margin-right:6px;"> Aplicar IRRF</label></div>
+        <div class="field"><label>Percentual IRRF (%)</label><input type="number" step="0.01" id="apos-irrf-percentual" placeholder="se aplicável"></div>
+      </div>
+      <div class="hint">Lembrete legal: valores recebidos acumuladamente (RRA) têm tratamento especial de IRRF (Art. 12-A da Lei 7.713/88). Este campo aplica só um percentual simples; confirme a incidência correta com um contador antes de usar em petição. A contribuição sindical (SINDSMUJE) é descontada com o percentual lançado na ficha, só sobre a aposentadoria.</div>
+    </fieldset>
+    <button class="btn btn-gold" style="margin-top:10px;" onclick="calcularAposentadoriaUI()">Calcular</button>
+    <div id="apos-resultado" style="margin-top:14px;"></div>`;
+}
+function mudarRegraAposentadoria(){
+  const r = document.getElementById('apos-regra').value;
+  const comApos = document.getElementById('apos-modalidade').value!=='abono';
+  document.getElementById('apos-regra-proporcional').style.display = (comApos && r==='proporcional')? 'grid':'none';
+  document.getElementById('apos-regra-informado').style.display = (comApos && r==='informado')? 'grid':'none';
+}
+function mudarModalidadeAposentadoria(){
+  const m = document.getElementById('apos-modalidade').value;
+  const comAbono = m!=='aposentadoria', comApos = m!=='abono';
+  document.getElementById('apos-box-regra').style.display = comApos? 'block':'none';
+  mudarRegraAposentadoria();
+  document.getElementById('apos-box-abono').style.display = comAbono? 'block':'none';
+  document.getElementById('apos-box-apos').style.display = comApos? 'block':'none';
+  document.getElementById('apos-opt-13abono').style.display = comAbono? 'block':'none';
+  document.getElementById('apos-opt-13apos').style.display = comApos? 'block':'none';
+  document.getElementById('apos-opt-abater').style.display = comApos? 'block':'none';
+  const comp = document.getElementById('apos-composicao-box');
+  if(comp && APOS_COMPOSICAO_NOMES.length) comp.style.display = comApos? 'block':'none';
+}
+async function importarFichaAposentadoria(){
+  const input = document.getElementById('apos-upload-ficha');
+  if(!input.files.length){ showToast('Escolha um arquivo PDF primeiro.'); return; }
+  const status = document.getElementById('apos-upload-status');
+  status.innerHTML = '<div class="empty">Lendo o PDF...</div>';
+  const form = new FormData();
+  form.append('arquivo', input.files[0]);
+  try{
+    const r = await apiFetchUpload('/api/calculos/retroativo-pccr/importar-ficha', form);
+    // Entram: proventos, retenções (previdência, IRRF) e o desconto sindical (SINDSMUJE). Demais descontos (empréstimos, planos, cartões) ficam de fora.
+    const manter = (x)=> x.grupo ? (x.grupo!=='Desconto' || /SINDSMUJE|SINDICATO/i.test(x.nome)) : (x.tipo!=='desconto' || /SINDSMUJE|SINDICATO/i.test(x.nome));
+    APOS_MESES = r.meses.map(m=>({competencia:m.competencia, basePago:m.basePago, baseVeioDeAfastamento:!!m.baseVeioDeAfastamento, rubricas:(m.rubricas||[]).filter(manter)}));
+    if(r.cabecalho){
+      const preencher=(id,v)=>{ const el=document.getElementById(id); if(el && v && !el.value) el.value=v; };
+      preencher('apos-nome', r.cabecalho.nome); preencher('apos-matricula', r.cabecalho.matricula);
+      preencher('apos-funcao', r.cabecalho.funcao); preencher('apos-admissao', r.cabecalho.admissao);
+    }
+    // Rubricas de provento que podem integrar o provento da aposentadoria
+    const naoIntegra = /SAL[AÁ]RIO\s*BASE|HORAS\s*AFASTADO|DIAS\s*TRABALHADOS|ABONO.*PERMAN|AJUSTE|RETROATIV|DIFEREN[CÇ]A/i;
+    const nomes = new Set();
+    APOS_MESES.forEach(m=>m.rubricas.forEach(x=>{ if(x.tipo==='provento' && !naoIntegra.test(x.nome)) nomes.add(x.nome); }));
+    APOS_COMPOSICAO_NOMES = [...nomes];
+    renderComposicaoAposentadoria();
+    renderMesesAposentadoria();
+    mudarModalidadeAposentadoria();
+    const totalRub = APOS_MESES.reduce((a,m)=>a+m.rubricas.length,0);
+    const difs = r.mesesComDiferenca||[];
+    status.innerHTML = `<div class="hint"><strong>${APOS_MESES.length} mês(es)</strong> lidos (${APOS_MESES[0].competencia} a ${APOS_MESES[APOS_MESES.length-1].competencia}), com <strong>${totalRub} lançamento(s)</strong> de proventos, retenções e desconto sindical. ${escapeHtml(r.aviso||'')}</div>${difs.length? `<div class="hint" style="margin-top:6px; background:#fff3cd; border:1px solid #ffe08a; color:#7a5c00; padding:8px; border-radius:8px;">⚠️ Em ${difs.length} mês(es) a soma das rubricas lidas não bate com o total impresso na ficha (${difs.map(escapeHtml).join(', ')}) — confira contra o PDF.</div>` : ''}`;
+  }catch(e){ status.innerHTML = `<div class="empty">${escapeHtml(e.message||'Não foi possível ler o PDF.')}</div>`; }
+}
+function renderComposicaoAposentadoria(){
+  const box = document.getElementById('apos-composicao-box');
+  if(!APOS_COMPOSICAO_NOMES.length){ box.style.display='none'; box.innerHTML=''; return; }
+  box.style.display = 'block';
+  box.innerHTML = `<strong>O que integra o provento da aposentadoria?</strong>${ajuda('O provento devido = salário-base de cada mês + as rubricas marcadas aqui. Marque só o que a legislação aplicável ao caso manda incorporar ao benefício (por exemplo, o anuênio e gratificações permanentes). Insalubridade, em regra, é paga só a quem está em atividade — por isso vem desmarcada; confira a lei local. O abono de permanência, ajustes e retroativos nunca integram.')}
+    <div style="margin-top:6px;">${APOS_COMPOSICAO_NOMES.map((n,i)=>`<label style="display:block;"><input type="checkbox" class="apos-comp" data-nome="${escapeHtml(n)}" ${/INSALUBRIDADE|PERICULOSIDADE|ADICIONAL\s*NOTURNO/i.test(n)?'':'checked'} style="width:auto; margin-right:6px;"> ${escapeHtml(n)}</label>`).join('')}</div>`;
+}
+function renderMesesAposentadoria(){
+  const box = document.getElementById('apos-meses-lista');
+  if(!APOS_MESES.length){ box.innerHTML=''; return; }
+  box.innerHTML = `<details><summary style="cursor:pointer; font-weight:600;">Ver o que foi lido da ficha (${APOS_MESES.length} meses)</summary><div style="max-height:360px; overflow:auto; margin-top:6px;">${APOS_MESES.map(m=>`<details style="margin:2px 0;"><summary style="cursor:pointer; font-size:13px;">${m.competencia} — base ${fmtMoney(m.basePago)}${m.baseVeioDeAfastamento?' (afastamento com direitos integrais)':''} · ${m.rubricas.length} lançamentos</summary>
+    <table style="font-size:12px; margin:4px 0 8px 12px;"><thead><tr><th>Rubrica</th><th>Tipo</th><th>%</th><th>Valor</th></tr></thead><tbody>${m.rubricas.map(r=>`<tr><td>${escapeHtml(r.nome)}</td><td>${escapeHtml(r.grupo||(r.tipo==='desconto'?'Desconto':'Provento'))}</td><td>${r.percentual!=null? r.percentual+'%':'—'}</td><td>${fmtMoney(r.valor)}</td></tr>`).join('')}</tbody></table></details>`).join('')}</div></details>`;
+}
+async function calcularAposentadoriaUI(){
+  if(!validarVinculoCalculo()) return;
+  if(!APOS_MESES.length){ showToast('Importe a ficha financeira primeiro.'); return; }
+  const modalidade = document.getElementById('apos-modalidade').value;
+  const dataDevidaAbono = document.getElementById('apos-devida-abono').value;
+  const dataDevidaAposentadoria = document.getElementById('apos-devida-aposentadoria').value;
+  if(modalidade!=='aposentadoria' && !dataDevidaAbono){ showToast('Informe desde quando o abono de permanência era devido.'); return; }
+  if(modalidade!=='abono' && !dataDevidaAposentadoria){ showToast('Informe desde quando a aposentadoria era devida.'); return; }
+  const aplicarPrescricao = document.getElementById('apos-aplicar-prescricao').checked;
+  const dataProtocolo = document.getElementById('apos-protocolo').value;
+  if(aplicarPrescricao && !dataProtocolo){ showToast('Informe a data de protocolo (ou desmarque a prescrição quinquenal).'); return; }
+  const patronalInput = document.getElementById('apos-patronal').value;
+  const payload = {
+    modalidade, dataProtocolo, aplicarPrescricao, meses: APOS_MESES,
+    dataDevidaAbono: modalidade!=='aposentadoria'? dataDevidaAbono : null,
+    dataDevidaAposentadoria: modalidade!=='abono'? dataDevidaAposentadoria : null,
+    dataFimPeriodo: document.getElementById('apos-data-fim').value || todayISO(),
+    dataAtualizacao: document.getElementById('apos-data-atualizacao').value || todayISO(),
+    composicaoBeneficio: [...document.querySelectorAll('.apos-comp')].filter(c=>c.checked).map(c=>c.dataset.nome),
+    incluir13Abono: document.getElementById('apos-incluir13-abono').checked,
+    incluir13Aposentadoria: document.getElementById('apos-incluir13-aposentadoria').checked,
+    abaterRemuneracao: document.getElementById('apos-abater').checked,
+    regraProvento: document.getElementById('apos-regra').value,
+    tcAnos: parseFloat(document.getElementById('apos-tc-anos').value)||0,
+    tcMeses: parseFloat(document.getElementById('apos-tc-meses').value)||0,
+    tcDias: parseFloat(document.getElementById('apos-tc-dias').value)||0,
+    tempoExigidoAnos: parseFloat(document.getElementById('apos-tc-exigido').value)||0,
+    valorProventoInformado: parseFloat(document.getElementById('apos-provento-informado').value)||0,
+    proventoInformadoAcompanhaFicha: document.getElementById('apos-provento-acompanha').checked,
+    projetarMeses: document.getElementById('apos-projetar').checked,
+    irrfAtivo: document.getElementById('apos-irrf-ativo').checked,
+    irrfPercentual: parseFloat(document.getElementById('apos-irrf-percentual').value)||0,
+    contribuicaoPatronalPercentual: patronalInput? parseFloat(patronalInput) : null,
+    regimePrevidenciario: document.getElementById('apos-regime').value,
+  };
+  const box = document.getElementById('apos-resultado');
+  box.innerHTML = '<div class="empty">Calculando...</div>';
+  try{
+    const r = await apiFetch('/api/calculos/aposentadoria', { method:'POST', body: JSON.stringify(payload) });
+    APOS_ULTIMO_CALCULO = payload;
+    renderResultadoAposentadoria(r);
+  }catch(e){ box.innerHTML = `<div class="empty">${escapeHtml(e.message||'Não foi possível calcular.')}</div>`; }
+}
+// ===== Memória de cálculo / relatório auditável (PCCR e Aposentadoria) =====
+let APOS_ULTIMO_CALCULO = null;
+function fmtFatorAud(n){ return Number(n).toFixed(6).replace('.',','); }
+function renderMemoriaCorrecaoHtml(mem, tipo){
+  if(!mem) return '';
+  const rotOrigem = { bcb:'Banco Central (consulta direta)', cache:'cache do sistema (menos de 24 h)', 'cache-vencido':'⚠️ cache vencido (BCB indisponível)' };
+  const fontes = mem.fontes.map(f=>`<tr><td>${escapeHtml(f.indice)}</td><td>${f.serieBCB}</td><td>${escapeHtml(f.descricao||'')}</td><td>${f.origens.map(o=>rotOrigem[o]||o).join('; ')}</td><td>${new Date(f.consultadoAte).toLocaleString('pt-BR')}</td><td><a href="${escapeHtml(f.fonteUrl)}&dataInicial=01/01/2020" target="_blank" rel="noopener">conferir no BCB</a></td></tr>`).join('');
+  const metodologia = mem.metodologia.map(m=>`<li><strong>${m.fase} — ${m.periodo}:</strong> ${escapeHtml(m.regra)} <em>Base: ${escapeHtml(m.baseLegal)}</em></li>`).join('');
+  const convencoes = mem.convencoes.map(c=>`<li>${escapeHtml(c)}</li>`).join('');
+  const tabelasIdx = Object.entries(mem.tabelaIndices).map(([nome, lista])=>`
+    <div style="margin-top:8px;"><strong>${escapeHtml(nome)}</strong> <span class="hint">(${lista.length} meses)</span>
+    <div style="display:flex; flex-wrap:wrap; gap:4px 12px; font-size:12px; max-height:160px; overflow:auto; border:1px solid var(--line); padding:6px; border-radius:6px;">${lista.map(x=>`<span>${x.mes.split('-').reverse().join('/')}: <b>${String(x.valor).replace('.',',')}%</b></span>`).join('')}</div></div>`).join('');
+  const fasesUsadas = mem.metodologia.map(m=>m.chave);
+  const rotFase = { 'ipca-e+poupanca':'1ª fase', selic:'2ª fase (Selic)', 'ipca-e+taxalegal':'3ª fase' };
+  const cabFases = fasesUsadas.map(f=>`<th>${rotFase[f]} fator / juros %</th>`).join('');
+  const linhas = mem.lancamentos.map(l=>`<tr><td>${l.competencia.split('-').reverse().join('/')}</td><td>${escapeHtml(l.parte)}</td><td style="text-align:right;">${fmtMoney(l.valorNominal)}</td>${fasesUsadas.map(chave=>{ const f=l.fases.find(x=>x.regime===chave); return `<td>${f? (chave==='selic'? fmtFatorAud(f.fatorCorrecao) : fmtFatorAud(f.fatorCorrecao)+' / '+Number(f.jurosPercentual).toFixed(4).replace('.',',')+'%') : '—'}</td>`; }).join('')}<td>${fmtFatorAud(l.fatorGlobal)}</td><td style="text-align:right;"><strong>${fmtMoney(l.valorCorrigido)}</strong></td></tr>`).join('');
+  const alertas = (mem.avisos||[]).map(a=>`<div class="hint" style="background:#fdecea; border:1px solid #f5b5ae; padding:8px; border-radius:6px; margin:8px 0; color:#8a1f11;">⚠️ ${escapeHtml(a)}</div>`).join('');
+  return `<details style="margin-top:16px; border:1px solid var(--line); border-radius:8px; padding:10px;">
+    <summary style="cursor:pointer; font-weight:700;">🔎 Memória de cálculo e índices utilizados (auditável)</summary>
+    ${alertas}
+    <div class="hint" style="margin:8px 0;">Todos os índices foram obtidos automaticamente da API oficial do Banco Central (SGS), sem digitação. Impressão digital do cálculo (SHA-256): <code style="word-break:break-all;">${mem.impressaoDigital}</code></div>
+    <h4 style="margin:8px 0 4px;">Fontes dos índices</h4>
+    <div style="overflow-x:auto;"><table><thead><tr><th>Índice</th><th>Série SGS</th><th>Descrição</th><th>Origem</th><th>Consultado em</th><th></th></tr></thead><tbody>${fontes}</tbody></table></div>
+    <h4 style="margin:12px 0 4px;">Metodologia e base legal</h4>
+    <ul style="margin:0 0 0 18px; font-size:13px;">${metodologia}${convencoes}</ul>
+    <h4 style="margin:12px 0 4px;">Índices mensais efetivamente usados</h4>${tabelasIdx}
+    <h4 style="margin:12px 0 4px;">Lançamento a lançamento</h4>
+    <div style="overflow-x:auto; max-height:320px; overflow-y:auto;"><table><thead><tr><th>Competência</th><th>Parte</th><th>Valor nominal</th>${cabFases}<th>Fator global</th><th>Valor corrigido</th></tr></thead><tbody>${linhas}</tbody></table></div>
+    <div class="irow" style="margin-top:6px;"><span>Total nominal / corrigido</span><strong>${fmtMoney(mem.totais.nominal)} → ${fmtMoney(mem.totais.corrigido)}</strong></div>
+  </details>
+  <button class="btn btn-dark" style="margin-top:10px;" onclick="baixarRelatorioAuditavel('${tipo}')">📑 Baixar relatório auditável (Word, timbrado)</button>`;
+}
+function baixarRelatorioAuditavel(tipo){
+  const base = tipo==='pccr' ? PCCR_ULTIMO_CALCULO : APOS_ULTIMO_CALCULO;
+  if(!base){ showToast('Calcule primeiro.'); return; }
+  const pre = tipo==='pccr' ? 'pccr' : 'apos';
+  const val = id=>{ const el=document.getElementById(pre+'-'+id); return el? el.value : ''; };
+  const cabecalho = { nome: val('nome'), matricula: val('matricula'), funcao: val('funcao'), processo: val('processo') };
+  showToast('Gerando relatório auditável (consulta os índices no Banco Central de novo)...');
+  baixarArquivoPost('/api/documentos/relatorio-auditavel', { ...base, tipo, cabecalho }, 'Relatorio Auditavel.docx');
+}
+async function testarIndicesUI(){
+  const box = document.getElementById('pc-indices-status');
+  box.innerHTML = '<div class="empty">Consultando o Banco Central...</div>';
+  try{
+    const r = await apiFetch('/api/calculos/indices/testar');
+    const linhas = r.resultados.map(x=>`<tr><td>${x.ok?'✅':'❌'}</td><td>${escapeHtml(x.indice)}</td><td>${x.serieBCB}</td><td>${x.ok? x.ultimoMes.split('-').reverse().join('/') : '—'}</td><td>${x.ok? String(x.ultimoValor).replace('.',',')+'%' : escapeHtml(x.erro||'falhou')}</td><td>${x.ms} ms</td></tr>`).join('');
+    box.innerHTML = `<div class="hint" style="margin:6px 0; ${r.todosOk?'color:var(--success);':'color:#8a1f11;'}">${r.todosOk? '✅ Todos os índices estão acessíveis agora.' : '❌ Algum índice não respondeu — se o cálculo for feito agora, o sistema usará o último valor salvo (se existir) e avisará no resultado.'} Consultado em ${new Date(r.consultadoEm).toLocaleString('pt-BR')}.</div>
+      <div style="overflow-x:auto;"><table><thead><tr><th></th><th>Índice</th><th>Série SGS</th><th>Último mês publicado</th><th>Valor</th><th>Resposta</th></tr></thead><tbody>${linhas}</tbody></table></div>`;
+  }catch(e){ box.innerHTML = `<div class="empty">${escapeHtml(e.message||'Não foi possível testar.')}</div>`; }
+}
+function renderResultadoAposentadoria(r){
+  const box = document.getElementById('apos-resultado');
+  const ap = r.resumo.aposentadoria, ab = r.resumo.abono, t = r.resumo.total;
+  const colunas = [ap? ['Aposentadoria devida', ap] : null, ab? ['Abono de permanência', ab] : null, (ap&&ab)? ['TOTAL', t] : null].filter(Boolean);
+  const linhaResumo = (rotulo, campo, forte)=>`<tr ${forte?'style="font-weight:700;"':''}><td>${rotulo}</td>${colunas.map(([,d])=>`<td style="text-align:right;">${fmtMoney(d[campo]||0)}</td>`).join('')}</tr>`;
+  const resumoHtml = `<div style="overflow-x:auto;"><table><thead><tr><th>Resumo</th>${colunas.map(([n])=>`<th style="text-align:right;">${n}</th>`).join('')}</tr></thead><tbody>
+    ${linhaResumo('A — Valor devido (nominal)','somaA')}
+    ${linhaResumo('Correção monetária e juros','diferencaCorrecao')}
+    ${linhaResumo('A — Valor devido corrigido','somaACorrigida', true)}
+    ${linhaResumo('B — Contribuição previdenciária','previdencia')}
+    ${linhaResumo('B — Contribuição sindical (SINDSMUJE)','sindicato')}
+    ${linhaResumo('B — IRRF','irrf')}
+    ${linhaResumo('Total de descontos (B)','somaB', true)}
+    ${linhaResumo('Valor líquido (nominal)','valorLiquido')}
+    ${linhaResumo('Valor líquido corrigido','valorLiquidoCorrigido', true)}
+    ${linhaResumo('C — Contribuição patronal','contribuicaoPatronal')}
+    ${linhaResumo('Total C corrigido (líquido + descontos + patronal)','totalCCorrigido', true)}
+  </tbody></table></div>`;
+  const cabAb = ab? '<th>Abono devido</th><th>Abono pago (ficha)</th><th>Diferença</th><th>13º abono</th><th>Abono corrigido</th>' : '';
+  const cabAp = ap? '<th>Provento devido (regra escolhida)</th><th>Abatimento</th><th>Devido no mês</th><th>13º</th><th>Aposentadoria corrigida</th>' : '';
+  const linhasHtml = r.linhas.map(l=>{
+    const estilo = l.cortadoPorPrescricao? 'style="opacity:.5;"':'';
+    const tdAb = ab? (l.abono? `<td>${fmtMoney(l.abono.devido)}</td><td>${fmtMoney(l.abono.pago)}</td><td>${fmtMoney(l.abono.diferenca)}</td><td>${fmtMoney(l.abono.reflexo13)}</td><td>${fmtMoney(l.abono.corrigido||0)}</td>` : '<td colspan="5">—</td>') : '';
+    const tdAp = ap? (l.aposentadoria? `<td>${fmtMoney(l.aposentadoria.provento)}</td><td>${fmtMoney(l.aposentadoria.abatimento)}</td><td>${fmtMoney(l.aposentadoria.devidoMes)}</td><td>${fmtMoney(l.aposentadoria.reflexo13)}</td><td>${fmtMoney(l.aposentadoria.corrigido||0)}</td>` : '<td colspan="5">—</td>') : '';
+    return `<tr ${estilo}><td>${l.competencia}${l.cortadoPorPrescricao?' (prescrito)':''}${l.projetado?' (projetado)':''}</td>${tdAb}${tdAp}</tr>`;
+  }).join('');
+  box.innerHTML = `
+    <div class="hint" style="margin-bottom:8px;">${r.aplicouPrescricao===false ? 'Prescrição quinquenal NÃO aplicada.' : `Data-limite de prescrição quinquenal: ${fmtDate(r.competenciaLimitePrescricao+'-01')}.`} Regime previdenciário: ${r.regimePrevidenciario==='rpps'?'RPPS (previdência própria)':'RGPS (INSS nacional)'}. ${ap? 'Regra do provento: '+({integral:'integralidade e paridade', proporcional:'proporcional ao tempo de contribuição ('+((r.fracaoProporcional||0)*100).toFixed(2)+'%)', informado:'valor informado'}[r.regraProvento]||r.regraProvento)+'. ' : ''}Período devido até ${fmtDate(r.dataFimPeriodo)}; valores corrigidos até ${fmtDate(r.dataCorrecaoAte)}.</div>
+    ${(r.avisos||[]).map(a=>`<div class="hint" style="background:#fff3cd; border:1px solid #ffe08a; padding:8px; border-radius:6px; margin-bottom:8px; color:#7a5c00;">⚠️ ${escapeHtml(a)}</div>`).join('')}
+    <h4 style="margin:10px 0 6px;">Resumo</h4>${resumoHtml}
+    <h4 style="margin:14px 0 6px;">Mês a mês</h4>
+    <div style="overflow-x:auto;"><table><thead><tr><th>Competência</th>${cabAb}${cabAp}</tr></thead><tbody>${linhasHtml}</tbody></table></div>
+    ${renderMemoriaCorrecaoHtml(r.memoriaCorrecao, 'aposentadoria')}`;
+}
+
 let CALCULO_ATIVO = null;
 function renderCalculoJuridico(){
   const lista = document.getElementById('calculo-lista');
@@ -2978,6 +3279,7 @@ async function selecionarCategoriaCalculo(id){
   if(cat.implementado==='empresarial-lucros'){ box.innerHTML = formularioDistribuicaoLucros(cat); return; }
   if(cat.implementado==='consumidor-amortizacao'){ box.innerHTML = formularioAmortizacao(cat); return; }
   if(cat.implementado==='administrativo'){ box.innerHTML = formularioAdministrativo(cat); setAdministrativoTab('reposicao'); return; }
+  if(cat.implementado==='aposentadoria'){ box.innerHTML = formularioAposentadoria(cat); mudarModalidadeAposentadoria(); return; }
   if(cat.implementado==='retroativo-pccr'){ box.innerHTML = formularioRetroativoPccr(cat); renderMesCamposPccr(); renderListaNomesVerbasPccr(); renderListaMesesPccr(); return; }
   box.innerHTML = `<h3>${escapeHtml(cat.titulo)}</h3>
     <div class="hint" style="margin:8px 0;">Módulo ainda em construção. Itens previstos:</div>
@@ -3615,6 +3917,12 @@ async function formularioParametrosCalculo(){
     </div>
     <button class="btn btn-gold" onclick="salvarParametrosCalculoUI()">Salvar teto/piso</button>
 
+    <fieldset style="margin-top:16px;"><legend>Índices econômicos — teste de conexão com o Banco Central</legend>
+      <div class="hint" style="margin-bottom:8px;">Os índices (IPCA-E, poupança, Selic, Taxa Legal, IPCA-15) são buscados automaticamente na API oficial do Banco Central a cada cálculo. Use o botão para conferir agora se todos estão acessíveis e qual é o último mês publicado de cada um.</div>
+      <button class="btn btn-ghost" onclick="testarIndicesUI()">🔌 Testar índices agora</button>
+      <div id="pc-indices-status" style="margin-top:8px;"></div>
+    </fieldset>
+
     <fieldset style="margin-top:16px;"><legend>RPPS — Previdência Própria (alíquota fixa por ano, definida por lei do ente)</legend>
       <div class="hint" style="margin-bottom:8px;">Cada município/estado com previdência própria tem sua própria alíquota, fixada por lei local — diferente do INSS nacional. Cadastre aqui a alíquota do segurado e a patronal para cada ano que você for calcular retroativos, conforme a lei do ente do seu cliente.</div>
       <div id="pc-rpps-lista">${linhasRpps || '<div class="empty">Nenhum ano cadastrado ainda.</div>'}</div>
@@ -3749,7 +4057,7 @@ let PCCR_MODALIDADE = 'nivel';
 let PCCR_VERBAS_NOMES = []; // nomes das verbas percentuais (ex: "Anuênio", "Insalubridade") — só os NOMES, definidos uma vez
 let PCCR_MESES = []; // [{competencia, basePago, baseDevido/percentualGratificacao, verbasPercentuais:[{nome,percentual}], incluir13, incluirFerias}]
 function formularioRetroativoPccr(cat){
-  PCCR_MODALIDADE = 'nivel'; PCCR_VERBAS_NOMES = []; PCCR_MESES = []; PCCR_NIVEIS_IMPORTADOS = [];
+  PCCR_MODALIDADE = 'nivel'; PCCR_VERBAS_NOMES = []; PCCR_MESES = []; PCCR_NIVEIS_IMPORTADOS = []; PCCR_ETAPAS_FICHA = [];
   return `<h3>${escapeHtml(cat.titulo)}</h3>
     ${campoVinculoCalculo()}
     <div class="hint" style="background:#fff3cd; border:1px solid #ffe08a; padding:10px; border-radius:8px; margin-bottom:12px; color:#7a5c00;">
@@ -3769,8 +4077,9 @@ function formularioRetroativoPccr(cat){
         <div class="field"><label>Processo${ajuda('O número do processo administrativo ou judicial, se já existir.')}</label><input id="pccr-processo"></div>
         <div class="field"><label>Data de admissão${ajuda('Quando o servidor começou a trabalhar no cargo.')}</label><input type="date" id="pccr-admissao"></div>
       </div>
-      <div class="field-row">
+      <div class="field-row3">
         <div class="field"><label>Data de protocolo${ajuda('A data em que o pedido administrativo (ou a ação judicial) foi protocolado. É a partir dela que o sistema calcula o corte de 5 anos (prescrição quinquenal) — tudo antes desse corte não entra no cálculo. Vem preenchida com a data de hoje por padrão (para simular "a partir de agora, para trás") — troque se já existir um protocolo/ação com data diferente.')}</label><input type="date" id="pccr-protocolo" value="${todayISO()}"></div>
+        <div class="field"><label>Prescrição quinquenal${ajuda('Marcado: o sistema corta tudo que for anterior a 5 anos da data de protocolo (Decreto 20.910/32). Desmarcado: calcula todos os meses importados/adicionados, sem corte — use, por exemplo, quando a prescrição não corre (pedido administrativo em análise) ou quando o corte já foi feito na escolha dos meses.')}</label><label style="font-weight:normal;"><input type="checkbox" id="pccr-aplicar-prescricao" checked style="width:auto; margin-right:6px;"> Aplicar prescrição quinquenal (usa a data de protocolo ao lado)</label></div>
         <div class="field"><label>Data de implantação${ajuda('A data em que o benefício (novo nível ou gratificação) passou a ser efetivamente pago no contracheque. Marca o fim do período retroativo.')}</label><input type="date" id="pccr-implantacao"></div>
       </div>
       <div class="field-row">
@@ -3795,11 +4104,34 @@ function formularioRetroativoPccr(cat){
         </div>
       </div>
     </fieldset>
-    <fieldset style="margin-top:10px;"><legend>📎 Importar da ficha financeira (PDF) — opcional${ajuda('Envia o PDF da ficha financeira do servidor. O sistema tenta identificar salário-base, anuênio, insalubridade, 13º, 1/3 férias, descontos e totais de cada mês, e pré-preenche os campos abaixo para você conferir.')}</legend>
-      <div class="hint" style="margin-bottom:8px;">Envia o PDF, o sistema tenta ler o salário-base e os percentuais de cada verba, mês a mês, e <strong>pré-preenche a lista abaixo para você conferir e corrigir</strong> — nunca calcula direto do arquivo. O arquivo não é salvo em nenhum lugar, só é lido nesta hora. Só funciona com PDF que tenha texto de verdade (não escaneado/foto).</div>
+    <fieldset style="margin-top:10px;"><legend>📎 Importar da ficha financeira (PDF) — opcional${ajuda('Envia o PDF da ficha financeira do servidor. O sistema lê a ficha inteira — salário-base e TODAS as rubricas de cada mês (proventos como anuênio, insalubridade, gratificações, abonos, e descontos/retenções) — e pré-preenche os meses abaixo para você conferir.')}</legend>
+      <div class="hint" style="margin-bottom:8px;">Envia o PDF, o sistema lê o salário-base, todos os proventos e todos os descontos de cada mês (o que entra e sai esporadicamente fica só nos meses em que apareceu) e <strong>pré-preenche a lista abaixo para você conferir e corrigir</strong> — nunca calcula direto do arquivo. O arquivo não é salvo em nenhum lugar, só é lido nesta hora. Só funciona com PDF que tenha texto de verdade (não escaneado/foto).</div>
       <div class="field-row">
         <div class="field"><label>PDF da ficha financeira</label><input type="file" id="pccr-upload-ficha" accept="application/pdf"></div>
         <button class="btn btn-ghost" style="align-self:flex-end;" onclick="importarFichaFinanceira()">Ler PDF e pré-preencher meses</button>
+      </div>
+      <div class="field-row" id="pccr-ficha-periodo-box" style="display:none;">
+        <div class="field"><label>Calcular a partir de (mês/ano)${ajuda('O primeiro mês que entra no cálculo. A ficha pode trazer um período maior (ex: desde 01/2020) — só os meses de "a partir de" até "até" são importados.')}</label><input type="month" id="pccr-ficha-de"></div>
+        <div class="field"><label>Até (mês/ano)${ajuda('O último mês do cálculo (normalmente o mês anterior à implantação do benefício). Em branco = até o último mês da ficha.')}</label><input type="month" id="pccr-ficha-ate"></div>
+      </div>
+      <div id="pccr-ficha-nivel-box">
+        <div class="hint" style="margin-bottom:6px;"><strong>Etapas da mudança de nível.</strong> Cada etapa é um período em que o servidor deveria estar num nível acima. O <strong>base pago</strong> do mês é o salário-base da ficha × (1 + "% já implantado e que não consta na ficha"), e o <strong>base devido</strong> é esse valor × (1 + "% devido a mais"). Por exemplo: ficha com o nível A, mas já implantado o B (+5%) e devido o C — etapa com "% já implantado" = 5 e "% devido a mais" = o percentual do C sobre o valor do B. Entre uma mudança de nível e a próxima deve haver interstício de 3 anos (o sistema avisa se for menor).</div>
+        <div class="field-row3">
+          <div class="field"><label>Etapa: de (mês/ano)${ajuda('Primeiro mês desta etapa. Na primeira etapa, normalmente o mês da data de protocolo (ou o mês em que quer começar o cálculo).')}</label><input type="month" id="pccr-etapa-de"></div>
+          <div class="field"><label>Até (mês/ano)${ajuda('Último mês desta etapa. Em branco = até o último mês da ficha (ou seja, até onde a ficha alcança).')}</label><input type="month" id="pccr-etapa-ate"></div>
+          <div class="field"><label>% já implantado (não consta na ficha)${ajuda('Percentual do nível que já foi implantado mas NÃO aparece no salário-base da ficha (ex: 5 para o A→B). Deixe 0 se a ficha já traz o salário-base com a mudança.')}</label><input type="number" step="0.01" id="pccr-etapa-implantado" value="0"></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>% devido a mais sobre esse valor (5, 15, 20, 25, 30...)${ajuda('Quanto o base deveria ser MAIOR, aplicado sobre o base já com o % implantado. Atenção: o percentual de uma tabela de níveis costuma ser sobre o nível A; se for o caso, informe o percentual sobre o valor do nível atual (ex: B→C com C = +15% sobre A e B = +5% sobre A: 1,15 ÷ 1,05 − 1 = 9,52%).')}</label><input type="number" step="0.01" id="pccr-etapa-devido"></div>
+          <button class="btn btn-ghost" style="align-self:flex-end;" onclick="adicionarEtapaFichaPccr()">+ Adicionar etapa</button>
+        </div>
+        <div id="pccr-etapas-lista" style="margin-bottom:8px;"><div class="empty">Nenhuma etapa adicionada.</div></div>
+      </div>
+      <div class="field" id="pccr-ficha-grat-box" style="display:none;"><label>Percentual da gratificação (%)${ajuda('O percentual da gratificação que deveria ter sido pago sobre o salário-base em todos os meses importados.')}</label><input type="number" step="0.01" id="pccr-ficha-percentualgrat"></div>
+      <div class="field-row3">
+        <div class="field"><label>Mês de férias de referência (opcional)${ajuda('Mesma regra do período manual: aplica o 1/3 de férias nesse mês, todo ano, a partir do ano informado.')}</label><input type="month" id="pccr-ficha-mes-ferias"></div>
+        <div class="field"><label>Dia de início (opcional)${ajuda('Preencha só se o cálculo começa no meio do mês inicial — prorrateia o primeiro mês.')}</label><input type="number" min="1" max="31" id="pccr-ficha-dia-inicio"></div>
+        <div class="field"><label>Dia de fim (opcional)${ajuda('Preencha só se o cálculo termina no meio do último mês — prorrateia o último mês.')}</label><input type="number" min="1" max="31" id="pccr-ficha-dia-fim"></div>
       </div>
       <div id="pccr-upload-ficha-status"></div>
     </fieldset>
@@ -3871,6 +4203,9 @@ function mudarModalidadePccr(){
   PCCR_MODALIDADE = document.getElementById('pccr-modalidade').value;
   document.getElementById('pccr-verbas-box').style.display = PCCR_MODALIDADE==='nivel' ? 'block' : 'none';
   document.getElementById('pccr-periodo-basedevido-box').style.display = PCCR_MODALIDADE==='nivel' ? 'block' : 'none';
+  document.getElementById('pccr-ficha-nivel-box').style.display = PCCR_MODALIDADE==='nivel' ? 'block' : 'none';
+  document.getElementById('pccr-ficha-periodo-box').style.display = PCCR_MODALIDADE==='nivel' ? 'none' : 'grid';
+  document.getElementById('pccr-ficha-grat-box').style.display = PCCR_MODALIDADE==='nivel' ? 'none' : 'block';
   renderPeriodoVerbasCampos();
   renderListaMesesPccr();
 }
@@ -4009,23 +4344,106 @@ async function importarFichaFinanceira(){
   form.append('arquivo', input.files[0]);
   try{
     const r = await apiFetchUpload('/api/calculos/retroativo-pccr/importar-ficha', form);
-    r.meses.forEach(m=>{
+    // Período escolhido: a ficha pode trazer anos a mais — só entram os meses de "a partir de" até "até".
+    let de = '', ate = '', percentualGrat = null;
+    const etapaDoMes = (competencia)=>{ // a última etapa adicionada que cobre o mês vence, se houver sobreposição
+      let achada = null;
+      PCCR_ETAPAS_FICHA.forEach(e=>{ if(competencia>=e.de && (!e.ate || competencia<=e.ate)) achada = e; });
+      return achada;
+    };
+    let mesesFicha;
+    if(PCCR_MODALIDADE==='nivel'){
+      if(!PCCR_ETAPAS_FICHA.length){ status.innerHTML = '<div class="empty">Adicione ao menos uma etapa (mês inicial e % devido a mais) antes de importar.</div>'; return; }
+      mesesFicha = r.meses.filter(m=>etapaDoMes(m.competencia));
+      de = PCCR_ETAPAS_FICHA.map(e=>e.de).sort()[0];
+    } else {
+      de = document.getElementById('pccr-ficha-de').value; ate = document.getElementById('pccr-ficha-ate').value;
+      mesesFicha = r.meses.filter(m=>(!de || m.competencia>=de) && (!ate || m.competencia<=ate));
+    }
+    if(!mesesFicha.length){ status.innerHTML = '<div class="empty">Nenhum mês da ficha cai dentro do período escolhido.</div>'; return; }
+    if(PCCR_MODALIDADE!=='nivel'){
+      percentualGrat = parseFloat(document.getElementById('pccr-ficha-percentualgrat').value);
+      if(!percentualGrat){ status.innerHTML = '<div class="empty">Informe o percentual da gratificação antes de importar.</div>'; return; }
+    }
+    const diaInicio = parseInt(document.getElementById('pccr-ficha-dia-inicio').value) || null;
+    const diaFim = parseInt(document.getElementById('pccr-ficha-dia-fim').value) || null;
+    const mesFerias = document.getElementById('pccr-ficha-mes-ferias').value;
+    const mesFeriasMM = mesFerias ? mesFerias.slice(5,7) : null;
+    const anoFeriasRef = mesFerias ? parseInt(mesFerias.slice(0,4),10) : null;
+    mesesFicha.forEach((m, idx)=>{
+      const mes = m.competencia.slice(5,7), ano = parseInt(m.competencia.slice(0,4),10);
+      const incluir13 = mes==='12';
+      const incluirFerias = mesFeriasMM!=null && mes===mesFeriasMM && ano>=anoFeriasRef;
+      const extra = {};
+      if(idx===0 && diaInicio) extra.diaInicio = diaInicio;
+      if(idx===mesesFicha.length-1 && diaFim) extra.diaFim = diaFim;
+      PCCR_MESES = PCCR_MESES.filter(x=>x.competencia!==m.competencia); // não duplica competência já existente
       if(PCCR_MODALIDADE==='nivel'){
-        PCCR_MESES.push({competencia:m.competencia, basePago:m.basePago, baseDevido:m.basePago, verbasPercentuais:m.verbasPercentuais||[], incluir13:false, incluirFerias:false});
+        // base pago = base da ficha × (1 + % já implantado fora da ficha); base devido = base pago × (1 + % devido a mais)
+        const et = etapaDoMes(m.competencia);
+        const basePago = Math.round(m.basePago * (1 + et.implantado/100) * 100)/100;
+        const baseDevido = Math.round(basePago * (1 + et.devido/100) * 100)/100;
+        PCCR_MESES.push({competencia:m.competencia, basePago, baseDevido, verbasPercentuais:m.verbasPercentuais||[], rubricas:m.rubricas||[], conferencia:m.conferencia||null, incluir13, incluirFerias, ...extra});
       } else {
-        PCCR_MESES.push({competencia:m.competencia, basePago:m.basePago, percentualGratificacao:0, incluir13:false, incluirFerias:false});
+        PCCR_MESES.push({competencia:m.competencia, basePago:m.basePago, percentualGratificacao:percentualGrat, rubricas:m.rubricas||[], conferencia:m.conferencia||null, incluir13, incluirFerias, ...extra});
       }
     });
     PCCR_MESES.sort((a,b)=>a.competencia.localeCompare(b.competencia));
     if(PCCR_MODALIDADE==='nivel'){
-      r.meses.forEach(m=>(m.verbasPercentuais||[]).forEach(v=>{ if(!PCCR_VERBAS_NOMES.includes(v.nome)) PCCR_VERBAS_NOMES.push(v.nome); }));
+      mesesFicha.forEach(m=>(m.verbasPercentuais||[]).forEach(v=>{ if(!PCCR_VERBAS_NOMES.includes(v.nome)) PCCR_VERBAS_NOMES.push(v.nome); }));
       renderListaNomesVerbasPccr(); renderMesCamposPccr();
     }
     renderListaMesesPccr();
-    status.innerHTML = `<div class="hint">${escapeHtml(r.aviso)} — <strong>${r.meses.length} mês(es) importado(s)</strong>. Confira "Base devido" e os reflexos de 13º/férias na lista abaixo (a leitura não sabe disso, só o salário pago e os percentuais).</div>`;
+    // Cabeçalho da ficha: preenche só campos que ainda estão vazios (não sobrescreve o que ela já digitou)
+    if(r.cabecalho){
+      const preencher=(id,v)=>{ const el=document.getElementById(id); if(el && v && !el.value) el.value=v; };
+      preencher('pccr-nome', r.cabecalho.nome); preencher('pccr-matricula', r.cabecalho.matricula);
+      preencher('pccr-funcao', r.cabecalho.funcao); preencher('pccr-admissao', r.cabecalho.admissao);
+    }
+    // Etapas que ultrapassam o que a ficha cobre (a ficha tem início e fim)
+    const primeiraFicha = r.meses[0].competencia, ultimaFicha = r.meses[r.meses.length-1].competencia;
+    const avisoEtapas = PCCR_MODALIDADE==='nivel' ? PCCR_ETAPAS_FICHA.filter(e=>e.de<primeiraFicha || (e.ate && e.ate>ultimaFicha)).map(e=>`${e.de} a ${e.ate||'último mês'}`) : [];
+    const totalRubricas = mesesFicha.reduce((a,m)=>a+(m.rubricas||[]).length,0);
+    const competenciasPeriodo = new Set(mesesFicha.map(m=>m.competencia));
+    const difs = (r.mesesComDiferenca||[]).filter(c=>competenciasPeriodo.has(c));
+    // Meses com retroativo/parcela de reajuste lançados como rubrica separada — o cálculo usa o salário-base lançado em cada mês
+    const mesesRetro = mesesFicha.filter(m=>(m.rubricas||[]).some(x=>/RETROATIV|PARCELA|DIFEREN[CÇ]A\s*(SALARIAL|DE\s*REAJ)/i.test(x.nome))).map(m=>m.competencia);
+    status.innerHTML = `<div class="hint">${escapeHtml(r.aviso)} — <strong>${mesesFicha.length} mês(es) importado(s)</strong> (${mesesFicha[0].competencia} a ${mesesFicha[mesesFicha.length-1].competencia}), com <strong>${totalRubricas} lançamento(s)</strong> de proventos e descontos lidos da ficha (abra "ver ficha do mês" em cada mês abaixo). O 13º foi marcado em todo dezembro (mesma regra dos períodos manuais). Confira os valores na lista abaixo.</div>${avisoEtapas.length? `<div class="hint" style="margin-top:6px; background:#fff3cd; border:1px solid #ffe08a; color:#7a5c00; padding:8px; border-radius:8px;">⚠️ A ficha vai de ${primeiraFicha} a ${ultimaFicha}; estas etapas passam desse período e os meses fora da ficha NÃO entraram: ${avisoEtapas.map(escapeHtml).join('; ')}. Adicione-os pelo período manual ou use uma ficha mais completa.</div>` : ''}${mesesRetro.length? `<div class="hint" style="margin-top:6px;">ℹ️ Há lançamentos de retroativo/parcela de reajuste em: ${mesesRetro.map(escapeHtml).join(', ')}. O cálculo usa o salário-base lançado em cada mês; o retroativo aparece só na "ficha do mês".</div>` : ''}${difs.length? `<div class="hint" style="margin-top:6px; background:#fff3cd; border:1px solid #ffe08a; color:#7a5c00; padding:8px; border-radius:8px;">⚠️ Em ${difs.length} mês(es) a soma das rubricas lidas <strong>não bate</strong> com o total impresso na ficha (${difs.map(escapeHtml).join(', ')}) — alguma rubrica pode não ter sido lida. Confira esses meses contra o PDF antes de calcular.</div>` : ''}${(r.mesesSemBase||[]).filter(c=>(!de||c>=de)&&(!ate||c<=ate)).length? `<div class="hint" style="margin-top:6px;">⚠️ Sem salário-base lido (mês ignorado): ${r.mesesSemBase.filter(c=>(!de||c>=de)&&(!ate||c<=ate)).map(escapeHtml).join(', ')}.</div>` : ''}${(r.rubricasNaoAlinhadas||[]).length? `<div class="hint" style="margin-top:6px;">⚠️ Rubricas que não consegui alinhar aos meses: ${r.rubricasNaoAlinhadas.map(escapeHtml).join(', ')}.</div>` : ''}`;
   }catch(e){ status.innerHTML = `<div class="empty">${escapeHtml(e.message||'Não foi possível ler o PDF.')}</div>`; }
 }
 let PCCR_NIVEIS_IMPORTADOS = [];
+let PCCR_ETAPAS_FICHA = []; // [{de:'aaaa-mm', ate:'aaaa-mm'|'', implantado:%, devido:%}]
+function mesesEntreCompetencias(a,b){ const [a1,m1]=a.split('-').map(Number), [a2,m2]=b.split('-').map(Number); return (a2-a1)*12+(m2-m1); }
+function avisosIntersticioEtapas(){
+  // Interstício de 3 anos (36 meses) entre o início de uma mudança de nível e o da seguinte
+  const ord = [...PCCR_ETAPAS_FICHA].sort((a,b)=>a.de.localeCompare(b.de));
+  const av = [];
+  for(let i=1;i<ord.length;i++){
+    if(mesesEntreCompetencias(ord[i-1].de, ord[i].de) < 36) av.push(`${ord[i-1].de} → ${ord[i].de} (${mesesEntreCompetencias(ord[i-1].de, ord[i].de)} meses)`);
+  }
+  return av;
+}
+function renderEtapasFichaPccr(){
+  const box = document.getElementById('pccr-etapas-lista');
+  if(!box) return;
+  const avisos = avisosIntersticioEtapas();
+  box.innerHTML = (PCCR_ETAPAS_FICHA.length? PCCR_ETAPAS_FICHA.map((e,i)=>`<div class="list-row"><div>${e.de} até ${e.ate||'o último mês da ficha'} — já implantado ${e.implantado}% · devido a mais ${e.devido}%</div><div class="rmeta"><button class="icon-btn danger" onclick="removerEtapaFichaPccr(${i})">🗑</button></div></div>`).join('') : '<div class="empty">Nenhuma etapa adicionada.</div>')
+    + (avisos.length? `<div class="hint" style="margin-top:6px; background:#fff3cd; border:1px solid #ffe08a; color:#7a5c00; padding:8px; border-radius:8px;">⚠️ Interstício menor que 3 anos entre mudanças de nível: ${avisos.map(escapeHtml).join('; ')}.</div>` : '');
+}
+function adicionarEtapaFichaPccr(){
+  const de = document.getElementById('pccr-etapa-de').value, ate = document.getElementById('pccr-etapa-ate').value;
+  const implantado = parseFloat(document.getElementById('pccr-etapa-implantado').value) || 0;
+  const devido = parseFloat(document.getElementById('pccr-etapa-devido').value);
+  if(!de){ showToast('Informe o mês inicial da etapa.'); return; }
+  if(ate && ate<de){ showToast('O mês final precisa ser depois do inicial.'); return; }
+  if(!devido){ showToast('Informe o % devido a mais.'); return; }
+  PCCR_ETAPAS_FICHA.push({de, ate, implantado, devido});
+  PCCR_ETAPAS_FICHA.sort((a,b)=>a.de.localeCompare(b.de));
+  document.getElementById('pccr-etapa-de').value=''; document.getElementById('pccr-etapa-ate').value='';
+  document.getElementById('pccr-etapa-implantado').value='0'; document.getElementById('pccr-etapa-devido').value='';
+  renderEtapasFichaPccr();
+}
+function removerEtapaFichaPccr(i){ PCCR_ETAPAS_FICHA.splice(i,1); renderEtapasFichaPccr(); }
 async function importarTabelaNiveis(){
   const input = document.getElementById('pccr-upload-niveis');
   if(!input.files.length){ showToast('Escolha um arquivo PDF primeiro.'); return; }
@@ -4079,14 +4497,17 @@ function renderTabelasNiveisAgrupadas(niveis){
 function renderListaMesesPccr(){
   document.getElementById('pccr-meses-lista').innerHTML = PCCR_MESES.length? PCCR_MESES.map((m,i)=>{
     const detalhe = PCCR_MODALIDADE==='nivel'? `pago ${fmtMoney(m.basePago)} → devido ${fmtMoney(m.baseDevido)}${(m.verbasPercentuais||[]).length? ' · '+m.verbasPercentuais.map(v=>v.nome+' '+v.percentual+'%').join(', '):''}` : `pago ${fmtMoney(m.basePago)}, gratificação ${m.percentualGratificacao}%`;
-    return `<div class="list-row"><div>${m.competencia} — ${detalhe} ${m.incluir13?'· 13º':''} ${m.incluirFerias?'· 1/3 férias':''}</div><div class="rmeta"><button class="icon-btn danger" onclick="removerMesPccr(${i})">🗑</button></div></div>`;
+    const fichaMes = (m.rubricas||[]).length ? `<details style="margin-top:4px;"><summary style="cursor:pointer; font-size:12px; color:var(--gold-dark);">ver ficha do mês (${m.rubricas.length} lançamentos)${m.conferencia && (m.conferencia.proventos===false||m.conferencia.descontos===false)?' ⚠️ não bate com o total':''}</summary>
+      <table style="margin-top:4px; font-size:12px;"><thead><tr><th>Rubrica</th><th>Tipo</th><th>%</th><th>Valor</th></tr></thead><tbody>${m.rubricas.map(r=>`<tr><td>${escapeHtml(r.nome)}</td><td>${escapeHtml(r.grupo || (r.tipo==='desconto'?'Desconto':'Provento'))}</td><td>${r.percentual!=null? r.percentual+'%':'—'}</td><td>${fmtMoney(r.valor)}</td></tr>`).join('')}</tbody></table></details>` : '';
+    return `<div class="list-row"><div>${m.competencia} — ${detalhe} ${m.incluir13?'· 13º':''} ${m.incluirFerias?'· 1/3 férias':''}${fichaMes}</div><div class="rmeta"><button class="icon-btn danger" onclick="removerMesPccr(${i})">🗑</button></div></div>`;
   }).join('') : '<div class="empty">Nenhum mês adicionado ainda.</div>';
 }
 async function calcularRetroativoPccrUI(){
   if(!validarVinculoCalculo()) return;
   if(!PCCR_MESES.length){ showToast('Adicione ao menos um mês.'); return; }
   const dataProtocolo = document.getElementById('pccr-protocolo').value;
-  if(!dataProtocolo){ showToast('Informe a data de protocolo.'); return; }
+  const aplicarPrescricao = document.getElementById('pccr-aplicar-prescricao').checked;
+  if(aplicarPrescricao && !dataProtocolo){ showToast('Informe a data de protocolo (ou desmarque a prescrição quinquenal).'); return; }
   const irrfAtivo = document.getElementById('pccr-irrf-ativo').checked;
   const irrfPercentual = parseFloat(document.getElementById('pccr-irrf-percentual').value)||0;
   const patronalInput = document.getElementById('pccr-patronal').value;
@@ -4108,7 +4529,7 @@ async function calcularRetroativoPccrUI(){
       anuenioTeto: parseFloat(document.getElementById('pccr-anuenio-teto').value) ?? 35,
     };
   }
-  const payload = { modalidade: PCCR_MODALIDADE, dataProtocolo, meses: PCCR_MESES, irrfAtivo, irrfPercentual, contribuicaoPatronalPercentual, regimePrevidenciario, dataAtualizacao, configSalarial };
+  const payload = { modalidade: PCCR_MODALIDADE, dataProtocolo, aplicarPrescricao, meses: PCCR_MESES, irrfAtivo, irrfPercentual, contribuicaoPatronalPercentual, regimePrevidenciario, dataAtualizacao, configSalarial };
   try{
     const r = await apiFetch('/api/calculos/retroativo-pccr', { method:'POST', body: JSON.stringify(payload) });
     PCCR_ULTIMO_CALCULO = payload; // guarda para o botão de gerar documento
@@ -4132,7 +4553,7 @@ async function calcularRetroativoPccrUI(){
     </tr>`;
     }).join('');
     box.innerHTML = `
-      <div class="hint" style="margin-bottom:8px;">Data-limite de prescrição quinquenal: ${fmtDate(r.competenciaLimitePrescricao+'-01')}. Meses antes dessa data aparecem esmaecidos e zerados. Regime previdenciário usado: ${r.regimePrevidenciario==='rpps'?'RPPS (previdência própria)':'RGPS (INSS nacional)'}. Valores corrigidos até ${fmtDate(r.dataCorrecaoAte)}.</div>
+      <div class="hint" style="margin-bottom:8px;">${r.aplicouPrescricao===false ? 'Prescrição quinquenal NÃO aplicada (todos os meses entram no cálculo).' : `Data-limite de prescrição quinquenal: ${fmtDate(r.competenciaLimitePrescricao+'-01')}. Meses antes dessa data aparecem esmaecidos e zerados.`} Regime previdenciário usado: ${r.regimePrevidenciario==='rpps'?'RPPS (previdência própria)':'RGPS (INSS nacional)'}. Valores corrigidos até ${fmtDate(r.dataCorrecaoAte)}.</div>
       ${(r.avisos||[]).map(a=>`<div class="hint" style="background:#fff3cd; border:1px solid #ffe08a; padding:8px; border-radius:6px; margin-bottom:8px; color:#7a5c00;">⚠️ ${escapeHtml(a)}</div>`).join('')}
       <div style="overflow-x:auto;"><table><thead><tr><th>Competência</th><th>Base pago</th><th>Base devido / Gratificação</th><th>Diferença base</th>${nomesVerbas.map(n=>`<th>${escapeHtml(n)}</th>`).join('')}<th>Reflexo 13º</th><th>Reflexo 1/3 férias</th><th>Total nominal</th><th>Total corrigido</th></tr></thead><tbody>${linhasHtml}</tbody></table></div>
       <div class="panel" style="margin-top:14px;">
@@ -4156,7 +4577,8 @@ async function calcularRetroativoPccrUI(){
         <div class="irow" style="border-top:1px solid var(--line); padding-top:6px; margin-top:6px;"><span>Valor total devido (C), corrigido até ${fmtDate(r.dataCorrecaoAte)}</span><strong style="color:var(--gold-dark); font-size:18px;">${fmtMoney(r.resumo.totalCCorrigido)}</strong></div>
       </div>
       <button class="btn btn-gold" style="margin-top:14px;" onclick="gerarDocumentoPccr()">📄 Gerar documento (Word, timbrado)</button>
-      <div id="pccr-doc-status" style="margin-top:8px;"></div>`;
+      <div id="pccr-doc-status" style="margin-top:8px;"></div>
+      ${renderMemoriaCorrecaoHtml(r.memoriaCorrecao, 'pccr')}`;
   }catch(e){ box.innerHTML = `<div class="empty">${escapeHtml(e.message||'Não foi possível calcular.')}</div>`; }
 }
 let PCCR_ULTIMO_CALCULO = null;

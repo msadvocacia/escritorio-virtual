@@ -4,8 +4,10 @@ const { calcularCorrecao, mesesEntre } = require('../utils/correcaoMonetaria');
 const { calcularSalarioBeneficio, calcularRMIRegraPermanente } = require('../utils/calculoPrevidenciario');
 const { obterParametrosCalculo, salvarParametrosCalculo } = require('../utils/parametrosCalculo');
 const { calcularRetroativoPccr } = require('../utils/calculoRetroativoPccr');
+const { calcularAposentadoria } = require('../utils/calculoAposentadoria');
+const { testarIndices } = require('../utils/indices');
 const multer = require('multer');
-const { extrairTextoPdf, extrairTabelasPdf, linhasDeTextoTabulado, linhasDeTextoEspacado, pdfPareceEscaneado, parseFichaFinanceiraDeTabelas, parseTabelaNiveis, parseTabelaNiveisDeTabelas, parseContrachequeDeTabelas } = require('../utils/leituraFichaFinanceira');
+const { extrairTextoPdf, extrairTabelasPdf, linhasDeTextoTabulado, linhasDeTextoEspacado, pdfPareceEscaneado, parseFichaFinanceiraDeTabelas, parseFichaFinanceiraDeTexto, parseTabelaNiveis, parseTabelaNiveisDeTabelas, parseContrachequeDeTabelas } = require('../utils/leituraFichaFinanceira');
 
 // Tenta a extração por tabela detectada primeiro (mais confiável quando o PDF
 // tem linhas de grade); se nenhuma tabela for reconhecida (comum em recibos
@@ -351,6 +353,26 @@ router.post('/retroativo-pccr', async (req, res) => {
   }
 });
 
+// Teste de conexão com o Banco Central: consulta agora cada série usada nos
+// cálculos e informa o último mês disponível (não usa cache).
+router.get('/indices/testar', async (req, res) => {
+  try {
+    res.json(await testarIndices());
+  } catch (e) {
+    res.status(500).json({ erro: e.message || 'Não foi possível testar os índices.' });
+  }
+});
+
+// Aposentadoria (abono de permanência devido e/ou aposentadoria devida e não implantada)
+router.post('/aposentadoria', async (req, res) => {
+  try {
+    const resultado = await calcularAposentadoria(req.body || {});
+    res.json(resultado);
+  } catch (e) {
+    res.status(400).json({ erro: e.message || 'Não foi possível calcular.' });
+  }
+});
+
 // Importação de PDF da ficha financeira — processado só em memória, nunca
 // salvo em disco ou no banco. Devolve uma lista de meses PRÉ-PREENCHIDA, para
 // revisão manual antes de calcular (nunca calcula direto do PDF).
@@ -363,11 +385,26 @@ router.post('/retroativo-pccr/importar-ficha', uploadPdf.single('arquivo'), asyn
         erro: 'Este PDF parece ser escaneado (imagem, sem texto por trás) — não é possível ler automaticamente neste servidor. Use uma exportação em PDF gerada direto pelo sistema de folha (com texto selecionável), ou preencha os meses manualmente.',
       });
     }
-    const meses = parseFichaFinanceiraDeTabelas(await obterLinhasParaLeitura(req.file.buffer, texto));
+    // 1º: leitura pelo texto da "Ficha Financeira Completa" (formato do sistema de gestão de pessoas),
+    // que traz todas as rubricas mês a mês. 2º (outros formatos): leitura por tabela detectada.
+    const lidaPorTexto = parseFichaFinanceiraDeTexto(texto);
+    const meses = lidaPorTexto && lidaPorTexto.meses.length
+      ? lidaPorTexto.meses
+      : parseFichaFinanceiraDeTabelas(await obterLinhasParaLeitura(req.file.buffer, texto));
+    const cabecalho = lidaPorTexto && lidaPorTexto.meses.length ? lidaPorTexto.cabecalho : null;
     if (!meses.length) {
       return res.status(422).json({ erro: 'Não consegui reconhecer o formato desta ficha financeira. Preencha os meses manualmente, ou peça para eu ajustar a leitura para o formato do seu sistema.' });
     }
-    res.json({ meses, aviso: 'Confira e corrija os valores abaixo antes de calcular — a leitura automática é um ponto de partida, não um resultado final.' });
+    // Conferência: se a soma das rubricas lidas não bate com o total impresso na ficha, alguma rubrica ficou de fora.
+    const mesesComDiferenca = meses.filter((m) => m.conferencia && (m.conferencia.proventos === false || m.conferencia.descontos === false)).map((m) => m.competencia);
+    res.json({
+      meses,
+      cabecalho,
+      mesesSemBase: lidaPorTexto ? lidaPorTexto.mesesSemBase : [],
+      rubricasNaoAlinhadas: lidaPorTexto ? lidaPorTexto.rubricasNaoAlinhadas : [],
+      mesesComDiferenca,
+      aviso: 'Confira e corrija os valores abaixo antes de calcular — a leitura automática é um ponto de partida, não um resultado final.',
+    });
   } catch (e) {
     res.status(400).json({ erro: 'Não foi possível ler este PDF: ' + (e.message || 'erro desconhecido.') });
   }

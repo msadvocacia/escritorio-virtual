@@ -1,4 +1,4 @@
-const { buscarIndiceComCache } = require('./indices');
+const { buscarIndiceComMeta } = require('./indices');
 
 /*
   Motor único de correção monetária e juros de mora — usado por todos os
@@ -74,11 +74,12 @@ async function calcularCorrecao(valorBase, dataInicial, dataFinal, indice, juros
   }
 
   const nomeIndiceBusca = indice === 'SELIC' ? 'SELIC_ACUMULADA_MES' : indice;
-  const serie = await buscarIndiceComCache(nomeIndiceBusca, dataInicial, dataFinal);
+  const { serie, meta } = await buscarIndiceComMeta(nomeIndiceBusca, dataInicial, dataFinal);
   const mesesUsados = pesosPorMes(serie, dataInicial, dataFinal, proRata);
 
   let fator = 1;
-  mesesUsados.forEach((m) => { fator *= (1 + ((m.valor || 0) / 100) * m.peso); });
+  const fatoresAcumulados = [];
+  mesesUsados.forEach((m) => { fator *= (1 + ((m.valor || 0) / 100) * m.peso); fatoresAcumulados.push(fator); });
 
   const valorCorrigido = valorBase * fator;
 
@@ -102,6 +103,9 @@ async function calcularCorrecao(valorBase, dataInicial, dataFinal, indice, juros
     valorJuros,
     valorFinal: valorCorrigido + valorJuros,
     mesesUsados: mesesUsados.map((m) => ({ mes: m.data, indice: m.valor, peso: m.peso })),
+    // Trilha de auditoria (acrescentada; não altera nenhum valor calculado)
+    fonte: meta,
+    mesesAuditoria: mesesUsados.map((m, i) => ({ mes: m.data, indice: m.valor, peso: m.peso, fatorAcumulado: fatoresAcumulados[i] })),
   };
 }
 
@@ -136,29 +140,46 @@ const DATA_LIMITE_SELIC_PURA = '2024-08-29';
 const DATA_INICIO_LEI_14905 = '2024-08-30';
 
 async function calcularJurosSimplesPorSerie(nomeIndice, valorCorrigidoBase, dataInicial, dataFinal) {
-  const serie = await buscarIndiceComCache(nomeIndice, dataInicial, dataFinal);
+  const { serie, meta } = await buscarIndiceComMeta(nomeIndice, dataInicial, dataFinal);
   const mesesUsados = pesosPorMes(serie, dataInicial, dataFinal, true);
   let total = 0;
-  mesesUsados.forEach((m) => { total += valorCorrigidoBase * ((m.valor || 0) / 100) * m.peso; });
-  return { total, mesesUsados: mesesUsados.map((m) => ({ mes: m.data, indice: m.valor, peso: m.peso })) };
+  let percentualAcumulado = 0;
+  mesesUsados.forEach((m) => { total += valorCorrigidoBase * ((m.valor || 0) / 100) * m.peso; percentualAcumulado += (m.valor || 0) * m.peso; });
+  return {
+    total,
+    mesesUsados: mesesUsados.map((m) => ({ mes: m.data, indice: m.valor, peso: m.peso })),
+    fonte: meta, percentualAcumulado,
+  };
 }
 
 async function aplicarFase(valor, regime, dataInicial, dataFinal) {
   if (regime === 'selic') {
     const r = await calcularCorrecao(valor, dataInicial, dataFinal, 'SELIC', { tipo: 'nenhum' }, true);
-    return { valorFinal: r.valorFinal, detalhe: { regime: 'Selic acumulada mensalmente (Art. 3º da EC nº 113/2021)', de: dataInicial, ate: dataFinal, valorInicial: valor, valorFinal: r.valorFinal, mesesUsados: r.mesesUsados } };
+    return { valorFinal: r.valorFinal, detalhe: { regime: 'Selic acumulada mensalmente (Art. 3º da EC nº 113/2021)', de: dataInicial, ate: dataFinal, valorInicial: valor, valorFinal: r.valorFinal, mesesUsados: r.mesesUsados,
+      fatorCorrecao: r.fatorCorrecao, jurosPercentual: 0,
+      series: [{ papel: 'correção e juros (Selic embute ambos)', indice: 'SELIC_ACUMULADA_MES', fonte: r.fonte, meses: r.mesesAuditoria }] } };
   }
   if (regime === 'ipca-e+poupanca') {
     const rCorr = await calcularCorrecao(valor, dataInicial, dataFinal, 'IPCA-E', { tipo: 'nenhum' }, true);
     const rJuros = await calcularJurosSimplesPorSerie('POUPANCA', rCorr.valorCorrigido, dataInicial, dataFinal);
     const valorFinal = rCorr.valorCorrigido + rJuros.total;
-    return { valorFinal, detalhe: { regime: 'IPCA-E (correção) + juros de mora simples pela poupança', de: dataInicial, ate: dataFinal, valorInicial: valor, valorCorrigido: rCorr.valorCorrigido, juros: rJuros.total, valorFinal, mesesUsados: rCorr.mesesUsados } };
+    return { valorFinal, detalhe: { regime: 'IPCA-E (correção) + juros de mora simples pela poupança', de: dataInicial, ate: dataFinal, valorInicial: valor, valorCorrigido: rCorr.valorCorrigido, juros: rJuros.total, valorFinal, mesesUsados: rCorr.mesesUsados,
+      fatorCorrecao: rCorr.fatorCorrecao, jurosPercentual: rJuros.percentualAcumulado,
+      series: [
+        { papel: 'correção monetária', indice: 'IPCA-E', fonte: rCorr.fonte, meses: rCorr.mesesAuditoria },
+        { papel: 'juros de mora (simples)', indice: 'POUPANCA', fonte: rJuros.fonte, meses: rJuros.mesesUsados },
+      ] } };
   }
   // ipca-e+taxalegal — Lei 14.905/2024, com o índice de correção que a sentença do caso determinar (IPCA-E aqui)
   const rCorr = await calcularCorrecao(valor, dataInicial, dataFinal, 'IPCA-E', { tipo: 'nenhum' }, true);
   const rJuros = await calcularJurosSimplesPorSerie('TAXA_LEGAL', rCorr.valorCorrigido, dataInicial, dataFinal);
   const valorFinal = rCorr.valorCorrigido + rJuros.total;
-  return { valorFinal, detalhe: { regime: 'IPCA-E (correção) + Taxa Legal de juros (Selic − IPCA-15, art. 406 do CC, Lei nº 14.905/2024)', de: dataInicial, ate: dataFinal, valorInicial: valor, valorCorrigido: rCorr.valorCorrigido, juros: rJuros.total, valorFinal, mesesUsados: rJuros.mesesUsados } };
+  return { valorFinal, detalhe: { regime: 'IPCA-E (correção) + Taxa Legal de juros (Selic − IPCA-15, art. 406 do CC, Lei nº 14.905/2024)', de: dataInicial, ate: dataFinal, valorInicial: valor, valorCorrigido: rCorr.valorCorrigido, juros: rJuros.total, valorFinal, mesesUsados: rJuros.mesesUsados,
+    fatorCorrecao: rCorr.fatorCorrecao, jurosPercentual: rJuros.percentualAcumulado,
+    series: [
+      { papel: 'correção monetária', indice: 'IPCA-E', fonte: rCorr.fonte, meses: rCorr.mesesAuditoria },
+      { papel: 'juros de mora (simples)', indice: 'TAXA_LEGAL', fonte: rJuros.fonte, meses: rJuros.mesesUsados },
+    ] } };
 }
 
 function dividirEmRegimes(dataInicial, dataFinal) {

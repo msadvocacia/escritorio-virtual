@@ -1,5 +1,6 @@
 const { calcularInssProgressivo, obterParametrosCalculo, obterAliquotaRpps, obterAliquotaPatronalRpps } = require('./parametrosCalculo');
 const { calcularCorrecaoComTransicaoSelic } = require('./correcaoMonetaria');
+const { montarMemoriaCorrecao } = require('./memoriaCalculo');
 
 /*
   Módulo de retroativos de Plano de Cargos e Salários (PCCR) — duas modalidades:
@@ -96,9 +97,11 @@ function calcularBaseEAnuenioAutomatico(config, competencia) {
   return { basePago, baseDevido, anuenioPercentual };
 }
 
-async function calcularRetroativoPccr({ modalidade, dataProtocolo, meses, irrfAtivo, irrfPercentual, contribuicaoPatronalPercentual, regimePrevidenciario, dataAtualizacao, configSalarial }) {
+async function calcularRetroativoPccr({ modalidade, dataProtocolo, aplicarPrescricao, meses, irrfAtivo, irrfPercentual, contribuicaoPatronalPercentual, regimePrevidenciario, dataAtualizacao, configSalarial }) {
   if (!['nivel', 'gratificacao'].includes(modalidade)) throw new Error('Modalidade inválida.');
-  if (!dataProtocolo) throw new Error('Informe a data de protocolo do processo administrativo.');
+  // Prescrição quinquenal é opcional (padrão: aplicada). Sem prescrição, a data de protocolo não é necessária.
+  const comPrescricao = aplicarPrescricao !== false;
+  if (comPrescricao && !dataProtocolo) throw new Error('Informe a data de protocolo do processo administrativo (ou desative a prescrição quinquenal).');
   if (!Array.isArray(meses) || !meses.length) throw new Error('Informe ao menos um mês.');
   const regime = regimePrevidenciario === 'rpps' ? 'rpps' : 'rgps';
   // A correção para no último mês JÁ FECHADO antes da data informada — o mês
@@ -109,11 +112,11 @@ async function calcularRetroativoPccr({ modalidade, dataProtocolo, meses, irrfAt
   const params = await obterParametrosCalculo();
 
   // Prescrição quinquenal (Decreto 20.910/32): corta tudo antes de (protocolo - 5 anos).
-  const competenciaLimite = competenciaAnterior(dataProtocolo.slice(0, 7), 60);
+  const competenciaLimite = comPrescricao ? competenciaAnterior(dataProtocolo.slice(0, 7), 60) : null;
 
   const linhas = [];
   for (const m of meses) {
-    const cortadoPorPrescricao = m.competencia < competenciaLimite;
+    const cortadoPorPrescricao = comPrescricao && m.competencia < competenciaLimite;
     let valorBase = 0;
     let detalheVerbas = [];
 
@@ -269,13 +272,24 @@ async function calcularRetroativoPccr({ modalidade, dataProtocolo, meses, irrfAt
   avisos.push('Correção monetária automática, mês a mês, com pró-rata nominal nas pontas, em três regimes sucessivos: IPCA-E + juros de mora pela poupança até 08/12/2021; Selic acumulada de 09/12/2021 a 29/08/2024 (Art. 3º da EC nº 113/2021); IPCA-E + Taxa Legal (Selic − IPCA-15, nunca negativa) a partir de 30/08/2024 (arts. 389 e 406 do Código Civil, Lei nº 14.905/2024) — buscados ao vivo no Banco Central. A correção para no último mês já fechado antes da data de atualização (o mês corrente ainda não tem índice publicado). Os descontos de INSS/IRRF e a contribuição patronal continuam calculados sobre os valores NOMINAIS históricos.');
   avisos.push('A fase de correção monetária (IPCA-E) está confirmada exata contra um cálculo real já homologado. A fase de juros (Taxa Legal) foi testada contra o mesmo caso e ficou muito próxima, mas não bateu dígito a dígito — a diferença encontrada foi de cerca de 0,44% do valor total. Confira o resultado antes de protocolar, e me avise se conseguir a memória de cálculo detalhada do perito/calculista contrário para eu calibrar com precisão.');
 
+  const memoriaCorrecao = montarMemoriaCorrecao(
+      linhas.filter((l) => l.totalMes > 0 && !l.cortadoPorPrescricao).map((l) => ({
+        competencia: l.competencia, parte: modalidade === 'nivel' ? 'Diferença de nível' : 'Gratificação', valorNominal: l.totalMes, valorCorrigido: l.totalMesCorrigido, fases: l.fasesCorrecao,
+      })),
+      { dataCorrecaoAte, titulo: 'Memória de cálculo — Retroativos PCCR' }
+    );
+  // Os índices mês a mês ficam só na memória consolidada (evita repetir em cada linha)
+  linhas.forEach((l) => { l.fasesCorrecao = (l.fasesCorrecao || []).map(({ series, ...resto }) => resto); });
+
   return {
     modalidade,
     regimePrevidenciario: regime,
     competenciaLimitePrescricao: competenciaLimite,
+    aplicouPrescricao: comPrescricao,
     dataCorrecaoAte,
     linhas,
     avisos,
+    memoriaCorrecao,
     resumo: {
       subtotalSalarial, subtotalIndenizatorio, somaA, somaACorrigida, diferencaCorrecao,
       somaInss, irrfAtivo: !!irrfAtivo, somaIrrf, somaB,
