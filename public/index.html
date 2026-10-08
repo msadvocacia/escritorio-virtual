@@ -3017,12 +3017,21 @@ function formularioAposentadoria(cat){
       <div class="field-row3">
         <div class="field"><label>Data de protocolo${ajuda('A data em que o pedido administrativo (ou a ação judicial) foi protocolado. É a partir dela que o sistema calcula o corte de 5 anos (prescrição quinquenal), se a opção ao lado estiver marcada.')}</label><input type="date" id="apos-protocolo" value="${todayISO()}"></div>
         <div class="field"><label>Prescrição quinquenal${ajuda('Marcado: corta tudo anterior a 5 anos da data de protocolo (Decreto 20.910/32). Desmarcado: calcula todos os meses devidos, sem corte.')}</label><label style="font-weight:normal;"><input type="checkbox" id="apos-aplicar-prescricao" checked style="width:auto; margin-right:6px;"> Aplicar prescrição quinquenal</label></div>
-        <div class="field"><label>Atualizar o valor até${ajuda('Até quando trazer o valor devido a valor de hoje. Correção automática, mês a mês, em três regimes: IPCA-E + poupança até 08/12/2021; Selic pura de 09/12/2021 a 29/08/2024 (EC 113/2021); IPCA-E + Taxa Legal a partir de 30/08/2024 (Lei 14.905/2024) — buscados ao vivo no Banco Central.')}</label><input type="date" id="apos-data-atualizacao" value="${todayISO()}"></div>
+        <div class="field"><label>Atualizar o valor até${ajuda('Até quando trazer o valor devido a valor de hoje. Correção automática, mês a mês, com pró-rata nas pontas, pelo regime escolhido no campo "Regime de correção e juros" — índices buscados ao vivo no Banco Central.')}</label><input type="date" id="apos-data-atualizacao" value="${todayISO()}"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Regime de correção e juros${ajuda('Selic: IPCA-E + poupança até 08/12/2021 e Selic até a data de atualização (art. 3º da EC 113/2021; STF Tema 1.419) — regra geral para a Fazenda Pública. Taxa Legal: Selic até 29/08/2024 e IPCA-E + Taxa Legal depois — use só se a sentença do caso determinar assim.')}</label>
+          <select id="apos-regime-fazenda"><option value="selic" selected>Selic até a data de atualização (EC 113/2021; STF Tema 1.419)</option><option value="taxa-legal">Selic até 29/08/2024 e IPCA-E + Taxa Legal depois (conforme a sentença)</option></select></div>
       </div>
       <div class="field-row3">
         <div class="field" id="apos-box-abono"><label>Abono de permanência: devido desde${ajuda('A data em que o servidor passou a ter direito ao abono (quando completou os requisitos da aposentadoria voluntária e optou por permanecer). Não é preciso informar quando foi implantado — a ficha financeira já mostra os meses em que o abono foi pago, e o sistema só cobra a diferença.')}</label><input type="date" id="apos-devida-abono"></div>
         <div class="field" id="apos-box-apos"><label>Aposentadoria: devida desde${ajuda('A data em que a aposentadoria deveria ter sido implantada. O cálculo vai desta data até a data em "Devido até".')}</label><input type="date" id="apos-devida-aposentadoria"></div>
         <div class="field"><label>Devido até${ajuda('Último dia do período devido (normalmente a data do cálculo). Se a ficha financeira terminar antes desta data, os meses seguintes são projetados repetindo o último mês da ficha (opção abaixo).')}</label><input type="date" id="apos-data-fim" value="${todayISO()}"></div>
+      </div>
+      <div class="field-row3" id="apos-box-mora">
+        <div class="field"><label>Data do requerimento da aposentadoria${ajuda('Opcional. Data em que o servidor pediu a aposentadoria administrativamente. Usada, junto com o prazo ao lado, para preencher automaticamente "Aposentadoria: devida desde".')}</label><input type="date" id="apos-requerimento" onchange="aposCalcularInicioMora()"></div>
+        <div class="field"><label>Dias após o requerimento para iniciar a mora${ajuda('Opcional. A decisão do caso define esse prazo (ex.: o TJBA, na Apelação 8002431-20.2020.8.05.0141, adotou 180 dias por analogia ao prazo legal; outro juízo pode adotar prazo diferente, ou 0 para contar do próprio requerimento). Preenchido junto com a data do requerimento, o sistema calcula "Aposentadoria: devida desde" = requerimento + esses dias. Você pode ajustar a data manualmente depois.')}</label><input type="number" min="0" step="1" id="apos-dias-mora" placeholder="ex.: 180" oninput="aposCalcularInicioMora()"></div>
+        <div class="field"><label>Início da mora calculado</label><div id="apos-inicio-mora-txt" style="padding:8px 0; font-size:13px; color:#555;">—</div></div>
       </div>
     </fieldset>
     <fieldset style="margin-top:10px;"><legend>📎 Ficha financeira (PDF)${ajuda('Envia o PDF da ficha financeira (a "Ficha Financeira Completa"). O sistema lê todos os meses: salário-base, proventos (anuênio, insalubridade, gratificações, abono de permanência...) e retenções (fundo de previdência, IRRF), além do desconto sindical (SINDSMUJE). Os demais descontos (empréstimos, planos, cartões) não entram.')}</legend>
@@ -3071,6 +3080,7 @@ function mudarModalidadeAposentadoria(){
   mudarRegraAposentadoria();
   document.getElementById('apos-box-abono').style.display = comAbono? 'block':'none';
   document.getElementById('apos-box-apos').style.display = comApos? 'block':'none';
+  document.getElementById('apos-box-mora').style.display = comApos? 'grid':'none';
   document.getElementById('apos-opt-13abono').style.display = comAbono? 'block':'none';
   document.getElementById('apos-opt-13apos').style.display = comApos? 'block':'none';
   document.getElementById('apos-opt-abater').style.display = comApos? 'block':'none';
@@ -3120,6 +3130,18 @@ function renderMesesAposentadoria(){
   box.innerHTML = `<details><summary style="cursor:pointer; font-weight:600;">Ver o que foi lido da ficha (${APOS_MESES.length} meses)</summary><div style="max-height:360px; overflow:auto; margin-top:6px;">${APOS_MESES.map(m=>`<details style="margin:2px 0;"><summary style="cursor:pointer; font-size:13px;">${m.competencia} — base ${fmtMoney(m.basePago)}${m.baseVeioDeAfastamento?' (afastamento com direitos integrais)':''} · ${m.rubricas.length} lançamentos</summary>
     <table style="font-size:12px; margin:4px 0 8px 12px;"><thead><tr><th>Rubrica</th><th>Tipo</th><th>%</th><th>Valor</th></tr></thead><tbody>${m.rubricas.map(r=>`<tr><td>${escapeHtml(r.nome)}</td><td>${escapeHtml(r.grupo||(r.tipo==='desconto'?'Desconto':'Provento'))}</td><td>${r.percentual!=null? r.percentual+'%':'—'}</td><td>${fmtMoney(r.valor)}</td></tr>`).join('')}</tbody></table></details>`).join('')}</div></details>`;
 }
+function aposCalcularInicioMora(){
+  const req=document.getElementById('apos-requerimento').value;
+  const diasTxt=document.getElementById('apos-dias-mora').value;
+  const out=document.getElementById('apos-inicio-mora-txt');
+  if(!req || diasTxt===''){ out.textContent='—'; return; }
+  const dias=parseInt(diasTxt,10);
+  if(!(dias>=0)){ out.textContent='—'; return; }
+  const d=new Date(req+'T00:00:00Z'); d.setUTCDate(d.getUTCDate()+dias);
+  const iso=d.toISOString().slice(0,10);
+  document.getElementById('apos-devida-aposentadoria').value=iso;
+  out.textContent=fmtDate(iso)+' (requerimento + '+dias+' dias)';
+}
 async function calcularAposentadoriaUI(){
   if(!validarVinculoCalculo()) return;
   if(!APOS_MESES.length){ showToast('Importe a ficha financeira primeiro.'); return; }
@@ -3154,6 +3176,7 @@ async function calcularAposentadoriaUI(){
     irrfPercentual: parseFloat(document.getElementById('apos-irrf-percentual').value)||0,
     contribuicaoPatronalPercentual: patronalInput? parseFloat(patronalInput) : null,
     regimePrevidenciario: document.getElementById('apos-regime').value,
+    regimeFazenda: document.getElementById('apos-regime-fazenda').value,
   };
   const box = document.getElementById('apos-resultado');
   box.innerHTML = '<div class="empty">Calculando...</div>';
@@ -3192,8 +3215,21 @@ function renderMemoriaCorrecaoHtml(mem, tipo){
     <h4 style="margin:12px 0 4px;">Lançamento a lançamento</h4>
     <div style="overflow-x:auto; max-height:320px; overflow-y:auto;"><table><thead><tr><th>Competência</th><th>Parte</th><th>Valor nominal</th>${cabFases}<th>Fator global</th><th>Valor corrigido</th></tr></thead><tbody>${linhas}</tbody></table></div>
     <div class="irow" style="margin-top:6px;"><span>Total nominal / corrigido</span><strong>${fmtMoney(mem.totais.nominal)} → ${fmtMoney(mem.totais.corrigido)}</strong></div>
-  </details>
-  <button class="btn btn-dark" style="margin-top:10px;" onclick="baixarRelatorioAuditavel('${tipo}')">📑 Baixar relatório auditável (Word, timbrado)</button>`;
+  </details>`;
+}
+function botoesDocumentosCalculo(tipo){
+  const fn = tipo==='pccr' ? 'gerarDocumentoPccr()' : 'gerarDocumentoAposentadoria()';
+  return `<div style="display:flex; flex-wrap:wrap; gap:10px; margin-top:14px;">
+    <button class="btn btn-gold" onclick="${fn}">📄 Baixar o cálculo (para juntar ao processo)</button>
+    <button class="btn btn-dark" onclick="baixarRelatorioAuditavel('${tipo}')">📑 Baixar a memória de cálculo (auditável)</button>
+  </div>
+  <div class="hint" style="margin-top:6px;">O cálculo traz o resultado mês a mês e o resumo. A memória traz os índices, as fontes e o passo a passo da correção — pode ser entregue separadamente, se a outra parte pedir.</div>`;
+}
+function gerarDocumentoAposentadoria(){
+  if(!APOS_ULTIMO_CALCULO){ showToast('Calcule primeiro.'); return; }
+  const val = id=>{ const el=document.getElementById('apos-'+id); return el? el.value : ''; };
+  const cabecalho = { nome: val('nome'), matricula: val('matricula'), funcao: val('funcao'), processo: val('processo') };
+  baixarArquivoPost('/api/documentos/aposentadoria', { ...APOS_ULTIMO_CALCULO, cabecalho }, 'Calculo - Aposentadoria.docx');
 }
 function baixarRelatorioAuditavel(tipo){
   const base = tipo==='pccr' ? PCCR_ULTIMO_CALCULO : APOS_ULTIMO_CALCULO;
@@ -3246,6 +3282,7 @@ function renderResultadoAposentadoria(r){
     <h4 style="margin:10px 0 6px;">Resumo</h4>${resumoHtml}
     <h4 style="margin:14px 0 6px;">Mês a mês</h4>
     <div style="overflow-x:auto;"><table><thead><tr><th>Competência</th>${cabAb}${cabAp}</tr></thead><tbody>${linhasHtml}</tbody></table></div>
+    ${botoesDocumentosCalculo('aposentadoria')}
     ${renderMemoriaCorrecaoHtml(r.memoriaCorrecao, 'aposentadoria')}`;
 }
 
@@ -4083,7 +4120,9 @@ function formularioRetroativoPccr(cat){
         <div class="field"><label>Data de implantação${ajuda('A data em que o benefício (novo nível ou gratificação) passou a ser efetivamente pago no contracheque. Marca o fim do período retroativo.')}</label><input type="date" id="pccr-implantacao"></div>
       </div>
       <div class="field-row">
-        <div class="field"><label>Atualizar o valor até${ajuda('Até quando trazer o valor devido a valor de hoje. Correção automática, com pró-rata dia a dia nas pontas, em três regimes: IPCA-E + poupança até 08/12/2021; Selic pura de 09/12/2021 a 29/08/2024 (EC 113/2021); IPCA-E + Taxa Legal a partir de 30/08/2024 (Lei 14.905/2024) — buscados ao vivo no Banco Central.')}</label><input type="date" id="pccr-data-atualizacao" value="${todayISO()}"></div>
+        <div class="field"><label>Atualizar o valor até${ajuda('Até quando trazer o valor devido a valor de hoje. Correção automática, mês a mês, com pró-rata nas pontas, pelo regime escolhido no campo "Regime de correção e juros" — índices buscados ao vivo no Banco Central.')}</label><input type="date" id="pccr-data-atualizacao" value="${todayISO()}"></div>
+        <div class="field"><label>Regime de correção e juros${ajuda('Taxa Legal: IPCA-E + poupança até 08/12/2021; Selic até 29/08/2024; IPCA-E + Taxa Legal depois — use quando a sentença do caso determinar assim. Selic: IPCA-E + poupança até 08/12/2021 e Selic até a data de atualização (art. 3º da EC 113/2021; STF Tema 1.419) — regra geral para a Fazenda Pública. Confira sempre o que a sentença manda.')}</label>
+          <select id="pccr-regime-fazenda"><option value="taxa-legal" selected>Selic até 29/08/2024 e IPCA-E + Taxa Legal depois (conforme a sentença)</option><option value="selic">Selic até a data de atualização (EC 113/2021; STF Tema 1.419)</option></select></div>
       </div>
     </fieldset>
     <fieldset id="pccr-verbas-box" style="margin-top:10px;"><legend>Nomes das verbas percentuais incidentes sobre o base (ex: Anuênio, Insalubridade)${ajuda('Verbas que são calculadas como um percentual do salário-base (ex: anuênio 17%, insalubridade 20%). Quando o base muda (mudança de nível), essas verbas mudam junto, na mesma proporção — por isso o sistema calcula a diferença de cada uma automaticamente.')}</legend>
@@ -4529,7 +4568,7 @@ async function calcularRetroativoPccrUI(){
       anuenioTeto: parseFloat(document.getElementById('pccr-anuenio-teto').value) ?? 35,
     };
   }
-  const payload = { modalidade: PCCR_MODALIDADE, dataProtocolo, aplicarPrescricao, meses: PCCR_MESES, irrfAtivo, irrfPercentual, contribuicaoPatronalPercentual, regimePrevidenciario, dataAtualizacao, configSalarial };
+  const payload = { modalidade: PCCR_MODALIDADE, dataProtocolo, aplicarPrescricao, meses: PCCR_MESES, irrfAtivo, irrfPercentual, contribuicaoPatronalPercentual, regimePrevidenciario, dataAtualizacao, configSalarial, regimeFazenda: document.getElementById('pccr-regime-fazenda').value };
   try{
     const r = await apiFetch('/api/calculos/retroativo-pccr', { method:'POST', body: JSON.stringify(payload) });
     PCCR_ULTIMO_CALCULO = payload; // guarda para o botão de gerar documento
@@ -4561,7 +4600,7 @@ async function calcularRetroativoPccrUI(){
         <div class="irow"><span>Subtotal salarial</span><strong>${fmtMoney(r.resumo.subtotalSalarial)}</strong></div>
         <div class="irow"><span>Subtotal indenizatório (1/3 férias)</span><strong>${fmtMoney(r.resumo.subtotalIndenizatorio)}</strong></div>
         <div class="irow" style="border-top:1px solid var(--line); padding-top:6px;"><span>Soma nominal (A)</span><strong>${fmtMoney(r.resumo.somaA)}</strong></div>
-        <div class="irow"><span>Correção monetária (3 regimes, com pró-rata — ver aviso acima)</span><strong style="color:var(--success);">+ ${fmtMoney(r.resumo.diferencaCorrecao)}</strong></div>
+        <div class="irow"><span>Correção monetária e juros de mora (regime escolhido, com pró-rata — ver aviso acima)</span><strong style="color:var(--success);">+ ${fmtMoney(r.resumo.diferencaCorrecao)}</strong></div>
         <div class="irow"><span>Soma corrigida (A), até ${fmtDate(r.dataCorrecaoAte)}</span><strong>${fmtMoney(r.resumo.somaACorrigida)}</strong></div>
         <h4 style="margin-top:12px;">B — Descontos${ajuda('Calculados sobre os valores NOMINAIS históricos, como determina a legislação tributária.')}</h4>
         <div class="irow"><span>Desconto previdenciário (${r.regimePrevidenciario==='rpps'?'RPPS, alíquota fixa':'INSS, progressivo'} mês a mês)</span><strong>${fmtMoney(r.resumo.somaInss)}</strong></div>
@@ -4576,7 +4615,7 @@ async function calcularRetroativoPccrUI(){
         <div class="irow"><span>+ Contribuição previdenciária patronal (${r.resumo.percentualPatronal}%, nominal)</span><strong>${fmtMoney(r.resumo.contribuicaoPatronal)}</strong></div>
         <div class="irow" style="border-top:1px solid var(--line); padding-top:6px; margin-top:6px;"><span>Valor total devido (C), corrigido até ${fmtDate(r.dataCorrecaoAte)}</span><strong style="color:var(--gold-dark); font-size:18px;">${fmtMoney(r.resumo.totalCCorrigido)}</strong></div>
       </div>
-      <button class="btn btn-gold" style="margin-top:14px;" onclick="gerarDocumentoPccr()">📄 Gerar documento (Word, timbrado)</button>
+      ${botoesDocumentosCalculo('pccr')}
       <div id="pccr-doc-status" style="margin-top:8px;"></div>
       ${renderMemoriaCorrecaoHtml(r.memoriaCorrecao, 'pccr')}`;
   }catch(e){ box.innerHTML = `<div class="empty">${escapeHtml(e.message||'Não foi possível calcular.')}</div>`; }

@@ -63,7 +63,7 @@ function somaRubricas(lista, filtro) { return lista.filter(filtro).reduce((a, r)
 async function calcularAposentadoria({
   modalidade, dataProtocolo, aplicarPrescricao, meses,
   dataDevidaAposentadoria, dataDevidaAbono, dataFimPeriodo, dataAtualizacao,
-  composicaoBeneficio, incluir13Aposentadoria, incluir13Abono, abaterRemuneracao, projetarMeses,
+  regimeFazenda: regimeFazendaParam, composicaoBeneficio, incluir13Aposentadoria, incluir13Abono, abaterRemuneracao, projetarMeses,
   regraProvento, tcAnos, tcMeses, tcDias, tempoExigidoAnos, valorProventoInformado, proventoInformadoAcompanhaFicha,
   irrfAtivo, irrfPercentual, contribuicaoPatronalPercentual, regimePrevidenciario,
 }) {
@@ -76,6 +76,9 @@ async function calcularAposentadoria({
   const comPrescricao = aplicarPrescricao !== false;
   if (comPrescricao && !dataProtocolo) throw new Error('Informe a data de protocolo (ou desative a prescrição quinquenal).');
   const regime = regimePrevidenciario === 'rgps' ? 'rgps' : 'rpps'; // servidor com aposentadoria própria: RPPS é o padrão
+  // Regime de correção/juros contra a Fazenda Pública: padrão 'selic' (EC 113/2021, art. 3º; STF Tema 1.419);
+  // 'taxa-legal' = IPCA-E + Taxa Legal após 30/08/2024, só quando a sentença do caso determinar.
+  const regimeFazenda = regimeFazendaParam === 'taxa-legal' ? 'taxa-legal' : 'selic';
   const hoje = new Date().toISOString().slice(0, 10);
   const fimISO = dataFimPeriodo || hoje;
   const dataCorrecaoAte = ultimoDiaMesAnterior(dataAtualizacao || hoje);
@@ -184,7 +187,7 @@ async function calcularAposentadoria({
     const dataInicioCorrecao = `${comp}-${String(ultimoDia).padStart(2, '0')}`;
     const corrigir = async (valor, parte) => {
       if (!(valor > 0)) return valor || 0;
-      const r = await calcularCorrecaoComTransicaoSelic(valor, dataInicioCorrecao, dataCorrecaoAte);
+      const r = await calcularCorrecaoComTransicaoSelic(valor, dataInicioCorrecao, dataCorrecaoAte, { regimeFazenda });
       lancamentosAuditoria.push({ competencia: comp, parte, valorNominal: valor, valorCorrigido: round2(r.valorFinal), fases: r.fases });
       return r.valorFinal;
     };
@@ -278,11 +281,16 @@ async function calcularAposentadoria({
     const sobrepostos = linhas.filter((l) => l.abono && l.aposentadoria && l.abono.total > 0 && l.aposentadoria.total > 0).length;
     if (sobrepostos) avisos.push(`Abono de permanência e aposentadoria são, em regra, excludentes no mesmo mês (o abono só existe para quem permanece em atividade). ${sobrepostos} mês(es) têm valor devido nas duas modalidades — os resultados estão discriminados, mas confira se não há duplicidade na pretensão.`);
   }
-  avisos.push('Correção monetária automática, mês a mês, em três regimes sucessivos: IPCA-E + juros de mora pela poupança até 08/12/2021; Selic acumulada de 09/12/2021 a 29/08/2024 (art. 3º da EC 113/2021); IPCA-E + Taxa Legal (Selic − IPCA-15, nunca negativa) a partir de 30/08/2024 (arts. 389 e 406 do Código Civil, Lei 14.905/2024) — buscados ao vivo no Banco Central e parando no último mês fechado antes da data de atualização. Os descontos são calculados sobre os valores NOMINAIS. A fase de juros (Taxa Legal) é aproximada (ver aviso do módulo de Retroativos PCCR).');
+  if (regimeFazenda === 'selic') {
+    avisos.push('Correção monetária automática, mês a mês, buscada ao vivo no Banco Central: IPCA-E + juros de mora pela poupança até 08/12/2021 e, de 09/12/2021 até a data de atualização, Selic acumulada mensalmente (art. 3º da EC 113/2021; tese do STF no Tema 1.419 para qualquer condenação da Fazenda Pública), parando no último mês fechado antes da data de atualização. Os descontos são calculados sobre os valores NOMINAIS.');
+    if (dataCorrecaoAte > '2025-09-09') avisos.push('Atenção: a tese do STF sobre a Selic (Tema 1.419) foi limitada ao período de vigência da redação original do art. 3º da EC 113/2021, sem projeção automática para o regime da EC 136/2025 (IPCA + 2% a.a., limitado à Selic, previsto para requisitórios). Para os meses posteriores a 09/09/2025, ainda na fase anterior à expedição, o sistema segue aplicando a Selic; confira o que a sentença/decisão do caso determina para esse período.');
+  } else {
+    avisos.push('Correção monetária automática, mês a mês, em três regimes sucessivos: IPCA-E + juros de mora pela poupança até 08/12/2021; Selic acumulada de 09/12/2021 a 29/08/2024 (art. 3º da EC 113/2021); IPCA-E + Taxa Legal (Selic − IPCA-15, nunca negativa) a partir de 30/08/2024 (arts. 389 e 406 do Código Civil, Lei 14.905/2024) — regime a usar SOMENTE se a sentença/decisão do caso o determinar, pois para a Fazenda Pública a regra geral é a Selic (opção "Selic" no campo de regime). Buscados ao vivo no Banco Central e parando no último mês fechado antes da data de atualização. Os descontos são calculados sobre os valores NOMINAIS. A fase de juros (Taxa Legal) é aproximada (ver aviso do módulo de Retroativos PCCR).');
+  }
 
   return {
     modalidade, regraProvento: regra, fracaoProporcional: regra === 'proporcional' ? fracaoProporcional : null, regimePrevidenciario: regime, aplicouPrescricao: comPrescricao, competenciaLimitePrescricao: competenciaLimite,
-    dataCorrecaoAte, dataFimPeriodo: fimISO, linhas, avisos,
+    dataCorrecaoAte, dataFimPeriodo: fimISO, regimeFazenda, linhas, avisos,
     memoriaCorrecao: montarMemoriaCorrecao(lancamentosAuditoria, { dataCorrecaoAte, titulo: 'Memória de cálculo — Aposentadoria / Abono de permanência' }),
     resumo: { aposentadoria: resumoAposentadoria, abono: resumoAbono, total: resumoTotal },
   };

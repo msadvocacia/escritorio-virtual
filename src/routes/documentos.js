@@ -17,6 +17,15 @@ const router = express.Router();
 
 function todayISO() { return new Date().toISOString().slice(0, 10); }
 
+// Descrição, em uma frase, do regime de correção/juros efetivamente usado no cálculo.
+function textoRegimeCorrecao(resultado) {
+  const ate = resultado.dataCorrecaoAte.split('-').reverse().join('/');
+  if (resultado.regimeFazenda === 'selic') {
+    return `Valores atualizados monetariamente até ${ate}, mês a mês, com pró-rata nominal nas pontas: IPCA-E + juros de mora pela poupança até 08/12/2021 e, de 09/12/2021 até a data de atualização, Selic acumulada mensalmente (Art. 3º da EC nº 113/2021; tese fixada pelo STF no Tema 1.419).`;
+  }
+  return `Valores atualizados monetariamente até ${ate}, mês a mês, com pró-rata nominal nas pontas, em três regimes sucessivos: IPCA-E + juros de mora pela poupança até 08/12/2021; Selic acumulada de 09/12/2021 a 29/08/2024 (Art. 3º da EC nº 113/2021); IPCA-E + Taxa Legal (Selic − IPCA-15, nunca negativa) a partir de 30/08/2024 (arts. 389 e 406 do Código Civil, Lei nº 14.905/2024), conforme determinado na decisão do caso.`;
+}
+
 const MARCADOR_CORPO_VAZIO = '<w:p w:rsidR="00DB1E63" w:rsidRPr="00B565BB" w:rsidRDefault="00DB1E63" w:rsidP="00B565BB"><w:bookmarkStart w:id="0" w:name="_GoBack"/><w:bookmarkEnd w:id="0"/></w:p>';
 
 // Monta um .docx a partir do timbrado real (cabeçalho/rodapé/logo preservados),
@@ -509,7 +518,7 @@ router.post('/retroativo-pccr', requireAuth, requireRole('master', 'socio', 'ass
       D.blank(),
       D.paragraph(D.run('RESUMO DOS CÁLCULOS', { bold: true, sizeHalfPt: SZ_RESUMO + 2 }), { center: true, justify: false }),
       D.blank(),
-      D.paragraph(D.run(`Valores atualizados monetariamente até ${resultado.dataCorrecaoAte.split('-').reverse().join('/')}, mês a mês, com pró-rata nominal nas pontas, em três regimes sucessivos: IPCA-E + juros de mora pela poupança até 08/12/2021; Selic acumulada de 09/12/2021 a 29/08/2024 (Art. 3º da EC nº 113/2021); IPCA-E + Taxa Legal (Selic − IPCA-15, nunca negativa) a partir de 30/08/2024 (arts. 389 e 406 do Código Civil, Lei nº 14.905/2024).`, { sizeHalfPt: SZ_INFO, italic: true })),
+      D.paragraph(D.run(textoRegimeCorrecao(resultado), { sizeHalfPt: SZ_INFO, italic: true })),
       D.blank(),
       D.paragraph(D.run('A — PROVENTOS', { bold: true, sizeHalfPt: SZ_RESUMO })),
       D.paragraph([D.run('Subtotal de natureza salarial: ', { sizeHalfPt: SZ_RESUMO }), D.run(T.fmtMoney(resultado.resumo.subtotalSalarial), { bold: true, sizeHalfPt: SZ_RESUMO })]),
@@ -550,6 +559,97 @@ router.post('/retroativo-pccr', requireAuth, requireRole('master', 'socio', 'ass
   }
 });
 
+// Cálculo de Aposentadoria devida e/ou Abono de permanência — o documento para
+// juntar ao processo (resultado mês a mês + resumo). Os índices, as fontes e o
+// passo a passo da correção ficam num arquivo separado: o relatório auditável
+// (memória de cálculo), que pode ser entregue só se a outra parte pedir.
+router.post('/aposentadoria', requireAuth, requireRole('master', 'socio', 'associado'), async (req, res) => {
+  const { cabecalho, ...dadosCalculo } = req.body || {};
+  let r;
+  try {
+    r = await calcularAposentadoria(dadosCalculo);
+  } catch (e) {
+    return res.status(400).json({ erro: e.message || 'Não foi possível calcular.' });
+  }
+  const SZ = 15, SZ_INFO = 19, SZ_RESUMO = 22;
+  const cab = cabecalho || {};
+  const br = (iso) => (iso ? iso.split('-').reverse().join('/') : '');
+  const brMes = (m) => (m ? m.split('-').reverse().join('/') : '');
+  const ap = r.resumo.aposentadoria, ab = r.resumo.abono, tot = r.resumo.total;
+  const tituloModalidade = { aposentadoria: 'Aposentadoria devida e não implantada', abono: 'Abono de permanência devido', ambos: 'Aposentadoria devida e Abono de permanência (discriminados)' }[dadosCalculo.modalidade];
+
+  try {
+    const campo = (label, valor) => (valor ? [D.run(label, { bold: true, sizeHalfPt: SZ_INFO }), D.run(String(valor), { sizeHalfPt: SZ_INFO })] : '');
+    const gradeCab = D.grade([
+      [campo('Nome: ', cab.nome), campo('Matrícula: ', cab.matricula), campo('Função: ', cab.funcao)],
+      [campo('Processo: ', cab.processo), campo('Protocolo: ', br(dadosCalculo.dataProtocolo)), campo('Emitido em: ', T.fmtDateExtenso(todayISO()))],
+      [campo('Aposentadoria devida desde: ', ap ? br(dadosCalculo.dataDevidaAposentadoria) : ''), campo('Abono devido desde: ', ab ? br(dadosCalculo.dataDevidaAbono) : ''), campo('Atualizado até: ', br(r.dataCorrecaoAte))],
+    ], { largurasCm: [5.7, 5.7, 5.6] });
+
+    // Retrato (~17 cm úteis): uma tabela por verba, 6 colunas cada
+    const larg6 = [2.5, ...Array(5).fill(2.9)];
+    const cabAb = ['Competência', 'Abono devido', 'Abono pago (ficha)', 'Diferença', '13º abono', 'Abono corrigido'];
+    const cabAp = ['Competência', 'Provento devido', 'Abatimento', 'Devido no mês', '13º', 'Aposentadoria corrigida'];
+    const rotComp = (l) => brMes(l.competencia) + (l.cortadoPorPrescricao ? '*' : '') + (l.projetado ? ' (proj.)' : '');
+    const linhasAb = ab ? r.linhas.filter((l) => l.abono).map((l) => [rotComp(l), T.fmtNumero(l.abono.devido), T.fmtNumero(l.abono.pago), T.fmtNumero(l.abono.diferenca), l.abono.reflexo13 ? T.fmtNumero(l.abono.reflexo13) : '-', D.run(T.fmtNumero(l.abono.corrigido || 0), { bold: true, sizeHalfPt: SZ })]) : [];
+    const linhasAp = ap ? r.linhas.filter((l) => l.aposentadoria).map((l) => [rotComp(l), T.fmtNumero(l.aposentadoria.provento), l.aposentadoria.abatimento ? T.fmtNumero(l.aposentadoria.abatimento) : '-', T.fmtNumero(l.aposentadoria.devidoMes), l.aposentadoria.reflexo13 ? T.fmtNumero(l.aposentadoria.reflexo13) : '-', D.run(T.fmtNumero(l.aposentadoria.corrigido || 0), { bold: true, sizeHalfPt: SZ })]) : [];
+    const tabelasVerbas = [
+      ...(ap ? [D.paragraph(D.run('Aposentadoria devida', { bold: true, sizeHalfPt: SZ_INFO + 2 }), { justify: false }), D.tabela(cabAp, linhasAp, { largurasCm: larg6, sizeHalfPt: SZ, sizeHalfPtCabecalho: SZ }), D.blank()] : []),
+      ...(ab ? [D.paragraph(D.run('Abono de permanência', { bold: true, sizeHalfPt: SZ_INFO + 2 }), { justify: false }), D.tabela(cabAb, linhasAb, { largurasCm: larg6, sizeHalfPt: SZ, sizeHalfPtCabecalho: SZ }), D.blank()] : []),
+    ];
+
+    const blocoResumo = (titulo, x) => {
+      const par = (rot, val, forte) => D.paragraph([D.run(rot + ': ', { bold: !!forte, sizeHalfPt: SZ_RESUMO }), D.run(T.fmtMoney(val || 0), { bold: !!forte, sizeHalfPt: SZ_RESUMO })]);
+      return [
+        D.paragraph(D.run(titulo, { bold: true, sizeHalfPt: SZ_RESUMO + 2 })),
+        par('A — Valor devido (nominal)', x.somaA),
+        par('Correção monetária e juros de mora', x.diferencaCorrecao),
+        par('A — Valor devido, corrigido', x.somaACorrigida, true),
+        par('B — Contribuição previdenciária (nominal)', x.previdencia),
+        par('B — Contribuição sindical (nominal)', x.sindicato),
+        par('B — IRRF (nominal)', x.irrf),
+        par('Total de descontos (B)', x.somaB, true),
+        par('Valor líquido corrigido (A − B)', x.valorLiquidoCorrigido, true),
+        par('C — Contribuição patronal (nominal)', x.contribuicaoPatronal),
+        D.paragraph([D.run(`VALOR TOTAL DEVIDO (C), CORRIGIDO ATÉ ${br(r.dataCorrecaoAte)}: `, { bold: true, sizeHalfPt: SZ_RESUMO + 2 }), D.run(T.fmtMoney(x.totalCCorrigido || 0), { bold: true, sizeHalfPt: SZ_RESUMO + 2 })]),
+        D.blank(),
+      ];
+    };
+
+    const regraTxt = ap ? ({ integral: 'Regra do provento: integralidade e paridade (remuneração do cargo efetivo, acompanhando os reajustes dos servidores ativos). ', proporcional: `Regra do provento: proporcional ao tempo de contribuição (${((r.fracaoProporcional || 0) * 100).toFixed(2)}%). `, informado: 'Regra do provento: valor informado. ' }[r.regraProvento] || '') : '';
+    const prescTxt = r.aplicouPrescricao === false ? 'Cálculo realizado sem aplicação de prescrição quinquenal.' : `Data-limite de prescrição quinquenal: ${brMes(r.competenciaLimitePrescricao)}. Competências marcadas com "*" são anteriores a essa data e não entram no cálculo.`;
+
+    const corpo = [
+      D.paragraph(D.run('CÁLCULO — APOSENTADORIA / ABONO DE PERMANÊNCIA', { bold: true, sizeHalfPt: 26 }), { center: true, justify: false }),
+      D.paragraph(D.run(tituloModalidade, { bold: true, sizeHalfPt: SZ_INFO + 2 }), { center: true, justify: false }),
+      D.blank(),
+      gradeCab,
+      D.blank(),
+      D.paragraph(D.run(regraTxt + prescTxt, { sizeHalfPt: SZ_INFO, italic: true })),
+      D.blank(),
+      ...tabelasVerbas,
+      D.paragraph(D.run('RESUMO DOS CÁLCULOS', { bold: true, sizeHalfPt: SZ_RESUMO + 4 }), { center: true, justify: false }),
+      D.blank(),
+      D.paragraph(D.run(textoRegimeCorrecao(r), { sizeHalfPt: SZ_INFO, italic: true })),
+      D.blank(),
+      ...(ap ? blocoResumo('APOSENTADORIA DEVIDA', ap) : []),
+      ...(ab ? blocoResumo('ABONO DE PERMANÊNCIA', ab) : []),
+      ...(ap && ab ? blocoResumo('TOTAL GERAL (aposentadoria + abono)', tot) : []),
+      D.paragraph(D.run('Os índices, as fontes oficiais e o passo a passo da correção constam da memória de cálculo, em documento separado.', { sizeHalfPt: SZ_INFO, italic: true })),
+      D.blank(),
+      D.paragraph(D.run(`Jequié/BA, ${T.fmtDateExtenso(todayISO())}.`, { sizeHalfPt: SZ_RESUMO }), { indentCm: 2, justify: false }),
+    ].join('');
+
+    const buffer = gerarDocxComCorpo(corpo, { margemInferiorTwips: 1843 });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="Calculo Aposentadoria - ${(cab.nome || 'servidor').replace(/[^\w\- ]/g, '')}.docx"`);
+    res.send(buffer);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ erro: 'Não foi possível gerar o documento.' });
+  }
+});
+
 // Relatório auditável (memória de cálculo) — vale para Retroativos PCCR e
 // Aposentadoria. O cálculo é REFEITO no servidor com os mesmos dados (nunca
 // aceita valores prontos do navegador), para que o relatório e a impressão
@@ -576,15 +676,16 @@ router.post('/relatorio-auditavel', requireAuth, requireRole('master', 'socio', 
   const txt = (t, o = {}) => D.paragraph(D.run(t, { sizeHalfPt: SZ_TXT, ...o }));
   const campo = (label, valor) => (valor ? [D.run(label, { bold: true, sizeHalfPt: SZ_TXT }), D.run(String(valor), { sizeHalfPt: SZ_TXT })] : '');
 
-  // Avisos internos de cautela para o advogado (conferir lei municipal, calibragem da Taxa Legal)
-  // não vão para o relatório, que pode ser entregue à outra parte.
-  const avisosDoRelatorio = (resultado.avisos || []).filter((a) => !/0,44%|é aproximada|Confira o resultado antes de protocolar|CONFIRME|calibrar/i.test(a));
+  // O relatório pode ser entregue à outra parte: leva só avisos FACTUAIS sobre os dados (meses projetados;
+  // cache vencido e índice ainda não publicado vêm da própria memória). As cautelas internas para o
+  // advogado (conferir lei municipal, duplicidade de pretensão, abatimento, calibragem) ficam só na tela.
+  const avisosDoRelatorio = (resultado.avisos || []).filter((a) => /PROJETADOS/.test(a));
 
   try {
     const grade = D.grade([
       [campo('Nome: ', cab.nome), campo('Matrícula: ', cab.matricula), campo('Função: ', cab.funcao)],
       [campo('Processo: ', cab.processo), campo('Protocolo: ', br(dadosCalculo.dataProtocolo)), campo('Emitido em: ', brDataHora(new Date().toISOString()))],
-    ], { largurasCm: [8.5, 8.5, 8.5] });
+    ], { largurasCm: [5.7, 5.7, 5.6] });
 
     // 1. Resumo
     const R = resultado.resumo || {};
@@ -614,7 +715,7 @@ router.post('/relatorio-auditavel', requireAuth, requireRole('master', 'socio', 
     // 4. Tabela de índices: pares (mês / %) em 5 blocos por linha
     const blocosIndices = [];
     Object.entries(mem.tabelaIndices).forEach(([nome, lista]) => {
-      const POR_LINHA = 6;
+      const POR_LINHA = 4;
       const linhas = [];
       for (let i = 0; i < lista.length; i += POR_LINHA) {
         const fatia = lista.slice(i, i + POR_LINHA);
@@ -622,7 +723,7 @@ router.post('/relatorio-auditavel', requireAuth, requireRole('master', 'socio', 
         linhas.push(fatia.map((x) => (x ? `${brMes(x.mes)}: ${String(x.valor).replace('.', ',')}%` : '')));
       }
       blocosIndices.push(D.paragraph(D.run(`${nome} — ${(mem.fontes.find((f) => f.indice === nome) || {}).descricao || ''}`, { bold: true, sizeHalfPt: SZ_TXT }), { justify: false }));
-      blocosIndices.push(D.tabela(Array(POR_LINHA).fill('Mês: % no mês'), linhas, { largurasCm: Array(POR_LINHA).fill(4.2), sizeHalfPt: SZ, sizeHalfPtCabecalho: SZ }));
+      blocosIndices.push(D.tabela(Array(POR_LINHA).fill('Mês: % no mês'), linhas, { largurasCm: Array(POR_LINHA).fill(4.25), sizeHalfPt: SZ, sizeHalfPtCabecalho: SZ }));
       blocosIndices.push(D.blank());
     });
 
@@ -641,10 +742,10 @@ router.post('/relatorio-auditavel', requireAuth, requireRole('master', 'socio', 
       fmtFator(l.fatorGlobal), D.run(T.fmtNumero(l.valorCorrigido), { bold: true, sizeHalfPt: SZ }),
     ]);
     const largurasLanc = (() => {
-      const fixas = [1.9, 3.2, 2.2, 2.0, 2.4];
-      const restante = 25.5 - fixas.reduce((a, b) => a + b, 0);
-      const wf = Math.max(restante / Math.max(fasesUsadas.length, 1), 3);
-      return [1.9, 3.2, 2.2, ...fasesUsadas.map(() => wf), 2.0, 2.4];
+      const fixas = [1.7, 2.0, 2.0, 1.8, 2.0]; // competência, parte, nominal, fator global, corrigido
+      const restante = 17 - fixas.reduce((a, b) => a + b, 0);
+      const wf = restante / Math.max(fasesUsadas.length, 1);
+      return [1.7, 2.0, 2.0, ...fasesUsadas.map(() => wf), 1.8, 2.0];
     })();
 
     const corpo = [
@@ -654,7 +755,7 @@ router.post('/relatorio-auditavel', requireAuth, requireRole('master', 'socio', 
       grade,
       D.blank(),
       tit('1. Resultado'),
-      D.tabela(['Item', 'Valor'], linhasResumo, { largurasCm: [18, 7.5], sizeHalfPt: SZ_TXT }),
+      D.tabela(['Item', 'Valor'], linhasResumo, { largurasCm: [11.5, 5.5], sizeHalfPt: SZ_TXT }),
       D.blank(),
       tit('2. Parâmetros adotados'),
       txt(`Valores atualizados até ${br(mem.dataCorrecaoAte)} (último dia do último mês fechado anterior à data de atualização).` + (resultado.aplicouPrescricao === false ? ' Cálculo realizado sem aplicação de prescrição quinquenal.' : (resultado.competenciaLimitePrescricao ? ` Prescrição quinquenal aplicada: competências anteriores a ${brMes(resultado.competenciaLimitePrescricao)} não entram no cálculo.` : ''))),
@@ -665,7 +766,7 @@ router.post('/relatorio-auditavel', requireAuth, requireRole('master', 'socio', 
       ...mem.convencoes.map((c) => D.paragraph(D.run('• ' + c, { sizeHalfPt: SZ_TXT }))),
       D.blank(),
       tit('4. Fontes oficiais dos índices'),
-      D.tabela(['Índice', 'Série SGS/BCB', 'Descrição', 'Origem da consulta', 'Consultado em'], linhasFontes, { largurasCm: [4.8, 2.3, 8.5, 6, 3.9], sizeHalfPt: SZ }),
+      D.tabela(['Índice', 'Série SGS/BCB', 'Descrição', 'Origem da consulta', 'Consultado em'], linhasFontes, { largurasCm: [2.6, 1.7, 5.6, 4.6, 2.5], sizeHalfPt: SZ }),
       txt('Endereço de consulta pública de cada série: https://api.bcb.gov.br/dados/serie/bcdata.sgs.{série}/dados?formato=json — qualquer das partes pode conferir os percentuais abaixo diretamente no Banco Central.', { italic: true }),
       D.blank(),
       tit('5. Índices mensais efetivamente utilizados'),
@@ -684,7 +785,7 @@ router.post('/relatorio-auditavel', requireAuth, requireRole('master', 'socio', 
       D.paragraph(D.run(`Jequié/BA, ${T.fmtDateExtenso(todayISO())}.`, { sizeHalfPt: SZ_TXT }), { indentCm: 2, justify: false }),
     ].join('');
 
-    const buffer = gerarDocxComCorpo(corpo, { margemInferiorTwips: 1843, paisagem: true });
+    const buffer = gerarDocxComCorpo(corpo, { margemInferiorTwips: 1843 });
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     res.setHeader('Content-Disposition', `attachment; filename="Relatorio Auditavel - ${(cab.nome || 'calculo').replace(/[^\w\- ]/g, '')}.docx"`);
     res.send(buffer);

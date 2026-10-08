@@ -23,10 +23,10 @@ const REGIMES = [
     baseLegal: 'Art. 1º-F da Lei 9.494/97 (redação da Lei 11.960/09), com a correção monetária pelo IPCA-E conforme decidido pelo STF no Tema 810 (RE 870.947) e adotado no Manual de Cálculos da Justiça Federal.' },
   { chave: 'selic', fase: '2ª fase', periodo: '09/12/2021 a 29/08/2024',
     regra: 'Selic acumulada mensalmente, aplicada isoladamente (a Selic já embute correção e juros).',
-    baseLegal: 'Art. 3º da Emenda Constitucional nº 113/2021.' },
+    baseLegal: 'Art. 3º da Emenda Constitucional nº 113/2021 (redação original), cuja aplicação a qualquer discussão ou condenação da Fazenda Pública foi fixada pelo STF no Tema 1.419 de repercussão geral (ARE 1.557.312/SP).' },
   { chave: 'ipca-e+taxalegal', fase: '3ª fase', periodo: 'a partir de 30/08/2024',
     regra: 'Correção monetária pelo IPCA-E e juros de mora simples pela Taxa Legal (Selic − IPCA-15, publicada pelo Banco Central).',
-    baseLegal: 'Arts. 389 e 406 do Código Civil, com a redação da Lei nº 14.905/2024; índice de correção conforme definido na decisão do caso.' },
+    baseLegal: 'Arts. 389 e 406 do Código Civil, com a redação da Lei nº 14.905/2024, aplicados por determinação da sentença/decisão do caso; índice de correção conforme definido nessa decisão.' },
 ];
 
 function nomeRegime(texto) {
@@ -49,6 +49,7 @@ function montarMemoriaCorrecao(lancamentos, { dataCorrecaoAte, titulo } = {}) {
   const regimesUsados = new Set();
   const avisos = [];
   const avisadosSemIndice = new Set();
+  let selicAteAtualizacao = false;
 
   let totalNominalCru = 0;
   let totalCorrigidoCru = 0;
@@ -56,6 +57,7 @@ function montarMemoriaCorrecao(lancamentos, { dataCorrecaoAte, titulo } = {}) {
     const fases = (l.fases || []).map((f) => {
       const chave = nomeRegime(f.regime);
       regimesUsados.add(chave);
+      if (chave === 'selic' && dataCorrecaoAte && f.ate === dataCorrecaoAte) selicAteAtualizacao = true;
       (f.series || []).forEach((s) => {
         // Último mês da correção sem índice publicado ainda? O motor só multiplica os
         // meses que existem na série; sem este aviso a correção ficaria menor sem ninguém notar.
@@ -123,7 +125,12 @@ function montarMemoriaCorrecao(lancamentos, { dataCorrecaoAte, titulo } = {}) {
     titulo: titulo || 'Memória de cálculo da correção monetária e juros',
     geradoEm: new Date().toISOString(),
     dataCorrecaoAte: dataCorrecaoAte || null,
-    metodologia: REGIMES.filter((r) => regimesUsados.has(r.chave)),
+    metodologia: REGIMES.filter((r) => regimesUsados.has(r.chave)).map((r) => {
+      if (r.chave === 'selic' && selicAteAtualizacao && dataCorrecaoAte) {
+        return { ...r, periodo: `09/12/2021 a ${dataCorrecaoAte.split('-').reverse().join('/')} (data da atualização)` };
+      }
+      return r;
+    }),
     convencoes: [
       'Cada valor devido é corrigido individualmente, a partir do último dia do mês de competência (data em que o salário/benefício se torna exigível), até o último dia do último mês fechado anterior à data de atualização.',
       'Pró-rata nominal nas pontas de cada fase: o primeiro mês entra com a fração dos dias restantes (a partir da data inicial, inclusive) e o último com a fração dos dias decorridos; os meses intermediários entram cheios. Fator de correção = produto de (1 + índice do mês × peso do mês).',

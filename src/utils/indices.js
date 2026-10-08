@@ -39,13 +39,47 @@ function formatarDataBR(iso) {
   return `${dia}/${mes}/${ano}`;
 }
 
-async function buscarSerieBruta(codigo, dataInicialISO, dataFinalISO) {
-  const url = `https://api.bcb.gov.br/dados/serie/bcdata.sgs.${codigo}/dados?formato=json&dataInicial=${formatarDataBR(dataInicialISO)}&dataFinal=${formatarDataBR(dataFinalISO)}`;
+async function consultarJanelaBCB(codigo, iniISO, fimISO) {
+  const url = `https://api.bcb.gov.br/dados/serie/bcdata.sgs.${codigo}/dados?formato=json&dataInicial=${formatarDataBR(iniISO)}&dataFinal=${formatarDataBR(fimISO)}`;
   const resp = await fetch(url);
   if (!resp.ok) {
     throw new Error(`Não foi possível consultar o índice no Banco Central agora (status ${resp.status}). Tente novamente em instantes.`);
   }
-  return resp.json(); // [{ data: "dd/mm/aaaa", valor: "0,53" }, ...]
+  const dados = await resp.json(); // esperado: [{ data: "dd/mm/aaaa", valor: "0,53" }, ...]
+  if (!Array.isArray(dados)) {
+    // O BCB responde 200 com um objeto de erro (ex.: janela de consulta acima do limite de 10 anos)
+    const msg = dados && (dados.error || dados.message || dados.erro) ? String(dados.error || dados.message || dados.erro).slice(0, 200) : 'resposta inesperada';
+    throw new Error(`O Banco Central não devolveu a série ${codigo} (${msg}). Tente novamente em instantes.`);
+  }
+  return dados;
+}
+
+// O SGS limita a janela de consulta (séries diárias aceitam no máximo 10 anos por pedido).
+// Por isso a busca é feita em janelas de até 9 anos, concatenadas.
+async function buscarSerieBruta(codigo, dataInicialISO, dataFinalISO) {
+  const janelas = [];
+  let ini = dataInicialISO;
+  while (ini <= dataFinalISO) {
+    const d = new Date(`${ini}T00:00:00Z`);
+    d.setUTCFullYear(d.getUTCFullYear() + 9);
+    d.setUTCDate(d.getUTCDate() - 1);
+    const fimJanela = d.toISOString().slice(0, 10);
+    const fim = fimJanela < dataFinalISO ? fimJanela : dataFinalISO;
+    janelas.push([ini, fim]);
+    const prox = new Date(`${fim}T00:00:00Z`); prox.setUTCDate(prox.getUTCDate() + 1);
+    ini = prox.toISOString().slice(0, 10);
+  }
+  const vistos = new Set();
+  const todos = [];
+  for (const [i, f] of janelas) {
+    let dados;
+    try { dados = await consultarJanelaBCB(codigo, i, f); }
+    catch (e) { dados = await consultarJanelaBCB(codigo, i, f); } // uma nova tentativa
+    for (const item of dados) {
+      if (!vistos.has(item.data)) { vistos.add(item.data); todos.push(item); }
+    }
+  }
+  return todos;
 }
 
 const DESCRICAO_SERIES = {
@@ -70,6 +104,63 @@ function converterSerie(bruto) {
   });
 }
 
+// Séries usadas pelos motores de correção (PCCR/Aposentadoria): são pequenas
+// (uma linha por mês) e cada cálculo precisa delas centenas de vezes, uma por
+// lançamento. Em vez de ir ao Banco Central a cada lançamento (o que levava
+// minutos), busca-se a série COMPLETA uma única vez, guarda-se em memória e no
+// MongoDB, e cada lançamento recebe a fatia correspondente — com exatamente a
+// mesma regra de datas da API do BCB (pontos datados no dia 1º de cada mês,
+// incluídos só se dataInicial <= dia 1º <= dataFinal), para não mudar nenhum valor.
+const SERIES_DOS_MOTORES = new Set(['IPCA-E', 'POUPANCA', 'TAXA_LEGAL', 'SELIC_ACUMULADA_MES']);
+const INICIO_SERIE_COMPLETA = '2000-01-01';
+const memoriaSeries = new Map(); // nome -> { quando, promessa }
+const TTL_MEMORIA_MS = 30 * 60 * 1000;
+
+function metaDe(nomeIndice, origem, quando) {
+  const codigo = SERIES[nomeIndice];
+  return {
+    indice: nomeIndice, serieBCB: codigo, descricao: DESCRICAO_SERIES[nomeIndice] || nomeIndice,
+    fonteUrl: urlSerie(codigo), origem, consultadoEm: new Date(quando).toISOString(),
+  };
+}
+
+async function carregarSerieCompleta(nomeIndice) {
+  const codigo = SERIES[nomeIndice];
+  const chave = `indice-completo:${nomeIndice}`;
+  const cacheDoc = await DataCollection.findOne({ name: chave });
+  const agora = Date.now();
+  if (cacheDoc && cacheDoc.updatedAt && Array.isArray(cacheDoc.data) && agora - new Date(cacheDoc.updatedAt).getTime() < 24 * 60 * 60 * 1000) {
+    return { serie: cacheDoc.data, meta: metaDe(nomeIndice, 'cache', cacheDoc.updatedAt) };
+  }
+  let bruto;
+  try {
+    const fim = new Date(agora + 60 * 86400000).toISOString().slice(0, 10); // inclui valores já publicados para o mês seguinte
+    bruto = await buscarSerieBruta(codigo, INICIO_SERIE_COMPLETA, fim);
+  } catch (erro) {
+    if (cacheDoc && Array.isArray(cacheDoc.data) && cacheDoc.data.length) {
+      return { serie: cacheDoc.data, meta: metaDe(nomeIndice, 'cache-vencido', cacheDoc.updatedAt || agora) };
+    }
+    throw erro;
+  }
+  const serie = converterSerie(bruto);
+  await DataCollection.findOneAndUpdate({ name: chave }, { $set: { data: serie } }, { upsert: true });
+  return { serie, meta: metaDe(nomeIndice, 'bcb', agora) };
+}
+
+function serieCompletaEmMemoria(nomeIndice) {
+  const agora = Date.now();
+  const guardada = memoriaSeries.get(nomeIndice);
+  if (guardada && agora - guardada.quando < TTL_MEMORIA_MS) return guardada.promessa;
+  const promessa = carregarSerieCompleta(nomeIndice);
+  memoriaSeries.set(nomeIndice, { quando: agora, promessa });
+  promessa.catch(() => { if (memoriaSeries.get(nomeIndice) && memoriaSeries.get(nomeIndice).promessa === promessa) memoriaSeries.delete(nomeIndice); });
+  return promessa;
+}
+
+function fatiar(serie, dataInicialISO, dataFinalISO) {
+  return serie.filter((m) => { const d = `${m.data}-01`; return d >= dataInicialISO && d <= dataFinalISO; });
+}
+
 /**
  * Busca (com cache de 24h no MongoDB) a série de um índice entre duas datas,
  * já convertida para { data: 'aaaa-mm', valor: number } por mês, e devolve
@@ -79,6 +170,16 @@ function converterSerie(bruto) {
 async function buscarIndiceComMeta(nomeIndice, dataInicialISO, dataFinalISO) {
   const codigo = SERIES[nomeIndice];
   if (!codigo) throw new Error(`Índice "${nomeIndice}" não suportado.`);
+
+  if (SERIES_DOS_MOTORES.has(nomeIndice) && dataInicialISO >= INICIO_SERIE_COMPLETA) {
+    try {
+      const { serie, meta } = await serieCompletaEmMemoria(nomeIndice);
+      return { serie: fatiar(serie, dataInicialISO, dataFinalISO), meta };
+    } catch (erroSerieCompleta) {
+      // Se a consulta da série completa falhar por qualquer motivo, cai no caminho
+      // antigo (consulta por intervalo), que já tem seu próprio tratamento de erro.
+    }
+  }
 
   const chave = `indice:${nomeIndice}:${dataInicialISO}:${dataFinalISO}`;
   const cacheDoc = await DataCollection.findOne({ name: chave });

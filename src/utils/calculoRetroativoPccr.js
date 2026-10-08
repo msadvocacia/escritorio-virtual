@@ -97,7 +97,10 @@ function calcularBaseEAnuenioAutomatico(config, competencia) {
   return { basePago, baseDevido, anuenioPercentual };
 }
 
-async function calcularRetroativoPccr({ modalidade, dataProtocolo, aplicarPrescricao, meses, irrfAtivo, irrfPercentual, contribuicaoPatronalPercentual, regimePrevidenciario, dataAtualizacao, configSalarial }) {
+async function calcularRetroativoPccr({ modalidade, dataProtocolo, aplicarPrescricao, meses, irrfAtivo, irrfPercentual, contribuicaoPatronalPercentual, regimePrevidenciario, dataAtualizacao, configSalarial, regimeFazenda: regimeFazendaParam }) {
+  // PCCR mantém como padrão o regime já validado em casos reais (Taxa Legal após 30/08/2024, conforme a sentença);
+  // 'selic' aplica a Selic até a data de atualização (EC 113/2021, art. 3º; STF Tema 1.419).
+  const regimeFazenda = regimeFazendaParam === 'selic' ? 'selic' : 'taxa-legal';
   if (!['nivel', 'gratificacao'].includes(modalidade)) throw new Error('Modalidade inválida.');
   // Prescrição quinquenal é opcional (padrão: aplicada). Sem prescrição, a data de protocolo não é necessária.
   const comPrescricao = aplicarPrescricao !== false;
@@ -182,7 +185,7 @@ async function calcularRetroativoPccr({ modalidade, dataProtocolo, aplicarPrescr
       const [anoComp, mesComp] = m.competencia.split('-').map(Number);
       const ultimoDiaCompetencia = new Date(anoComp, mesComp, 0).getDate();
       const dataInicioCorrecao = `${m.competencia}-${String(ultimoDiaCompetencia).padStart(2, '0')}`;
-      const rCorrecao = await calcularCorrecaoComTransicaoSelic(totalMes, dataInicioCorrecao, dataCorrecaoAte);
+      const rCorrecao = await calcularCorrecaoComTransicaoSelic(totalMes, dataInicioCorrecao, dataCorrecaoAte, { regimeFazenda });
       totalMesCorrigido = rCorrecao.valorFinal;
       fasesCorrecao = rCorrecao.fases;
     }
@@ -269,8 +272,13 @@ async function calcularRetroativoPccr({ modalidade, dataProtocolo, aplicarPrescr
   if (configSalarial?.anuenioAtivo) {
     avisos.push(`Anuênio calculado automaticamente (${configSalarial.anuenioPercentualPorAno ?? 1}% por ano completo de serviço, carência de ${configSalarial.anuenioCarenciaAnos ?? 5} anos, teto de ${configSalarial.anuenioTeto ?? 35}%) a partir da data de admissão informada — CONFIRME esses três números contra a lei municipal do caso antes de usar em petição, já que variam por município.`);
   }
-  avisos.push('Correção monetária automática, mês a mês, com pró-rata nominal nas pontas, em três regimes sucessivos: IPCA-E + juros de mora pela poupança até 08/12/2021; Selic acumulada de 09/12/2021 a 29/08/2024 (Art. 3º da EC nº 113/2021); IPCA-E + Taxa Legal (Selic − IPCA-15, nunca negativa) a partir de 30/08/2024 (arts. 389 e 406 do Código Civil, Lei nº 14.905/2024) — buscados ao vivo no Banco Central. A correção para no último mês já fechado antes da data de atualização (o mês corrente ainda não tem índice publicado). Os descontos de INSS/IRRF e a contribuição patronal continuam calculados sobre os valores NOMINAIS históricos.');
-  avisos.push('A fase de correção monetária (IPCA-E) está confirmada exata contra um cálculo real já homologado. A fase de juros (Taxa Legal) foi testada contra o mesmo caso e ficou muito próxima, mas não bateu dígito a dígito — a diferença encontrada foi de cerca de 0,44% do valor total. Confira o resultado antes de protocolar, e me avise se conseguir a memória de cálculo detalhada do perito/calculista contrário para eu calibrar com precisão.');
+  if (regimeFazenda === 'selic') {
+    avisos.push('Correção monetária automática, mês a mês, buscada ao vivo no Banco Central: IPCA-E + juros de mora pela poupança até 08/12/2021 e, de 09/12/2021 até a data de atualização, Selic acumulada mensalmente (art. 3º da EC 113/2021; tese do STF no Tema 1.419 para qualquer condenação da Fazenda Pública). A correção para no último mês já fechado antes da data de atualização. Os descontos de INSS/IRRF e a contribuição patronal continuam calculados sobre os valores NOMINAIS históricos.');
+    if (dataCorrecaoAte > '2025-09-09') avisos.push('Atenção: a tese do STF sobre a Selic (Tema 1.419) foi limitada ao período de vigência da redação original do art. 3º da EC 113/2021, sem projeção automática para o regime da EC 136/2025 (IPCA + 2% a.a., limitado à Selic, previsto para requisitórios). Para os meses posteriores a 09/09/2025, ainda na fase anterior à expedição, o sistema segue aplicando a Selic; confira o que a sentença/decisão do caso determina para esse período.');
+  } else {
+    avisos.push('Correção monetária automática, mês a mês, com pró-rata nominal nas pontas, em três regimes sucessivos: IPCA-E + juros de mora pela poupança até 08/12/2021; Selic acumulada de 09/12/2021 a 29/08/2024 (Art. 3º da EC nº 113/2021); IPCA-E + Taxa Legal (Selic − IPCA-15, nunca negativa) a partir de 30/08/2024 (arts. 389 e 406 do Código Civil, Lei nº 14.905/2024) — buscados ao vivo no Banco Central. Este regime (Taxa Legal) deve ser usado quando a sentença do caso o determinar; sem essa determinação, a regra geral para a Fazenda Pública é a Selic (campo de regime). A correção para no último mês já fechado antes da data de atualização (o mês corrente ainda não tem índice publicado). Os descontos de INSS/IRRF e a contribuição patronal continuam calculados sobre os valores NOMINAIS históricos.');
+    avisos.push('A fase de correção monetária (IPCA-E) está confirmada exata contra um cálculo real já homologado. A fase de juros (Taxa Legal) foi testada contra o mesmo caso e ficou muito próxima, mas não bateu dígito a dígito — a diferença encontrada foi de cerca de 0,44% do valor total. Confira o resultado antes de protocolar, e me avise se conseguir a memória de cálculo detalhada do perito/calculista contrário para eu calibrar com precisão.');
+  }
 
   const memoriaCorrecao = montarMemoriaCorrecao(
       linhas.filter((l) => l.totalMes > 0 && !l.cortadoPorPrescricao).map((l) => ({
@@ -287,6 +295,7 @@ async function calcularRetroativoPccr({ modalidade, dataProtocolo, aplicarPrescr
     competenciaLimitePrescricao: competenciaLimite,
     aplicouPrescricao: comPrescricao,
     dataCorrecaoAte,
+    regimeFazenda,
     linhas,
     avisos,
     memoriaCorrecao,

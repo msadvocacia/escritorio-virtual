@@ -182,8 +182,16 @@ async function aplicarFase(valor, regime, dataInicial, dataFinal) {
     ] } };
 }
 
-function dividirEmRegimes(dataInicial, dataFinal) {
-  const trechosPossiveis = [
+// regimeFazenda:
+//   'taxa-legal' (padrão, comportamento original): IPCA-E + poupança até 08/12/2021; Selic até 29/08/2024;
+//                IPCA-E + Taxa Legal depois — usado quando a sentença do caso assim determina.
+//   'selic': IPCA-E + poupança até 08/12/2021; Selic acumulada de 09/12/2021 até a data de
+//            atualização (art. 3º da EC 113/2021; tese do STF no Tema 1.419).
+function dividirEmRegimes(dataInicial, dataFinal, regimeFazenda = 'taxa-legal') {
+  const trechosPossiveis = regimeFazenda === 'selic' ? [
+    { regime: 'ipca-e+poupanca', de: dataInicial, ate: DATA_LIMITE_REGIME_ANTERIOR },
+    { regime: 'selic', de: DATA_INICIO_SELIC, ate: dataFinal },
+  ] : [
     { regime: 'ipca-e+poupanca', de: dataInicial, ate: DATA_LIMITE_REGIME_ANTERIOR },
     { regime: 'selic', de: DATA_INICIO_SELIC, ate: DATA_LIMITE_SELIC_PURA },
     { regime: 'ipca-e+taxalegal', de: DATA_INICIO_LEI_14905, ate: dataFinal },
@@ -193,9 +201,9 @@ function dividirEmRegimes(dataInicial, dataFinal) {
     .filter((t) => t.de <= t.ate);
 }
 
-async function calcularCorrecaoComTransicaoSelic(valorBase, dataInicial, dataFinal) {
+async function calcularCorrecaoComTransicaoSelic(valorBase, dataInicial, dataFinal, opcoes = {}) {
   if (!valorBase) return { valorBase: 0, valorFinal: 0, valorCorrecao: 0, regime: 'nenhum', fases: [] };
-  const trechos = dividirEmRegimes(dataInicial, dataFinal);
+  const trechos = dividirEmRegimes(dataInicial, dataFinal, opcoes.regimeFazenda === 'selic' ? 'selic' : 'taxa-legal');
   let valorCorrente = valorBase;
   const fases = [];
   for (const trecho of trechos) {
