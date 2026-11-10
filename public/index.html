@@ -2618,7 +2618,7 @@ function openHonorarioForm(id){
         const antiga = parcelasAntigas[i];
         data.parcelas.push({ id: antiga?.id || uid(), numero: i+1, vencimento, valor, status: antiga?.status || 'pendente', pagoEm: antiga?.pagoEm || null });
       }
-    } else { data.avistaStatus = document.getElementById('hf-avista-status').value; data.avistaPagoEm = data.avistaStatus==='pago'? ((h.avistaStatus==='pago' && h.avistaPagoEm) || todayISO()) : null; // editar um honorário já pago NÃO muda a data em que foi recebido data.parcelas=[]; }
+    } else { data.avistaStatus = document.getElementById('hf-avista-status').value; data.avistaPagoEm = data.avistaStatus==='pago'? ((h.avistaStatus==='pago' && h.avistaPagoEm) || todayISO()) : null; data.parcelas=[]; } // editar um honorário já pago NÃO muda a data em que foi recebido
     if(id){
       await persistMutation('honorarios', arr=>{ const alvo = arr.find(x=>x.id===id); if(alvo) Object.assign(alvo, data); return arr; });
     } else {
