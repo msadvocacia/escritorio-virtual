@@ -34,7 +34,7 @@ router.post('/', requireAuth, requireRole('master', 'socio', 'associado'), async
   const novoCliente = {
     id: uid(),
     nome: body.nome, nacionalidade: body.nacionalidade || 'Brasileira', estadoCivil: body.estadoCivil || 'solteiro(a)',
-    profissao: body.profissao || '', rg: body.rg || '', cpf,
+    profissao: body.profissao || '', rg: body.rg || '', cpf, dataNascimento: body.dataNascimento || '',
     cep: body.cep || '', logradouro: body.logradouro || '', numero: body.numero || '', complemento: body.complemento || '',
     bairro: body.bairro || '', cidade: body.cidade || '', uf: body.uf || '',
     telefoneFixo: body.telefoneFixo || '', celular: body.celular || '',
@@ -61,7 +61,7 @@ router.patch('/:id', requireAuth, requireRole('master', 'socio', 'associado'), a
   if (isAssociado(req.user) && cliente.vinculoId !== req.user.id) {
     return res.status(403).json({ erro: 'Você só pode editar seus próprios clientes.' });
   }
-  const campos = ['nome', 'nacionalidade', 'estadoCivil', 'profissao', 'rg', 'cep', 'logradouro', 'numero',
+  const campos = ['nome', 'nacionalidade', 'estadoCivil', 'profissao', 'rg', 'dataNascimento', 'cep', 'logradouro', 'numero',
     'complemento', 'bairro', 'cidade', 'uf', 'telefoneFixo', 'celular', 'obs'];
   campos.forEach((c) => { if (req.body[c] !== undefined) cliente[c] = req.body[c]; });
   if (req.body.vinculoId !== undefined && (isMaster(req.user) || isSocio(req.user))) {

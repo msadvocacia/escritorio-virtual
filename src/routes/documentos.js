@@ -143,7 +143,7 @@ router.post('/procuracao', requireAuth, requireRole('master', 'socio', 'associad
 });
 
 router.post('/contrato', requireAuth, requireRole('master', 'socio', 'associado'), async (req, res) => {
-  const { clienteId, advogadoIds, tipoProcesso, tipoValor, valor, percentual, parcelas, paragrafoMS } = req.body || {};
+  const { clienteId, advogadoIds, tipoProcesso, tipoValor, valor, percentual, parcelas, paragrafoMS, entrada, valoresParcelas } = req.body || {};
   if (!clienteId) return res.status(400).json({ erro: 'Informe o cliente.' });
 
   const carregado = await carregarClienteEAdvogados(req, res, clienteId, advogadoIds);
@@ -181,8 +181,31 @@ router.post('/contrato', requireAuth, requireRole('master', 'socio', 'associado'
     ];
   }
   const nParcelas = parseInt(parcelas, 10) || 1;
-  const runsDivisao = nParcelas > 1
-    ? [D.run(', dividido em '), D.run(`${nParcelas} (${T.numberToWordsPT(nParcelas)})`, { bold: true }), D.run(' parcelas')]
+  // "parcelas" é feminino: dois→duas, um→uma (incl. vinte e dois, trinta e um etc.)
+  const nParcelasExt = (n) => T.numberToWordsPT(n).replace(/\bdois\b/g, 'duas').replace(/\bum\b/g, 'uma').replace(/\bdois\b/g, 'duas');
+  // Entrada e/ou parcelas com valores definidos (só no valor fixo)
+  const valEntrada = tipoValor === 'percentual' ? 0 : (Math.round((parseFloat(entrada) || 0) * 100) / 100);
+  const valParcelas = tipoValor === 'percentual' || !Array.isArray(valoresParcelas) ? [] : valoresParcelas.map((x) => Math.round((parseFloat(x) || 0) * 100) / 100).filter((x) => x > 0);
+  const fmtVal = (v) => D.run(`R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${T.valorPorExtenso(v)})`, { bold: true });
+  const usarDetalhe = valParcelas.length > 0 && (valEntrada > 0 || valParcelas.length > 1);
+  let runsDivisaoDetalhada = null;
+  if (usarDetalhe) {
+    const iguais = valParcelas.every((x) => Math.abs(x - valParcelas[0]) < 0.005);
+    runsDivisaoDetalhada = [D.run(valEntrada > 0 ? ', sendo ' : ', ')];
+    if (valEntrada > 0) runsDivisaoDetalhada.push(fmtVal(valEntrada), D.run(' de entrada' + ' e '));
+    if (iguais) {
+      runsDivisaoDetalhada.push(
+        D.run(valEntrada > 0 ? 'o saldo em ' : 'dividido em '),
+        D.run(`${valParcelas.length} (${nParcelasExt(valParcelas.length)}) ${valParcelas.length === 1 ? 'parcela' : 'parcelas'}`, { bold: true }),
+        D.run(' de '), fmtVal(valParcelas[0]), D.run(valParcelas.length > 1 ? ' cada' : ''),
+      );
+    } else {
+      runsDivisaoDetalhada.push(D.run(valEntrada > 0 ? 'o saldo em ' : 'dividido em '), D.run(`${valParcelas.length} (${nParcelasExt(valParcelas.length)}) parcelas`, { bold: true }), D.run(', nos valores de '));
+      valParcelas.forEach((x, i) => { if (i) runsDivisaoDetalhada.push(D.run('; ')); runsDivisaoDetalhada.push(D.run(`${i + 1}ª `), fmtVal(x)); });
+    }
+  }
+  const runsDivisao = runsDivisaoDetalhada ? runsDivisaoDetalhada : nParcelas > 1
+    ? [D.run(', dividido em '), D.run(`${nParcelas} (${nParcelasExt(nParcelas)})`, { bold: true }), D.run(' parcelas')]
     : [D.run(tipoValor === 'percentual' ? ', a ser paga ao final' : ', a ser paga à vista')];
 
   const TERMOS_DESTAQUE = ['O ADVOGADO', 'ADVOGADO', 'OUTORGANTE', 'CONTRATANTE', 'CONTRATADOS', 'CONTRATADO', tipoProcessoUpper];
@@ -368,7 +391,7 @@ router.post('/relatorio', requireAuth, async (req, res) => {
     ];
     honorarios.filter((h) => F.idsProfissionais(h).length).forEach((h) => {
       F.idsProfissionais(h).forEach((id) => {
-        const valorNum = F.parteDoProfissional(h, id);
+        const valorNum = F.parteDoProfissional(h, id, usuarios);
         linhasTabela.push({
           cliente: nomeCli(h.clienteId), profissional: nomeAdv(id),
           valor: T.fmtMoney(valorNum), valorNum, confirmado: h.repasseStatus === 'confirmado',
@@ -377,7 +400,7 @@ router.post('/relatorio', requireAuth, async (req, res) => {
     });
   } else {
     const meusHonorarios = honorarios.filter((h) => F.idsProfissionais(h).includes(req.user.id));
-    const t = F.totaisAssociado(meusHonorarios, req.user.id);
+    const t = F.totaisAssociado(meusHonorarios, req.user.id, usuarios);
     campos = [
       { label: 'TOTAL DOS CONTRATOS FECHADOS', valor: T.fmtMoney(t.totalContrato) },
       { label: 'RECEBIDO DOS CLIENTES', valor: T.fmtMoney(t.totalRecebidoCliente) },
@@ -385,7 +408,7 @@ router.post('/relatorio', requireAuth, async (req, res) => {
       { label: 'SUA PARTE AGUARDANDO REPASSE', valor: T.fmtMoney(t.minhaParteAguardando) },
     ];
     meusHonorarios.forEach((h) => {
-      const valorNum = F.parteDoProfissional(h, req.user.id);
+      const valorNum = F.parteDoProfissional(h, req.user.id, usuarios);
       linhasTabela.push({
         cliente: nomeCli(h.clienteId), profissional: nomeAdv(req.user.id),
         valor: T.fmtMoney(valorNum), valorNum, confirmado: h.repasseStatus === 'confirmado',

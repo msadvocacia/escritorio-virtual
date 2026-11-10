@@ -97,7 +97,31 @@ function mergeCollection(name, existentes, recebidos, user, ctx) {
   const mantidos = existentes.filter((r) => !dono(r)); // tudo que NÃO é do usuário, intocado
   const doUsuario = recebidos.filter((r) => dono(r) && idsRecebidosPermitidos.has(r.id));
 
-  return [...mantidos, ...doUsuario];
+  let resultado = [...mantidos, ...doUsuario];
+
+  // Honorários que o usuário VÊ mas que a regra de posse acima não libera para edição completa
+  // (ex.: o associado está no honorário, mas nenhum sócio foi vinculado a ele): ele ainda pode
+  // marcar pago/pendente. Só os campos de pagamento são aceitos; o resto do registro fica intacto.
+  if (name === 'honorarios' && isAssociado(user)) {
+    const CAMPOS_PAGAMENTO = ['avistaStatus', 'avistaPagoEm'];
+    const ve = (h) => (ctx.clientesIds || []).includes(h.clienteId) || idsProfissionaisDoRegistro(h).includes(user.id);
+    const recebidosPorId = new Map(recebidos.map((r) => [r.id, r]));
+    resultado = resultado.map((atual) => {
+      if (dono(atual) || !ve(atual)) return atual;
+      const novo = recebidosPorId.get(atual.id);
+      if (!novo) return atual;
+      const atualizado = { ...atual };
+      CAMPOS_PAGAMENTO.forEach((c) => { if (c in novo) atualizado[c] = novo[c]; });
+      if (Array.isArray(atual.parcelas) && Array.isArray(novo.parcelas)) {
+        atualizado.parcelas = atual.parcelas.map((p) => {
+          const np = novo.parcelas.find((x) => x.id === p.id);
+          return np ? { ...p, status: np.status, pagoEm: np.pagoEm } : p;
+        });
+      }
+      return atualizado;
+    });
+  }
+  return resultado;
 }
 
 module.exports = { mergeCollection, full };

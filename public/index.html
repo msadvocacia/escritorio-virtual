@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<title>MS Advocacia — Gestão</title>
+<title>MS Advocacia</title>
 <style>
   :root{
     --gold:#b8912f; --gold-light:#e6c766; --gold-dark:#8a6c1f;
@@ -793,13 +793,33 @@ document.addEventListener('click', ()=>{ document.querySelectorAll('.ajuda-balao
 // cliente ou processo já cadastrado — evita uso do sistema para casos
 // particulares fora do escritório. Só um formulário de cálculo fica visível
 // por vez, então um único id compartilhado ("calc-vinculo") basta.
+// Filtro de busca para <select> longos: digite parte do nome, CPF, nº do processo etc. e a lista
+// mostra só as opções que contêm todas as palavras digitadas (sem diferenciar acentos/maiúsculas).
+function normalizarBusca(t){ return String(t||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase(); }
+function filtrarSelect(input, selectId){
+  const sel = document.getElementById(selectId); if(!sel) return;
+  if(!sel._todas) sel._todas = Array.from(sel.options).map(o=>({value:o.value, text:o.text, busca:o.dataset.busca||'', selected:o.selected}));
+  const atual = sel.value;
+  const palavras = normalizarBusca(input.value).split(/\s+/).filter(Boolean);
+  const casa = (o)=> !o.value || o.value===atual || palavras.every(w=>normalizarBusca(o.text+' '+o.busca).includes(w));
+  const lista = sel._todas.filter(casa);
+  sel.innerHTML = '';
+  lista.forEach(o=>{ const op = document.createElement('option'); op.value=o.value; op.textContent=o.text; op.dataset.busca=o.busca; if(o.value===atual) op.selected=true; sel.appendChild(op); });
+  sel.size = palavras.length ? Math.min(Math.max(lista.length,2), 8) : 1;
+  const achados = lista.filter(o=>o.value).length;
+  const info = input.nextElementSibling; if(info && info.classList.contains('filtro-info')) info.textContent = palavras.length ? (achados+' encontrado(s)') : '';
+}
+function campoFiltroSelect(selectId){
+  return `<input type="search" placeholder="🔎 Filtrar por nome, CPF, nº do processo..." oninput="filtrarSelect(this,'${selectId}')" style="margin-bottom:6px;"><span class="filtro-info hint" style="display:block; margin:-2px 0 4px;"></span>`;
+}
 function campoVinculoCalculo(){
-  const processos = (DB.processos||[]).slice().sort((a,b)=>(a.numero||'').localeCompare(b.numero||''));
-  const clientes = (DB.clientes||[]).slice().sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
-  const opcoesProcessos = processos.map(p=>`<option value="processo:${p.id}">Processo ${escapeHtml(p.numero||'sem número')} — ${escapeHtml(clienteNome(p.clienteId))}</option>`).join('');
-  const opcoesClientes = clientes.map(c=>`<option value="cliente:${c.id}">Cliente: ${escapeHtml(c.nome)}</option>`).join('');
+  const cpfDe = (id)=>{ const c=(DB.clientes||[]).find(x=>x.id===id); return c? onlyDigits(c.cpf) : ''; };
+  const processos = (DB.processos||[]).slice().sort((a,b)=> clienteNome(a.clienteId).localeCompare(clienteNome(b.clienteId),'pt-BR') || (a.numero||'').localeCompare(b.numero||''));
+  const clientes = (DB.clientes||[]).slice().sort((a,b)=>(a.nome||'').localeCompare(b.nome||'','pt-BR'));
+  const opcoesProcessos = processos.map(p=>`<option value="processo:${p.id}" data-busca="${escapeHtml(cpfDe(p.clienteId))}">Processo ${escapeHtml(p.numero||'sem número')} — ${escapeHtml(clienteNome(p.clienteId))}</option>`).join('');
+  const opcoesClientes = clientes.map(c=>`<option value="cliente:${c.id}" data-busca="${escapeHtml(onlyDigits(c.cpf))}">Cliente: ${escapeHtml(c.nome)}</option>`).join('');
   return `<fieldset style="margin-bottom:10px; border-color:var(--gold-dark);"><legend>Cliente/processo vinculado (obrigatório)${ajuda('Todo cálculo precisa estar vinculado a um cliente ou processo já cadastrado no sistema — isso evita que a ferramenta seja usada para casos particulares fora do escritório. Cadastre o cliente ou processo primeiro, se ainda não existir.')}</legend>
-    <div class="field"><label>Cliente ou processo</label><select id="calc-vinculo"><option value="">Selecione...</option>${opcoesProcessos}${opcoesClientes}</select></div>
+    <div class="field"><label>Cliente ou processo</label>${campoFiltroSelect('calc-vinculo')}<select id="calc-vinculo"><option value="">Selecione...</option>${opcoesProcessos}${opcoesClientes}</select></div>
   </fieldset>`;
 }
 function validarVinculoCalculo(){
@@ -936,6 +956,14 @@ async function loadAll(){
   }
   try{ DB.config = await apiFetch('/api/config'); }catch(e){ /* mantém o que já tinha */ }
   renderLandingContact();
+}
+function aniversariantesHoje(){
+  const hoje = todayISO().slice(5);
+  return (DB.clientes||[]).filter(c=>c.dataNascimento && c.dataNascimento.slice(5)===hoje);
+}
+function idadeHoje(c){ const a = parseInt(c.dataNascimento.slice(0,4),10); return a? parseInt(todayISO().slice(0,4),10)-a : null; }
+function htmlAniversariantes(){
+  return aniversariantesHoje().map(c=>{ const i = idadeHoje(c); return `<div class="list-row" style="cursor:pointer;" onclick="closeModal(); goPage('clientes');"><span class="dot" style="background:var(--gold)"></span><div><div class="rtitle">🎂 Aniversário de ${escapeHtml(c.nome)}</div><div class="rsub">Hoje${i>0? ' — '+i+' anos' : ''}</div></div></div>`; }).join('');
 }
 async function persist(key){
   if(COLECOES_DEDICADAS[key]){
@@ -1114,8 +1142,10 @@ async function mostrarPopupNotificacoesEntrada(){
     .filter(a=> (isMaster() || a.usuarioId===CURRENT_USER.id) && a.status!=='cancelado' && (a.data>hoje || (a.data===hoje && a.hora>=agoraHM)))
     .sort((a,b)=>(a.data+a.hora).localeCompare(b.data+b.hora));
 
-  if(!lembretesPendentes.length && !mensagensNaoLidas.length && !parcelasVencidas.length && !agendaPessoalPendente.length && !agendamentosRelevantes.length && !prazosProximos.length) return;
+  const aniversarios = aniversariantesHoje();
+  if(!aniversarios.length && !lembretesPendentes.length && !mensagensNaoLidas.length && !parcelasVencidas.length && !agendaPessoalPendente.length && !agendamentosRelevantes.length && !prazosProximos.length) return;
   const corpo = `
+    ${aniversarios.length? `<div style="margin-bottom:14px;"><strong>🎂 Aniversariantes de hoje</strong>${htmlAniversariantes()}</div>` : ''}
     ${mensagensNaoLidas.length? `<div style="margin-bottom:14px;"><strong>💬 Mensagens não lidas</strong>
       ${mensagensNaoLidas.map(x=>`<div class="list-row" style="cursor:pointer;" onclick="closeModal(); goPage('mensagens'); abrirThread('${x.cliente.id}','${x.cliente.vinculoId||''}');"><div><div class="rtitle">${escapeHtml(x.cliente.nome)}</div></div><span class="badge" style="background:var(--danger); color:#fff; border-radius:20px; padding:1px 7px; font-size:10px;">${x.qtd}</span></div>`).join('')}
     </div>` : ''}
@@ -1723,7 +1753,7 @@ function advogadosVisiveisParaVinculo(){
   return [];
 }
 function openClienteForm(id){
-  const c = id ? DB.clientes.find(x=>x.id===id) : {nome:'',nacionalidade:'Brasileira',estadoCivil:'solteiro(a)',profissao:'',rg:'',cpf:'',cep:'',logradouro:'',numero:'',complemento:'',bairro:'',cidade:'',uf:'',telefoneFixo:'',celular:'',vinculoId: isAssociado()? CURRENT_USER.id : '', obs:''};
+  const c = id ? DB.clientes.find(x=>x.id===id) : {nome:'',nacionalidade:'Brasileira',estadoCivil:'solteiro(a)',profissao:'',rg:'',dataNascimento:'',cpf:'',cep:'',logradouro:'',numero:'',complemento:'',bairro:'',cidade:'',uf:'',telefoneFixo:'',celular:'',vinculoId: isAssociado()? CURRENT_USER.id : '', obs:''};
   const body = `
     <div class="field"><label>Nome completo</label><input id="cf-nome" value="${escapeHtml(c.nome)}"></div>
     <div class="field-row3">
@@ -1733,8 +1763,9 @@ function openClienteForm(id){
       </select></div>
       <div class="field"><label>Profissão</label><input id="cf-prof" value="${escapeHtml(c.profissao)}"></div>
     </div>
-    <div class="field-row">
+    <div class="field-row3">
       <div class="field"><label>RG</label><input id="cf-rg" value="${escapeHtml(c.rg)}"></div>
+      <div class="field"><label>Data de nascimento</label><input type="date" id="cf-nasc" value="${escapeHtml(c.dataNascimento||'')}"></div>
       <div class="field"><label>CPF (define login/senha iniciais)</label><input id="cf-cpf" value="${escapeHtml(c.cpf)}" placeholder="somente números" ${id?'disabled':''}></div>
     </div>
     <fieldset><legend>Endereço</legend>
@@ -1767,7 +1798,7 @@ function openClienteForm(id){
     if(!vinculoId){ showToast('Selecione a quem este cliente será vinculado.'); return; }
     const data = {
       nome, nacionalidade: document.getElementById('cf-nac').value.trim(), estadoCivil: document.getElementById('cf-ec').value,
-      profissao: document.getElementById('cf-prof').value.trim(), rg: document.getElementById('cf-rg').value.trim(),
+      profissao: document.getElementById('cf-prof').value.trim(), rg: document.getElementById('cf-rg').value.trim(), dataNascimento: document.getElementById('cf-nasc').value,
       cep: document.getElementById('cf-cep').value.trim(), logradouro: document.getElementById('cf-logradouro').value.trim(),
       numero: document.getElementById('cf-numero').value.trim(), complemento: document.getElementById('cf-complemento').value.trim(),
       bairro: document.getElementById('cf-bairro').value.trim(), cidade: document.getElementById('cf-cidade').value.trim(),
@@ -2156,7 +2187,8 @@ function renderProcessos(){
    PRAZOS (mesma lógica anterior, adaptada a papéis)
    ============================================================ */
 function processoOptionsPrazo(selected){
-  return '<option value="">— nenhum —</option>' + meusProcessosVisiveis().map(p=>`<option value="${p.id}" ${p.id===selected?'selected':''}>${escapeHtml(p.numero)} — ${escapeHtml(clienteNome(p.clienteId))}</option>`).join('');
+  const cpfDe = (id)=>{ const c=(DB.clientes||[]).find(x=>x.id===id); return c? onlyDigits(c.cpf) : ''; };
+  return '<option value="">— nenhum —</option>' + meusProcessosVisiveis().map(p=>`<option value="${p.id}" data-busca="${escapeHtml(cpfDe(p.clienteId)+' '+(p.tipo||'')+' '+(p.vara||''))}" ${p.id===selected?'selected':''}>${escapeHtml(p.numero)} — ${escapeHtml(clienteNome(p.clienteId))}</option>`).join('');
 }
 function somarDiasCorridos(iso, dias){ const d = new Date(iso+'T00:00:00'); d.setDate(d.getDate()+dias); return d.toISOString().slice(0,10); }
 function somarDiasUteis(iso, dias){
@@ -2191,7 +2223,7 @@ function openPrazoForm(id){
   const pr = id ? DB.prazos.find(x=>x.id===id) : {descricao:'',processoId:'',vencimento:todayISO(),prioridade:'media',status:'pendente',obs:'',alertaDias:3,visivelPara:[]};
   const body = `
     <div class="field"><label>Descrição do prazo</label><input id="prf-desc" value="${escapeHtml(pr.descricao)}" placeholder="Ex: Contestação, Recurso, Audiência"></div>
-    <div class="field"><label>Processo vinculado</label><select id="prf-processo">${processoOptionsPrazo(pr.processoId)}</select></div>
+    <div class="field"><label>Processo vinculado</label>${campoFiltroSelect('prf-processo')}<select id="prf-processo">${processoOptionsPrazo(pr.processoId)}</select></div>
     <fieldset><legend>Calcular vencimento a partir da publicação (opcional)</legend>
       <div class="field-row">
         <div class="field"><label>Data da publicação</label><input type="date" id="prf-calc-publicacao"></div>
@@ -2586,7 +2618,7 @@ function openHonorarioForm(id){
         const antiga = parcelasAntigas[i];
         data.parcelas.push({ id: antiga?.id || uid(), numero: i+1, vencimento, valor, status: antiga?.status || 'pendente', pagoEm: antiga?.pagoEm || null });
       }
-    } else { data.avistaStatus = document.getElementById('hf-avista-status').value; data.avistaPagoEm = data.avistaStatus==='pago'? todayISO():null; data.parcelas=[]; }
+    } else { data.avistaStatus = document.getElementById('hf-avista-status').value; data.avistaPagoEm = data.avistaStatus==='pago'? ((h.avistaStatus==='pago' && h.avistaPagoEm) || todayISO()) : null; // editar um honorário já pago NÃO muda a data em que foi recebido data.parcelas=[]; }
     if(id){
       await persistMutation('honorarios', arr=>{ const alvo = arr.find(x=>x.id===id); if(alvo) Object.assign(alvo, data); return arr; });
     } else {
@@ -6203,6 +6235,67 @@ function valorPorExtenso(valor){
   if(centavos>0){ texto += ' e ' + numberToWordsPT(centavos) + (centavos===1?' centavo':' centavos'); }
   return texto;
 }
+function lerParcelasContrato(){
+  const entrada = parseFloat(document.getElementById('con-entrada')?.value)||0;
+  const valores = Array.from(document.querySelectorAll('.con-parc-val')).map(el=>parseFloat(el.value)||0);
+  return { entrada, valores };
+}
+// Monta (ou refaz) a lista de valores das parcelas. refazer=true redistribui igualmente o saldo
+// (valor − entrada); depois disso cada parcela pode ser editada livremente.
+function renderParcelasContrato(refazer){
+  const box = document.getElementById('con-parcelas-box'); if(!box) return;
+  const tipo = document.querySelector('input[name="con-tipovalor"]:checked')?.value;
+  const entradaBox = document.getElementById('con-entrada-box');
+  if(entradaBox) entradaBox.style.display = tipo==='fixo' ? 'block' : 'none';
+  const n = Math.max(parseInt(document.getElementById('con-parcelas').value)||1, 1);
+  const total = parseFloat(document.getElementById('con-valor')?.value)||0;
+  const entrada = tipo==='fixo' ? (parseFloat(document.getElementById('con-entrada')?.value)||0) : 0;
+  if(tipo!=='fixo' || (n<=1 && !(entrada>0))){ box.style.display='none'; box.innerHTML=''; return; }
+  let valores = refazer ? null : lerParcelasContrato().valores;
+  if(!valores || valores.length!==n){
+    const saldo = Math.max(total-entrada,0);
+    const base = Math.floor(saldo/n*100)/100;
+    valores = Array(n).fill(base);
+    valores[n-1] = Math.round((saldo - base*(n-1))*100)/100;
+  }
+  box.style.display='block';
+  box.innerHTML = `<fieldset><legend>Valores das parcelas</legend>
+    <div class="hint" style="margin-bottom:6px;">Já vem dividido igualmente. Você pode alterar o valor de qualquer parcela (ex.: uma parcela maior no início). ${entrada>0? 'A entrada de '+fmtMoney(entrada)+' é paga antes das parcelas.' : ''}</div>
+    ${valores.map((v,i)=>`<div class="field-row" style="align-items:center;"><div class="field"><label>${i+1}ª parcela (R$)</label><input type="number" step="0.01" min="0" class="con-parc-val" value="${v.toFixed(2)}" oninput="atualizarSomaParcelasContrato()"></div></div>`).join('')}
+    <div class="hint" id="con-soma-parcelas"></div>
+    <button type="button" class="btn btn-ghost btn-sm" onclick="renderParcelasContrato(true)">Dividir igualmente de novo</button>
+  </fieldset>`;
+  atualizarSomaParcelasContrato();
+}
+function atualizarSomaParcelasContrato(){
+  const el = document.getElementById('con-soma-parcelas'); if(!el) return;
+  const { entrada, valores } = lerParcelasContrato();
+  const total = parseFloat(document.getElementById('con-valor')?.value)||0;
+  const soma = Math.round((entrada + valores.reduce((a,b)=>a+b,0))*100)/100;
+  const ok = Math.abs(soma-total)<0.005;
+  el.innerHTML = `Entrada + parcelas: <strong>${fmtMoney(soma)}</strong> de ${fmtMoney(total)}` + (ok? ' ✔' : ` — <span style="color:var(--danger);">diferença de ${fmtMoney(Math.abs(soma-total))}</span>`);
+}
+function validarParcelasContrato(){
+  const tipo = document.querySelector('input[name="con-tipovalor"]:checked').value;
+  if(tipo!=='fixo') return true;
+  const { entrada, valores } = lerParcelasContrato();
+  if(!valores.length) return true;
+  const total = parseFloat(document.getElementById('con-valor').value)||0;
+  const soma = Math.round((entrada + valores.reduce((a,b)=>a+b,0))*100)/100;
+  if(Math.abs(soma-total)>=0.005) return confirm('A soma da entrada e das parcelas ('+fmtMoney(soma)+') é diferente do valor total dos honorários ('+fmtMoney(total)+'). Gerar o contrato mesmo assim?');
+  return true;
+}
+function descricaoParcelasContratoHtml(entrada, valores){
+  const ext = (v)=>`<strong>R$ ${v.toLocaleString('pt-BR',{minimumFractionDigits:2})} (${valorPorExtenso(v)})</strong>`;
+  const fem = (n)=>numberToWordsPT(n).replace(/\bdois\b/g,'duas').replace(/\bum\b/g,'uma');
+  const iguais = valores.every(v=>Math.abs(v-valores[0])<0.005);
+  const ini = entrada>0 ? 'o saldo em ' : 'dividido em ';
+  const partes = [];
+  if(entrada>0) partes.push(`${ext(entrada)} de entrada`);
+  partes.push(iguais ? `${ini}<strong>${valores.length} (${fem(valores.length)}) ${valores.length===1?'parcela':'parcelas'}</strong> de ${ext(valores[0])}${valores.length>1?' cada':''}`
+    : `${ini}<strong>${valores.length} (${fem(valores.length)}) parcelas</strong>, nos valores de ${valores.map((v,i)=>`${i+1}ª ${ext(v)}`).join('; ')}`);
+  return (entrada>0 ? ', sendo ' : ', ')+partes.join(' e ');
+}
 function baixarContratoWord(clienteId){
   const advSelecionados = Array.from(document.querySelectorAll('.con-adv:checked')).map(el=>el.value);
   if(advSelecionados.length===0){ showToast('Selecione ao menos um advogado.'); return; }
@@ -6213,7 +6306,9 @@ function baixarContratoWord(clienteId){
   const percentual = document.getElementById('con-perc').value;
   const parcelas = document.getElementById('con-parcelas').value;
   const paragrafoMS = document.getElementById('con-paragrafo-ms').checked;
-  baixarArquivoPost('/api/documentos/contrato', { clienteId, advogadoIds: advSelecionados, tipoProcesso, tipoValor, valor, percentual, parcelas, paragrafoMS }, 'Contrato - '+(c?c.nome:'cliente')+'.docx');
+  if(!validarParcelasContrato()) return;
+  const pc = tipoValor==='fixo' ? lerParcelasContrato() : { entrada:0, valores:[] };
+  baixarArquivoPost('/api/documentos/contrato', { clienteId, advogadoIds: advSelecionados, tipoProcesso, tipoValor, valor, percentual, parcelas, paragrafoMS, entrada: pc.entrada, valoresParcelas: pc.valores }, 'Contrato - '+(c?c.nome:'cliente')+'.docx');
 }
 function openContratoForm(clienteId){
   const c = DB.clientes.find(x=>x.id===clienteId); if(!c) return;
@@ -6227,9 +6322,11 @@ function openContratoForm(clienteId){
       <label class="radio-opt"><input type="radio" name="con-tipovalor" value="fixo" checked onchange="toggleConValorTipo()"> Valor fixo</label>
       <label class="radio-opt"><input type="radio" name="con-tipovalor" value="percentual" onchange="toggleConValorTipo()"> Percentual sobre o proveito</label>
     </div></div>
-    <div id="con-valor-fixo-box"><div class="field"><label>Valor dos honorários (R$)</label><input type="number" step="0.01" id="con-valor" placeholder="0,00"></div></div>
+    <div id="con-valor-fixo-box"><div class="field"><label>Valor dos honorários (R$)</label><input type="number" step="0.01" id="con-valor" placeholder="0,00" oninput="renderParcelasContrato(true)"></div></div>
     <div id="con-valor-perc-box" style="display:none;"><div class="field"><label>Percentual (%)</label><input type="number" step="0.01" id="con-perc" placeholder="Ex: 20"></div></div>
-    <div class="field"><label>Número de parcelas (1 = à vista)</label><input type="number" min="1" id="con-parcelas" value="1"></div>
+    <div id="con-entrada-box"><div class="field"><label>Entrada (R$) — opcional${ajuda('Valor pago no ato da contratação. Se preencher, o restante é dividido nas parcelas abaixo. Deixe em branco se não houver entrada.')}</label><input type="number" step="0.01" min="0" id="con-entrada" placeholder="0,00" oninput="renderParcelasContrato(true)"></div></div>
+    <div class="field"><label>Número de parcelas (1 = à vista; havendo entrada, são as parcelas após ela)</label><input type="number" min="1" id="con-parcelas" value="1" oninput="renderParcelasContrato(true)"></div>
+    <div id="con-parcelas-box" style="display:none;"></div>
     <div class="field"><label><input type="checkbox" id="con-paragrafo-ms" style="width:auto; margin-right:6px;"> Parágrafo MS nos honorários${ajuda('Inclui, no fim da cláusula de honorários, o parágrafo específico para ações de Mandado de Segurança (honorários de êxito sobre valores levantados/liberados, inclusive astreintes, dada a ausência de sucumbência nessa modalidade). Marque só quando o caso for mesmo um MS.')}</label></div>
     <button type="button" class="btn btn-dark btn-block" style="margin-top:10px;" onclick="baixarContratoWord('${clienteId}')">📥 Baixar em Word (.docx) — usa o timbrado real</button>
   `;
@@ -6238,6 +6335,7 @@ function openContratoForm(clienteId){
     if(advSelecionados.length===0){ showToast('Selecione ao menos um advogado.'); return; }
     const tipoProcesso = document.getElementById('con-tipo').value.trim() || '[tipo de processo]';
     const tipoValor = document.querySelector('input[name="con-tipovalor"]:checked').value;
+    if(!validarParcelasContrato()) return;
     const nParcelas = parseInt(document.getElementById('con-parcelas').value)||1;
     let clausulaValor;
     if(tipoValor==='fixo'){
@@ -6247,7 +6345,10 @@ function openContratoForm(clienteId){
       const perc = parseFloat(document.getElementById('con-perc').value)||0;
       clausulaValor = `<strong>o percentual de ${perc}% (${numberToWordsPT(Math.round(perc))} por cento)</strong> sobre o proveito econômico da demanda`;
     }
-    const divisaoTexto = nParcelas>1 ? `, <strong>dividido em ${nParcelas} (${numberToWordsPT(nParcelas)}) parcelas</strong>` : `, <strong>a ser paga à vista</strong>`;
+    const pcs = tipoValor==='fixo' ? lerParcelasContrato() : { entrada:0, valores:[] };
+    const divisaoTexto = (pcs.entrada>0 || pcs.valores.length>1) && tipoValor==='fixo' && pcs.valores.length
+      ? descricaoParcelasContratoHtml(pcs.entrada, pcs.valores)
+      : (nParcelas>1 ? `, <strong>dividido em ${nParcelas} (${numberToWordsPT(nParcelas)}) parcelas</strong>` : `, <strong>a ser paga à vista</strong>`);
     const contratadoTexto = advSelecionados.map(a=>
       `<strong>${escapeHtml((a.nome||'').toUpperCase())}</strong>, ${escapeHtml(a.nacionalidade||'brasileiro(a)')}, ${escapeHtml(a.estadoCivil||'')}, advogado(a), OAB/BA ${escapeHtml(a.oab||'—')}, portador(a) da cédula de identidade sob nº ${escapeHtml(a.rg||'—')}, inscrito(a) no CPF nº ${formatCPF(a.cpf)}, com endereço profissional na Rua Frederico Costa, nº 124, Centro, CEP: 45.200-225, Jequié-BA, telefone ${escapeHtml((DB.config&&DB.config.telefone)||'(73) 9 9122-1589')}.`
     ).join('<br><br>');
@@ -6276,6 +6377,7 @@ function toggleConValorTipo(){
   const tipo = document.querySelector('input[name="con-tipovalor"]:checked').value;
   document.getElementById('con-valor-fixo-box').style.display = tipo==='fixo'?'block':'none';
   document.getElementById('con-valor-perc-box').style.display = tipo==='percentual'?'block':'none';
+  renderParcelasContrato(true);
 }
 
 /* ============================================================
@@ -6348,7 +6450,7 @@ function renderDashboard(){
     if(!pendentes.length) return `<div class="empty" style="cursor:pointer;" onclick="goPage('financeiro')">Nenhum pagamento pendente.</div>`;
     return pendentes.map(h=>`<div class="list-row" style="cursor:pointer;" onclick="goPage('financeiro')"><span class="dot" style="background:var(--warning)"></span><div><div class="rtitle">${escapeHtml(clienteNome(h.clienteId))}</div><div class="rsub">${escapeHtml(h.descricao)||'Honorários'}</div></div><div class="rmeta">${fmtMoney(h.valorTotal)}</div></div>`).join('');
   })();
-  document.getElementById('dash-lembretes').innerHTML = lembPend.length? lembPend.map(l=>`<div class="list-row" style="cursor:pointer;" onclick="goPage('lembretes')"><span class="dot" style="background:${l.data<=hoje?'var(--danger)':'var(--gold)'}"></span><div><div class="rtitle">${escapeHtml(l.titulo)}</div><div class="rsub">${escapeHtml(l.descricao)||''}</div></div><div class="rmeta">${fmtDate(l.data)}</div></div>`).join('') : `<div class="empty" style="cursor:pointer;" onclick="goPage('lembretes')">Nenhum lembrete pendente.</div>`;
+  document.getElementById('dash-lembretes').innerHTML = htmlAniversariantes() + (lembPend.length? lembPend.map(l=>`<div class="list-row" style="cursor:pointer;" onclick="goPage('lembretes')"><span class="dot" style="background:${l.data<=hoje?'var(--danger)':'var(--gold)'}"></span><div><div class="rtitle">${escapeHtml(l.titulo)}</div><div class="rsub">${escapeHtml(l.descricao)||''}</div></div><div class="rmeta">${fmtDate(l.data)}</div></div>`).join('') : (aniversariantesHoje().length? '' : `<div class="empty" style="cursor:pointer;" onclick="goPage('lembretes')">Nenhum lembrete pendente.</div>`));
   document.getElementById('dash-resumo-mes').innerHTML = `
     <div class="list-row" style="cursor:pointer;" onclick="goPage('financeiro')"><div class="rtitle">Recebido</div><div class="rmeta" style="color:var(--success); font-weight:700;">${vmoney(s.recebidoMes)}</div></div>
     ${(isMaster()||isSocio())? `<div class="list-row" style="cursor:pointer;" onclick="goPage('financeiro')"><div class="rtitle">Despesas</div><div class="rmeta" style="color:var(--danger); font-weight:700;">${vmoney(s.despesasMes)}</div></div><div class="list-row" style="cursor:pointer;" onclick="goPage('financeiro')"><div class="rtitle">Saldo do mês</div><div class="rmeta" style="color:${s.saldoMes>=0?'var(--success)':'var(--danger)'}; font-weight:700;">${vmoney(s.saldoMes)}</div></div>`:''}

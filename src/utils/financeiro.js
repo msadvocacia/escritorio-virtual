@@ -37,16 +37,28 @@ function fracaoEscritorio(h) {
   const ids = idsProfissionais(h);
   if (!ids.length) return 1;
   const partes = partesSplit(h.splitTipo);
-  return 1 - (partes.profissional || 0);
+  // Só a fatia "escritório" entra no caixa institucional; a fatia de "sócio" (splits que a têm)
+  // pertence ao sócio responsável — mesma regra usada na tela (Financeiro).
+  return partes.escritorio || 0;
 }
 
-/** Quanto, do valor já recebido, cabe a UM profissional específico (a divisão é igual entre todos os vinculados). */
-function parteDoProfissional(h, usuarioId) {
+/**
+ * Quanto, do valor já recebido, cabe a UM profissional específico. Mesma regra da tela:
+ * a fatia "profissional" é dividida entre os ASSOCIADOS vinculados e a fatia "sócio" (nos splits que a
+ * têm) entre os SÓCIOS vinculados. Sem a lista de usuários, cai na divisão antiga (igual entre todos).
+ */
+function parteDoProfissional(h, usuarioId, usuarios) {
   const ids = idsProfissionais(h);
   if (!ids.includes(usuarioId) || ids.length === 0) return 0;
   const partes = partesSplit(h.splitTipo);
   const recebido = valorRecebidoHonorario(h);
-  return (recebido * (partes.profissional || 0)) / ids.length;
+  if (!Array.isArray(usuarios)) return (recebido * (partes.profissional || 0)) / ids.length;
+  const tipoDe = (id) => { const u = usuarios.find((x) => x.id === id); return u ? u.tipo : null; };
+  const assoc = ids.filter((id) => tipoDe(id) === 'associado');
+  const socios = ids.filter((id) => tipoDe(id) === 'socio');
+  if (tipoDe(usuarioId) === 'associado') return (recebido * (partes.profissional || 0)) / assoc.length;
+  if (tipoDe(usuarioId) === 'socio') return (recebido * (partes.socio || 0)) / socios.length;
+  return 0;
 }
 
 /** Resumo do relatório para master/sócio (visão do escritório). */
@@ -72,10 +84,10 @@ function resumoEscritorio(honorarios, despesas, periodo) {
 }
 
 /** Totais do relatório para um profissional (sócio ou associado) olhando só os processos em que ele está vinculado. */
-function totaisAssociado(honorariosDoProfissional, userId) {
+function totaisAssociado(honorariosDoProfissional, userId, usuarios) {
   let totalContrato = 0, totalRecebidoCliente = 0, minhaParteRepassada = 0, minhaParteAguardando = 0;
   honorariosDoProfissional.forEach((h) => {
-    const minhaParte = parteDoProfissional(h, userId);
+    const minhaParte = parteDoProfissional(h, userId, usuarios);
     totalContrato += h.valorTotal;
     totalRecebidoCliente += valorRecebidoHonorario(h);
     if (h.repasseStatus === 'confirmado') minhaParteRepassada += minhaParte;
