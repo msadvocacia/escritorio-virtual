@@ -101,7 +101,7 @@ router.post('/procuracao', requireAuth, requireRole('master', 'socio', 'associad
     }));
 
     const PODERES_TEXTO = 'Por este instrumento particular de procuração, constituo meu bastante procurador o outorgado, concedendo-lhe os poderes inerentes da CLÁUSULA AD JUDITIA ET EXTRA, para o foro em geral, podendo, portanto, promover quaisquer medidas judiciais ou administrativas, assinar termo, oferecer defesa, direta ou indireta, interpor recursos, ajuizar ações e conduzir os respectivos processos, solicitar, providenciar, receber e ter acesso a documentos de qualquer natureza, sendo o presente instrumento de mandato oneroso e contratual podendo substabelecer este a outrem, com ou sem reserva de poderes, dando tudo por bom e valioso, a fim de praticar todos os demais atos necessários ao fiel desempenho deste mandato.';
-    const PODERES_ESPECIFICOS_TEXTO = 'A presente procuração outorga o Advogado acima descrito, os poderes especiais para receber citação, confessar, reconhecer a procedência do pedido, transigir, desistir, renunciar ao direito sobre que se funda a ação, firmar compromissos ou acordos, receber valores/dinheiro, dar e receber quitação, levantar ou receber RPV e ALVARÁS, pedir à justiça gratuita e assinar declaração de hipossuficiência econômica, em conformidade com a norma do art. 105 da Lei 13.105/2015.';
+    const PODERES_ESPECIFICOS_TEXTO = 'A presente procuração outorga o Advogado acima descrito, os poderes especiais para receber citação, confessar, reconhecer a procedência do pedido, transigir, desistir, renunciar ao direito sobre que se funda a ação, firmar compromissos ou acordos, receber valores/dinheiro, dar e receber quitação, levantar ou receber RPV e ALVARÁS, pedir à justiça gratuita e assinar declaração de hipossuficiência econômica, em conformidade com a norma do art. 105 da Lei 13.105/2015, e isenção de Imposto de renda.';
 
     // Estima o tamanho do corpo para decidir entre 11,5 e 11 — evita que só a
     // data/assinatura vazem para uma segunda página. Calibrado testando casos
@@ -165,6 +165,7 @@ router.post('/contrato', requireAuth, requireRole('master', 'socio', 'associado'
 
   // Runs do valor (negrito), separados do resto da frase (que fica normal),
   // já que o valor precisa ficar em negrito tanto em algarismo quanto por extenso.
+  const ehMisto = tipoValor === 'misto'; // valor fixo + percentual sobre o proveito
   let runsValor;
   if (tipoValor === 'percentual') {
     const perc = parseFloat(percentual) || 0;
@@ -208,6 +209,11 @@ router.post('/contrato', requireAuth, requireRole('master', 'socio', 'associado'
     ? [D.run(', dividido em '), D.run(`${nParcelas} (${nParcelasExt(nParcelas)})`, { bold: true }), D.run(' parcelas')]
     : [D.run(tipoValor === 'percentual' ? ', a ser paga ao final' : ', a ser paga à vista')];
 
+  const percExito = parseFloat(percentual) || 0;
+  const runsExito = ehMisto
+    ? [D.run(', acrescida de honorários de êxito (ad exitum) no percentual de '), D.run(`${percExito}% (${T.numberToWordsPT(Math.round(percExito))} por cento)`, { bold: true }), D.run(' sobre o proveito econômico da demanda')]
+    : [];
+
   const TERMOS_DESTAQUE = ['O ADVOGADO', 'ADVOGADO', 'OUTORGANTE', 'CONTRATANTE', 'CONTRATADOS', 'CONTRATADO', tipoProcessoUpper];
 
   try {
@@ -243,11 +249,15 @@ router.post('/contrato', requireAuth, requireRole('master', 'socio', 'associado'
       D.blank(),
       D.paragraph([
         ...D.comDestaques('Cláusula 6ª. O CONTRATANTE, como contraprestação aos serviços jurídicos prestados, pagará ao CONTRATADO, a título de pro labore, ', TERMOS_DESTAQUE),
-        ...runsValor, ...runsDivisao, D.run('.'),
+        ...runsValor, ...runsDivisao, ...runsExito, D.run('.'),
       ]),
-      tipoValor === 'percentual'
-        ? D.paragraph(D.comDestaques(`PARÁGRAFO ÚNICO. A título de honorários advocatícios contratuais (ad exitum), o(a) CONTRATANTE pagará ao(à) CONTRATADO(A) o percentual de ${parseFloat(percentual) || 0}% sobre o proveito econômico total obtido na demanda, seja ele decorrente de condenação principal, acordos, indenizações, parcelas vencidas e vincendas, bem como sobre valores recebidos a título de multas cominatórias (astreintes), juros e correções monetárias.`, TERMOS_DESTAQUE))
-        : (paragrafoMS ? D.paragraph(D.comDestaques('PARÁGRAFO ÚNICO. Fica estipulado que os honorários de êxito incidirão sobre todo e qualquer valor levantado ou liberado em favor do(a) CONTRATANTE, inclusive aqueles resultantes de multas diárias por descumprimento de obrigação de fazer ou não fazer (astreintes) impostas no bojo do Mandado de Segurança, haja vista a inexistência de honorários de sucumbência nesta modalidade de ação.', TERMOS_DESTAQUE)) : ''),
+      ...(() => {
+        const textoPerc = (rotulo) => D.paragraph(D.comDestaques(`${rotulo}. A título de honorários advocatícios contratuais (ad exitum), o(a) CONTRATANTE pagará ao(à) CONTRATADO(A) o percentual de ${percExito}% sobre o proveito econômico total obtido na demanda, seja ele decorrente de condenação principal, acordos, indenizações, parcelas vencidas e vincendas, bem como sobre valores recebidos a título de multas cominatórias (astreintes), juros e correções monetárias.`, TERMOS_DESTAQUE));
+        const textoMS = (rotulo) => D.paragraph(D.comDestaques(`${rotulo}. Fica estipulado que os honorários de êxito incidirão sobre todo e qualquer valor levantado ou liberado em favor do(a) CONTRATANTE, inclusive aqueles resultantes de multas diárias por descumprimento de obrigação de fazer ou não fazer (astreintes) impostas no bojo do Mandado de Segurança, haja vista a inexistência de honorários de sucumbência nesta modalidade de ação.`, TERMOS_DESTAQUE));
+        if (tipoValor === 'percentual') return [textoPerc('PARÁGRAFO ÚNICO')];
+        if (ehMisto) return paragrafoMS ? [textoPerc('PARÁGRAFO PRIMEIRO'), textoMS('PARÁGRAFO SEGUNDO')] : [textoPerc('PARÁGRAFO ÚNICO')];
+        return paragrafoMS ? [textoMS('PARÁGRAFO ÚNICO')] : [];
+      })(),
       D.blank(),
       D.paragraph(D.comDestaques('Cláusula 7ª. Os honorários de sucumbência pertencem ao CONTRATADO e não se confundem com os honorários contratuais aqui tratados.', TERMOS_DESTAQUE)),
       D.paragraph(D.comDestaques('Parágrafo único. Caso haja morte ou incapacidade civil do CONTRATADO, seus sucessores ou representante(s) legal(s) receberão os honorários na proporção do trabalho realizado.', TERMOS_DESTAQUE)),

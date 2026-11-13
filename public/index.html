@@ -6185,7 +6185,7 @@ function openProcuracaoForm(clienteId){
       <p><strong>Outorgante:</strong> <strong>${escapeHtml((c.nome||'').toUpperCase())}</strong>, ${escapeHtml(c.nacionalidade||'brasileiro(a)')}, ${escapeHtml(c.estadoCivil||'')}, ${escapeHtml(c.profissao||'')}, portador do RG nº ${escapeHtml(c.rg||'—')} SSP/BA inscrito no CPF sob nº ${formatCPF(c.cpf)}, residente e domiciliado na/no ${escapeHtml(enderecoCompleto(c))||'—'}.</p>
       <p><strong>Outorgado:</strong> ${outorgadosTexto}</p>
       <p><strong>PODERES:</strong> Por este instrumento particular de procuração, constituo minha bastante procuradora a outorgada, concedendo-lhe os poderes da cláusula ad judicia et extra, para todo o foro em geral, podendo, portanto, promover quaisquer medidas judiciais ou administrativas, em qualquer instância, assinar termos, substabelecer com ou sem reserva de poderes, e praticar, ainda, todos e quaisquer atos necessários e convenientes ao bom e fiel desempenho deste mandato.</p>
-      <p><strong>PODERES ESPECÍFICOS:</strong> A presente procuração outorga à Advogada acima descrito, os poderes para receber citação, confessar, reconhecer a procedência do pedido, transigir, desistir, renunciar ao direito sobre o qual se funda a ação, receber Alvará, dar quitação, firmar compromisso, pedir a justiça gratuita, assinar declaração de hipossuficiência econômica e assinar declaração de isenção de imposto de renda. (Em conformidade com a norma do art. 105 do NCPC15).<br>
+      <p><strong>PODERES ESPECÍFICOS:</strong> A presente procuração outorga o Advogado acima descrito, os poderes especiais para receber citação, confessar, reconhecer a procedência do pedido, transigir, desistir, renunciar ao direito sobre que se funda a ação, firmar compromissos ou acordos, receber valores/dinheiro, dar e receber quitação, levantar ou receber RPV e ALVARÁS, pedir à justiça gratuita e assinar declaração de hipossuficiência econômica, em conformidade com a norma do art. 105 da Lei 13.105/2015, e isenção de Imposto de renda.<br>
       Os poderes específicos acima outorgados poderão ser substabelecidos. Ademais, constitui o exercício da advocacia como atividade meio, não podendo o advogado garantir nenhum resultado valorável ao cliente.</p>
       <p>Jequié-Ba, ${fmtDateExtenso(todayISO())}.</p>
       <p style="margin-top:60px; text-align:center;">____________________________________________</p>
@@ -6245,12 +6245,13 @@ function lerParcelasContrato(){
 function renderParcelasContrato(refazer){
   const box = document.getElementById('con-parcelas-box'); if(!box) return;
   const tipo = document.querySelector('input[name="con-tipovalor"]:checked')?.value;
+  const comValorFixo = (tipo==='fixo' || tipo==='misto');
   const entradaBox = document.getElementById('con-entrada-box');
-  if(entradaBox) entradaBox.style.display = tipo==='fixo' ? 'block' : 'none';
+  if(entradaBox) entradaBox.style.display = comValorFixo ? 'block' : 'none';
   const n = Math.max(parseInt(document.getElementById('con-parcelas').value)||1, 1);
   const total = parseFloat(document.getElementById('con-valor')?.value)||0;
-  const entrada = tipo==='fixo' ? (parseFloat(document.getElementById('con-entrada')?.value)||0) : 0;
-  if(tipo!=='fixo' || (n<=1 && !(entrada>0))){ box.style.display='none'; box.innerHTML=''; return; }
+  const entrada = comValorFixo ? (parseFloat(document.getElementById('con-entrada')?.value)||0) : 0;
+  if(!comValorFixo || (n<=1 && !(entrada>0))){ box.style.display='none'; box.innerHTML=''; return; }
   let valores = refazer ? null : lerParcelasContrato().valores;
   if(!valores || valores.length!==n){
     const saldo = Math.max(total-entrada,0);
@@ -6277,7 +6278,7 @@ function atualizarSomaParcelasContrato(){
 }
 function validarParcelasContrato(){
   const tipo = document.querySelector('input[name="con-tipovalor"]:checked').value;
-  if(tipo!=='fixo') return true;
+  if(tipo!=='fixo' && tipo!=='misto') return true;
   const { entrada, valores } = lerParcelasContrato();
   if(!valores.length) return true;
   const total = parseFloat(document.getElementById('con-valor').value)||0;
@@ -6307,7 +6308,7 @@ function baixarContratoWord(clienteId){
   const parcelas = document.getElementById('con-parcelas').value;
   const paragrafoMS = document.getElementById('con-paragrafo-ms').checked;
   if(!validarParcelasContrato()) return;
-  const pc = tipoValor==='fixo' ? lerParcelasContrato() : { entrada:0, valores:[] };
+  const pc = (tipoValor==='fixo'||tipoValor==='misto') ? lerParcelasContrato() : { entrada:0, valores:[] };
   baixarArquivoPost('/api/documentos/contrato', { clienteId, advogadoIds: advSelecionados, tipoProcesso, tipoValor, valor, percentual, parcelas, paragrafoMS, entrada: pc.entrada, valoresParcelas: pc.valores }, 'Contrato - '+(c?c.nome:'cliente')+'.docx');
 }
 function openContratoForm(clienteId){
@@ -6321,6 +6322,7 @@ function openContratoForm(clienteId){
     <div class="field"><label>Forma de cobrança</label><div class="radio-group">
       <label class="radio-opt"><input type="radio" name="con-tipovalor" value="fixo" checked onchange="toggleConValorTipo()"> Valor fixo</label>
       <label class="radio-opt"><input type="radio" name="con-tipovalor" value="percentual" onchange="toggleConValorTipo()"> Percentual sobre o proveito</label>
+      <label class="radio-opt"><input type="radio" name="con-tipovalor" value="misto" onchange="toggleConValorTipo()"> Valor fixo + percentual sobre o proveito</label>
     </div></div>
     <div id="con-valor-fixo-box"><div class="field"><label>Valor dos honorários (R$)</label><input type="number" step="0.01" id="con-valor" placeholder="0,00" oninput="renderParcelasContrato(true)"></div></div>
     <div id="con-valor-perc-box" style="display:none;"><div class="field"><label>Percentual (%)</label><input type="number" step="0.01" id="con-perc" placeholder="Ex: 20"></div></div>
@@ -6338,17 +6340,20 @@ function openContratoForm(clienteId){
     if(!validarParcelasContrato()) return;
     const nParcelas = parseInt(document.getElementById('con-parcelas').value)||1;
     let clausulaValor;
-    if(tipoValor==='fixo'){
+    if(tipoValor==='fixo' || tipoValor==='misto'){
       const valor = parseFloat(document.getElementById('con-valor').value)||0;
       clausulaValor = `a quantia de <strong>R$ ${valor.toLocaleString('pt-BR',{minimumFractionDigits:2})} (${valorPorExtenso(valor)})</strong>`;
     } else {
       const perc = parseFloat(document.getElementById('con-perc').value)||0;
       clausulaValor = `<strong>o percentual de ${perc}% (${numberToWordsPT(Math.round(perc))} por cento)</strong> sobre o proveito econômico da demanda`;
     }
-    const pcs = tipoValor==='fixo' ? lerParcelasContrato() : { entrada:0, valores:[] };
-    const divisaoTexto = (pcs.entrada>0 || pcs.valores.length>1) && tipoValor==='fixo' && pcs.valores.length
+    const comFixo = (tipoValor==='fixo' || tipoValor==='misto');
+    const pcs = comFixo ? lerParcelasContrato() : { entrada:0, valores:[] };
+    const divisaoTexto0 = (pcs.entrada>0 || pcs.valores.length>1) && comFixo && pcs.valores.length
       ? descricaoParcelasContratoHtml(pcs.entrada, pcs.valores)
       : (nParcelas>1 ? `, <strong>dividido em ${nParcelas} (${numberToWordsPT(nParcelas)}) parcelas</strong>` : `, <strong>a ser paga à vista</strong>`);
+    const percMisto = parseFloat(document.getElementById('con-perc').value)||0;
+    const divisaoTexto = divisaoTexto0 + (tipoValor==='misto' ? `, acrescida de honorários de êxito (ad exitum) no percentual de <strong>${percMisto}% (${numberToWordsPT(Math.round(percMisto))} por cento)</strong> sobre o proveito econômico da demanda` : '');
     const contratadoTexto = advSelecionados.map(a=>
       `<strong>${escapeHtml((a.nome||'').toUpperCase())}</strong>, ${escapeHtml(a.nacionalidade||'brasileiro(a)')}, ${escapeHtml(a.estadoCivil||'')}, advogado(a), OAB/BA ${escapeHtml(a.oab||'—')}, portador(a) da cédula de identidade sob nº ${escapeHtml(a.rg||'—')}, inscrito(a) no CPF nº ${formatCPF(a.cpf)}, com endereço profissional na Rua Frederico Costa, nº 124, Centro, CEP: 45.200-225, Jequié-BA, telefone ${escapeHtml((DB.config&&DB.config.telefone)||'(73) 9 9122-1589')}.`
     ).join('<br><br>');
@@ -6375,8 +6380,8 @@ function openContratoForm(clienteId){
 }
 function toggleConValorTipo(){
   const tipo = document.querySelector('input[name="con-tipovalor"]:checked').value;
-  document.getElementById('con-valor-fixo-box').style.display = tipo==='fixo'?'block':'none';
-  document.getElementById('con-valor-perc-box').style.display = tipo==='percentual'?'block':'none';
+  document.getElementById('con-valor-fixo-box').style.display = (tipo==='fixo'||tipo==='misto')?'block':'none';
+  document.getElementById('con-valor-perc-box').style.display = (tipo==='percentual'||tipo==='misto')?'block':'none';
   renderParcelasContrato(true);
 }
 
