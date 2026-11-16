@@ -614,6 +614,7 @@
           </div>
         </div>
         <div id="estagio-view-lista">
+          <div id="estagio-filtro-ativo" class="pill-select" style="margin-bottom:12px;"></div>
           <div class="hint" style="margin-bottom:10px;">Clique num estagiário para ver o perfil completo e as tarefas dele.</div>
           <div id="estagio-cards-lista"></div>
         </div>
@@ -1512,6 +1513,7 @@ function podeGerenciarUsuarios(){ return isMaster()||isSocio(); }
 function openUsuarioForm(id){
   if(!podeGerenciarUsuarios()){ showToast('Sem permissão.'); return; }
   const u = id? DB.usuarios.find(x=>x.id===id) : {tipo: isMaster()? 'socio':'associado', nome:'', login:'', oab:'', ativo:true, nacionalidade:'brasileiro(a)', estadoCivil:'solteiro(a)', rg:'', cpf:'', telefone:'', endereco:'', remunerado:false, formacaoEstagiario:'estudante', estagiarioVisivelPara:'todos', tutoresIds:[]};
+  TERMO_USUARIO_ID = id || null;
   const tiposPermitidos = isMaster()? ['socio','associado','estagiario'] : ['associado','estagiario'];
   const tutoresDisponiveis = DB.usuarios.filter(x=>x.tipo==='socio'||x.tipo==='associado');
   const body = `
@@ -1542,7 +1544,7 @@ function openUsuarioForm(id){
     <div id="uf-estagiario-box" style="display:none;">
       <fieldset><legend>Dados do estágio</legend>
         <div class="field-row">
-          <div class="field"><label>Formação</label><select id="uf-formacao-estagiario">
+          <div class="field"><label>Formação</label><select id="uf-formacao-estagiario" onchange="termoAtualizar()">
             <option value="estudante" ${u.formacaoEstagiario==='estudante'?'selected':''}>Estudante de Direito</option>
             <option value="bacharel" ${u.formacaoEstagiario==='bacharel'?'selected':''}>Bacharel em Direito</option>
           </select></div>
@@ -1553,13 +1555,14 @@ function openUsuarioForm(id){
             <option value="especificos" ${u.estagiarioVisivelPara==='especificos'?'selected':''}>Usuários específicos (só os tutores marcados abaixo)</option>
           </select></div>
         </div>
-        <div class="field"><label><input type="checkbox" id="uf-remunerado" style="width:auto; margin-right:6px;" ${u.remunerado?'checked':''}> Estágio remunerado${ajuda('O valor ou percentual da remuneração é definido depois, processo por processo, ao delegar uma tarefa vinculada a um caso — não é um valor fixo aqui no cadastro.')}</label></div>
+        <div class="field"><label><input type="checkbox" id="uf-remunerado" onchange="termoAtualizar()" style="width:auto; margin-right:6px;" ${u.remunerado?'checked':''}> Estágio remunerado${ajuda('O valor ou percentual da remuneração é definido depois, processo por processo, ao delegar uma tarefa vinculada a um caso — não é um valor fixo aqui no cadastro.')}</label></div>
         <div class="field"><label>Tutor(es) / responsável(is) direto(s)</label>
           <div style="display:flex; flex-direction:column; gap:4px; margin-top:4px; max-height:140px; overflow-y:auto;">
             ${tutoresDisponiveis.map(t=>`<label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" class="uf-tutor-chk" value="${t.id}" style="width:auto;" ${(u.tutoresIds||[]).includes(t.id)?'checked':''}> ${escapeHtml(t.nome)} (${t.tipo==='socio'?'Sócio':'Associado'})</label>`).join('') || '<span class="hint">Nenhum sócio/associado cadastrado ainda.</span>'}
           </div>
         </div>
       </fieldset>
+      ${termoFormHtml(u, tutoresDisponiveis)}
     </div>
     ${!id? `<div class="field"><label>Senha inicial</label><input type="password" id="uf-senha" placeholder="Defina uma senha temporária" autocomplete="new-password"></div>` : ''}
     <div class="field" id="uf-agenda-box"><label><input type="checkbox" id="uf-agenda-pessoal" style="width:auto; margin-right:6px;" ${u.tipo==='socio'||u.tipo==='estagiario'||u.agendaPessoalLiberada?'checked':''} ${u.tipo==='socio'||u.tipo==='estagiario'?'disabled':''}> Agenda pessoal${ajuda('Libera a aba "Agenda Pessoal" para este usuário — um mini-painel só dele, para anotar clientes, processos, audiências e prazos particulares. Sócios e estagiários sempre têm acesso; para associados, você decide aqui.')}</label></div>
@@ -1584,6 +1587,7 @@ function openUsuarioForm(id){
       data.formacaoEstagiario = document.getElementById('uf-formacao-estagiario').value;
       data.estagiarioVisivelPara = document.getElementById('uf-estagiario-visivel').value;
       data.tutoresIds = Array.from(document.querySelectorAll('.uf-tutor-chk:checked')).map(el=>el.value);
+      data.termoEstagio = termoColetar();
     }
     try{
       if(id){
@@ -1597,6 +1601,7 @@ function openUsuarioForm(id){
     }catch(e){ showToast(e.message || 'Não foi possível salvar o usuário.'); }
   });
   atualizarCamposFormUsuario();
+  termoAtualizar();
 }
 async function abrirContratoAssinado(userId, nomeUsuario){
   let atual = null;
@@ -1636,6 +1641,161 @@ async function apagarContratoAssinado(userId){
     await apiFetch('/api/usuarios/'+userId+'/contrato-assinado', { method:'DELETE' });
     closeModal(); showToast('Contrato apagado.');
   }catch(e){ showToast(e.message||'Não foi possível apagar.'); }
+}
+/* ============================================================
+   TERMO DE COMPROMISSO DE ESTÁGIO (4 modelos, escolhidos pelas marcações)
+   ============================================================ */
+let TERMO_USUARIO_ID = null;
+const TERMO_NOMES = {
+  1:'Termo 1 — Estágio Estudante Não Remunerado', 2:'Termo 2 — Estágio Estudante Remunerado',
+  3:'Termo 3 — Estágio Bacharel Não Remunerado', 4:'Termo 4 — Estágio Bacharel Remunerado'
+};
+function termoFormHtml(u, tutores){
+  const t = u.termoEstagio || {};
+  const v = x => escapeHtml(x==null? '' : String(x));
+  const advs = DB.usuarios.filter(x=>(x.tipo==='socio'||x.tipo==='associado') && x.ativo!==false);
+  const radio = (nome, valor, rotulo, marcado) => `<label style="display:inline-flex; align-items:center; gap:6px; margin-right:16px; font-weight:normal;"><input type="radio" name="${nome}" value="${valor}" style="width:auto;" ${marcado?'checked':''} onchange="termoAtualizar()"> ${rotulo}</label>`;
+  const prazo = t.tipoPrazo==='indeterminado'? 'indeterminado':'determinado';
+  const op = ['A','B','C'].includes(t.bolsaOpcao)? t.bolsaOpcao : 'A';
+  return `
+  <fieldset id="te-fieldset"><legend>Termo de compromisso de estágio</legend>
+    <div class="hint" style="margin-bottom:10px;">O modelo é escolhido sozinho pelas marcações acima (estudante ou bacharel, remunerado ou não): <strong id="te-termo-nome"></strong>. Preencha os campos e gere o Word no timbrado do escritório.</div>
+    <div class="field"><label>Advogado(a) responsável${ajuda('Representa o escritório no termo, é indicado como supervisor(a) do estágio e assina no lugar da Dra. Paula.')}</label>
+      <select id="te-adv"><option value="">— selecione —</option>${advs.map(a=>`<option value="${a.id}" ${t.advogadoId===a.id?'selected':''}>${escapeHtml(a.nome)}${a.oab? ' — OAB/BA '+escapeHtml(a.oab):''}</option>`).join('')}</select></div>
+    <div class="field"><label id="te-lbl-inst">Instituição de ensino</label><input id="te-inst-nome" value="${v(t.instNome)}"></div>
+    <div id="te-box-estudante">
+      <div class="field-row">
+        <div class="field"><label>CNPJ da instituição</label><input id="te-inst-cnpj" value="${v(t.instCnpj)}"></div>
+        <div class="field"><label>Nº de matrícula do estagiário</label><input id="te-matricula" value="${v(t.matricula)}"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Endereço da instituição</label><input id="te-inst-end" value="${v(t.instEndereco)}"></div>
+        <div class="field"><label>Representante da instituição (nome/cargo)</label><input id="te-inst-rep" value="${v(t.instRepresentante)}"></div>
+      </div>
+    </div>
+    <div id="te-box-bacharel">
+      <div class="field-row">
+        <div class="field"><label>Data de formatura</label><input type="date" id="te-formatura" value="${v(t.dataFormatura)}"></div>
+        <div class="field"><label>Data de colação de grau (Cláusula 1ª)</label><input type="date" id="te-colacao" value="${v(t.dataColacao)}"></div>
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Início do estágio</label><input type="date" id="te-inicio" value="${v(t.inicio)}" onchange="termoCalcDuracao()"></div>
+      <div class="field" id="te-box-termino"><label>Término do estágio</label><input type="date" id="te-termino" value="${v(t.termino)}" onchange="termoCalcDuracao()"></div>
+    </div>
+    <div class="field-row">
+      <div class="field" id="te-box-duracao"><label>Duração (meses)</label><input id="te-duracao" value="${v(t.duracaoMeses)}" inputmode="numeric"></div>
+      <div class="field"><label>Aviso prévio (dias)${ajuda('Prazo de aviso prévio definido pelo escritório para encerrar o estágio. Aparece no parágrafo da duração e na cláusula de extinção.')}</label><input id="te-aviso" value="${v(t.avisoPrevioDias||'10')}" inputmode="numeric" onchange="termoAtualizar()"></div>
+    </div>
+    <div class="field"><label>Prazo do estágio</label>
+      <div>${radio('te-prazo','determinado','Tempo determinado',prazo==='determinado')}${radio('te-prazo','indeterminado','Tempo indeterminado (pode ser encerrado com aviso prévio)',prazo==='indeterminado')}</div>
+    </div>
+    <div class="field"><label>Parágrafo da duração (Cláusula 3ª, editável)${ajuda('Deixe em branco para usar o texto padrão conforme o prazo e o aviso prévio escolhidos. Clique em "Carregar texto padrão" para editar o parágrafo livremente.')}</label>
+      <textarea id="te-temporalidade" rows="3" style="width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:7px; font-size:13px; font-family:inherit; box-sizing:border-box;" placeholder="Em branco = texto padrão">${v(t.temporalidadeTexto)}</textarea>
+      <button type="button" class="btn btn-ghost btn-sm" style="margin-top:6px;" onclick="termoCarregarTemporalidade()">Carregar texto padrão</button>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Horas diárias</label><input id="te-h-dia" value="${v(t.horasDiarias)}" inputmode="numeric"></div>
+      <div class="field"><label>Horas semanais</label><input id="te-h-sem" value="${v(t.horasSemanais)}" inputmode="numeric"></div>
+    </div>
+    <div id="te-box-bolsa">
+      <div class="field"><label>Contraprestação (Cláusula 5ª)</label>
+        <div>${radio('te-bolsa','A','Valor fixo mensal',op==='A')}${radio('te-bolsa','B','Percentual sobre os honorários do trabalho/êxito',op==='B')}${radio('te-bolsa','C','Misto (valor fixo + percentual)',op==='C')}</div>
+      </div>
+      <div class="field-row">
+        <div class="field" id="te-box-bolsa-valor"><label>Valor mensal (R$)</label><input id="te-bolsa-valor" value="${v(t.bolsaValor)}" placeholder="Ex: 1.200,00" inputmode="decimal"></div>
+        <div class="field" id="te-box-bolsa-dia"><label>Pagar até o dia (de cada mês)</label><input id="te-bolsa-dia" value="${v(t.bolsaDiaPagamento)}" inputmode="numeric"></div>
+      </div>
+      <div class="field-row">
+        <div class="field" id="te-box-bolsa-perc"><label>Percentual (%)</label><input id="te-bolsa-perc" value="${v(t.bolsaPercentual)}" inputmode="decimal"></div>
+        <div class="field" id="te-box-bolsa-prazo"><label>Pagar em até (dias após o recebimento)</label><input id="te-bolsa-prazo" value="${v(t.bolsaPrazoDias)}" inputmode="numeric"></div>
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Gratificação por indicação (%)${ajuda('Percentual sobre os 30% de honorários que cabem ao escritório, quando o estagiário indicar um cliente.')}</label><input id="te-indicacao" value="${v(t.percIndicacao)}" inputmode="decimal"></div>
+      <div class="field"><label>Data da assinatura (opcional)</label><input type="date" id="te-assinatura" value="${v(t.dataAssinatura)}"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Impedimento pós-estágio (meses)</label><input id="te-imp-meses" value="${v(t.impedimentoMeses)}" inputmode="numeric"></div>
+      <div class="field"><label>Multa pelo descumprimento (R$)</label><input id="te-multa" value="${v(t.multaValor)}" placeholder="Ex: 5.000,00" inputmode="decimal"></div>
+    </div>
+    <button type="button" class="btn btn-gold btn-sm" onclick="termoGerarDoForm()">📄 Gerar termo (Word)</button>
+    <div class="hint" style="margin-top:6px;">O termo sai com o que está preenchido agora, mesmo antes de salvar o usuário. Campos em branco saem como linhas para preencher à mão.</div>
+  </fieldset>`;
+}
+function termoModeloAtual(){
+  const bacharel = document.getElementById('uf-formacao-estagiario')?.value==='bacharel';
+  const rem = !!document.getElementById('uf-remunerado')?.checked;
+  return (bacharel? 3:1) + (rem? 1:0);
+}
+function termoAtualizar(){
+  if(!document.getElementById('te-fieldset')) return;
+  const n = termoModeloAtual();
+  const bacharel = n>=3, rem = (n===2||n===4);
+  const show = (id, on) => { const el = document.getElementById(id); if(el) el.style.display = on? '' : 'none'; };
+  document.getElementById('te-termo-nome').textContent = TERMO_NOMES[n];
+  document.getElementById('te-lbl-inst').textContent = bacharel? 'Instituição em que se formou' : 'Instituição de ensino';
+  show('te-box-estudante', !bacharel);
+  show('te-box-bacharel', bacharel);
+  show('te-box-bolsa', rem);
+  const indet = document.querySelector('input[name="te-prazo"]:checked')?.value==='indeterminado';
+  show('te-box-termino', !indet);
+  show('te-box-duracao', !indet);
+  const op = document.querySelector('input[name="te-bolsa"]:checked')?.value || 'A';
+  show('te-box-bolsa-valor', op==='A'||op==='C');
+  show('te-box-bolsa-dia', op==='A'||op==='C');
+  show('te-box-bolsa-perc', op==='B'||op==='C');
+  show('te-box-bolsa-prazo', op==='B'||op==='C');
+  /* Se o parágrafo da duração ainda é o texto padrão carregado e não foi editado, volta ao automático ao mudar prazo/aviso. */
+  const ta = document.getElementById('te-temporalidade');
+  if(ta && ta.dataset.padrao && ta.value===ta.dataset.padrao){ ta.value=''; ta.dataset.padrao=''; }
+}
+function termoCalcDuracao(){
+  const a = document.getElementById('te-inicio').value, b = document.getElementById('te-termino').value;
+  if(!a || !b) return;
+  const [y1,m1,d1] = a.split('-').map(Number);
+  const fim = new Date(b+'T12:00:00'); fim.setDate(fim.getDate()+1);
+  const y2 = fim.getFullYear(), m2 = fim.getMonth()+1, d2 = fim.getDate();
+  const meses = (y2*12+m2) - (y1*12+m1) - (d2<d1? 1:0);
+  if(meses>0) document.getElementById('te-duracao').value = String(meses);
+}
+async function termoCarregarTemporalidade(){
+  const bacharel = termoModeloAtual()>=3;
+  const tipo = document.querySelector('input[name="te-prazo"]:checked')?.value || 'determinado';
+  const aviso = document.getElementById('te-aviso').value.trim() || '10';
+  try{
+    const r = await apiFetch('/api/documentos/estagio/termo-temporalidade?formacao='+(bacharel?'bacharel':'estudante')+'&tipoPrazo='+tipo+'&aviso='+encodeURIComponent(aviso));
+    const ta = document.getElementById('te-temporalidade');
+    ta.value = r.texto; ta.dataset.padrao = r.texto;
+  }catch(e){ showToast(e.message||'Não foi possível carregar o texto padrão.'); }
+}
+function termoColetar(){
+  const g = id => (document.getElementById(id)?.value || '').trim();
+  const indet = document.querySelector('input[name="te-prazo"]:checked')?.value==='indeterminado';
+  const ta = document.getElementById('te-temporalidade');
+  return {
+    advogadoId:g('te-adv'), instNome:g('te-inst-nome'), instCnpj:g('te-inst-cnpj'), instEndereco:g('te-inst-end'),
+    instRepresentante:g('te-inst-rep'), matricula:g('te-matricula'), dataFormatura:g('te-formatura'), dataColacao:g('te-colacao'),
+    inicio:g('te-inicio'), termino: indet? '' : g('te-termino'), duracaoMeses: indet? '' : g('te-duracao'),
+    tipoPrazo: indet? 'indeterminado':'determinado', avisoPrevioDias:g('te-aviso'),
+    temporalidadeTexto: ta && ta.value.trim()===(ta.dataset.padrao||'') && ta.dataset.padrao ? '' : g('te-temporalidade'),
+    horasDiarias:g('te-h-dia'), horasSemanais:g('te-h-sem'),
+    bolsaOpcao: document.querySelector('input[name="te-bolsa"]:checked')?.value || 'A',
+    bolsaValor:g('te-bolsa-valor'), bolsaDiaPagamento:g('te-bolsa-dia'), bolsaPercentual:g('te-bolsa-perc'), bolsaPrazoDias:g('te-bolsa-prazo'),
+    percIndicacao:g('te-indicacao'), impedimentoMeses:g('te-imp-meses'), multaValor:g('te-multa'), dataAssinatura:g('te-assinatura')
+  };
+}
+function termoGerarDoForm(){
+  const g = id => (document.getElementById(id)?.value || '').trim();
+  const dados = {
+    nome:g('uf-nome'), nacionalidade:g('uf-nac'), estadoCivil:g('uf-ec'), rg:g('uf-rg'), cpf:g('uf-cpf'), endereco:g('uf-endereco'),
+    formacaoEstagiario: g('uf-formacao-estagiario'), remunerado: !!document.getElementById('uf-remunerado').checked,
+    termoEstagio: termoColetar()
+  };
+  baixarArquivoPost('/api/documentos/estagio/termo', { dados }, 'Termo de Estagio.docx');
+}
+async function abrirTermoDoCadastro(id){
+  baixarArquivoPost('/api/documentos/estagio/termo', { estagiarioId:id }, 'Termo de Estagio.docx');
 }
 function atualizarCamposFormUsuario(){
   const tipo = document.getElementById('uf-tipo').value;
@@ -5434,10 +5594,24 @@ async function atualizarViewEstagioAtual(){
   if(ESTAGIARIO_PERFIL_ABERTO) await abrirPerfilEstagiario(ESTAGIARIO_PERFIL_ABERTO);
   else renderCardsEstagiarios();
 }
+let ESTAGIO_ABA_ATIVO = 'ativos';
+function setEstagioAbaAtivo(aba){ ESTAGIO_ABA_ATIVO = aba; renderCardsEstagiarios(); }
 function renderCardsEstagiarios(){
   const box = document.getElementById('estagio-cards-lista'); if(!box) return;
-  const estagiarios = meusEstagiarios();
-  if(!estagiarios.length){ box.innerHTML = '<div class="empty"><div class="big">🎓</div>Nenhum estagiário cadastrado ainda — crie um em Usuários.</div>'; return; }
+  const todos = meusEstagiarios();
+  const ativos = todos.filter(e=>e.ativo!==false);
+  const inativos = todos.filter(e=>e.ativo===false);
+  const filtro = document.getElementById('estagio-filtro-ativo');
+  if(filtro){
+    filtro.innerHTML = `<button class="${ESTAGIO_ABA_ATIVO==='ativos'?'active':''}" onclick="setEstagioAbaAtivo('ativos')">Ativos (${ativos.length})</button><button class="${ESTAGIO_ABA_ATIVO==='inativos'?'active':''}" onclick="setEstagioAbaAtivo('inativos')">Inativos (${inativos.length})</button>`;
+  }
+  const estagiarios = ESTAGIO_ABA_ATIVO==='inativos'? inativos : ativos;
+  if(!estagiarios.length){
+    box.innerHTML = ESTAGIO_ABA_ATIVO==='inativos'
+      ? '<div class="empty"><div class="big">🎓</div>Nenhum estagiário inativo — quem já saiu ou terminou o ciclo no escritório aparece aqui.</div>'
+      : '<div class="empty"><div class="big">🎓</div>Nenhum estagiário ativo — crie um em Usuários.</div>';
+    return;
+  }
   box.innerHTML = estagiarios.map(e=>{
     const minhas = DELEGACOES_CACHE.filter(d=>d.estagiarioIds.includes(e.id));
     const pendentes = minhas.filter(d=>d.status==='pendente'||d.status==='entregue').length;
@@ -5503,6 +5677,14 @@ async function abrirPerfilEstagiario(id){
       <textarea id="perfil-estag-notas" placeholder="Percepções sobre postura, evolução, interesse em contratação futura, etc." style="width:100%; min-height:180px; padding:9px 11px; border:1px solid var(--line); border-radius:7px; font-size:13px; font-family:inherit; box-sizing:border-box;">${escapeHtml(completo.anotacoesInternas||'')}</textarea>
       <button class="btn btn-gold btn-sm" style="margin-top:8px;" onclick="salvarAnotacoesEstagiario('${id}')">Salvar anotações</button>
     </div>
+    ${(isMaster()||isSocio())? `<div class="panel" style="margin-bottom:14px;">
+      <h3>Termo de compromisso de estágio</h3>
+      <div class="rsub" style="margin-bottom:10px;">${TERMO_NOMES[(e.formacaoEstagiario==='bacharel'?3:1)+(e.remunerado?1:0)]}</div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn btn-ghost btn-sm" onclick="abrirTermoDoCadastro('${id}')">📄 Gerar termo (Word)</button>
+        <button class="btn btn-ghost btn-sm" onclick="openUsuarioForm('${id}')">✎ Editar dados do termo</button>
+      </div>
+    </div>` : ''}
     <div class="panel" style="margin-bottom:14px;">
       <h3>Relatório final</h3>
       <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
@@ -5513,6 +5695,10 @@ async function abrirPerfilEstagiario(id){
     </div>
     <div class="panel" style="margin-bottom:14px;">
       <h3>Certificado</h3>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
+        <button class="btn btn-ghost btn-sm" onclick="abrirEditarCertificado('${id}')">✏️ Editar certificado</button>
+        <button class="btn btn-ghost btn-sm" onclick="baixarCertificadoComoTutor('${id}')">📥 Baixar (PDF)</button>
+      </div>
       <label style="display:block;"><input type="checkbox" style="width:auto; margin-right:6px;" ${e.certificadoLiberado?'checked':''} onchange="toggleLiberacaoEstagiario('${id}','certificadoLiberado',this.checked)"> Liberar certificado para o estagiário baixar</label>
     </div>
     <h3 style="margin-bottom:10px;">Tarefas de ${escapeHtml(e.nome)}</h3>
@@ -5858,51 +6044,191 @@ async function abrirEditorRelatorioEstagio(id){
   box.style.display = 'block';
   box.innerHTML = '<div class="empty">Carregando...</div>';
   const instituicao = document.getElementById('editor-relatorio-instituicao')?.value || '';
-  let texto = '';
+  let html = '';
   try{
-    const r = await apiFetch('/api/documentos/estagio/relatorio-texto?estagiarioId='+id+'&instituicao='+encodeURIComponent(instituicao));
-    texto = r.texto;
+    const r = await apiFetch('/api/documentos/estagio/relatorio-html?estagiarioId='+id+'&instituicao='+encodeURIComponent(instituicao));
+    html = r.html;
   }catch(e){ showToast(e.message||'Não foi possível carregar o relatório.'); voltarPerfilDoEditor(id); return; }
+  const btn = (cmd, rotulo, titulo, estilo) => `<button type="button" class="rte-btn" title="${titulo}" onmousedown="event.preventDefault()" onclick="rteComando('${cmd}')" style="${estilo||''}">${rotulo}</button>`;
   box.innerHTML = `
+    <style>
+      .rte-barra{ display:flex; flex-wrap:wrap; align-items:center; gap:4px; padding:8px 10px; background:#f3f2ee; border:1px solid var(--line); border-radius:8px 8px 0 0; position:sticky; top:0; z-index:5; }
+      .rte-btn{ min-width:32px; height:30px; padding:0 8px; border:1px solid transparent; background:transparent; border-radius:5px; cursor:pointer; font-size:14px; color:var(--ink); }
+      .rte-btn:hover{ background:#e6e3da; border-color:var(--line); }
+      .rte-sep{ width:1px; height:22px; background:var(--line); margin:0 4px; }
+      .rte-mesa{ background:#dcdad2; padding:24px 12px; border:1px solid var(--line); border-top:none; border-radius:0 0 8px 8px; overflow-x:auto; }
+      .rte-folha{ background:#fff; width:100%; max-width:794px; min-height:1000px; margin:0 auto; padding:72px 76px; box-sizing:border-box; box-shadow:0 2px 12px rgba(0,0,0,.18); font-family:'Times New Roman',serif; font-size:16px; line-height:1.5; outline:none; text-align:justify; }
+      .rte-folha p, .rte-folha div, .rte-folha li{ margin:0; }
+      .rte-folha ul, .rte-folha ol{ margin:0 0 0 24px; padding-left:18px; }
+      .rte-folha h1{ font-size:22px; margin:0; } .rte-folha h2{ font-size:19px; margin:0; } .rte-folha h3{ font-size:17px; margin:0; }
+    </style>
     <button class="btn btn-ghost btn-sm" style="margin-bottom:14px;" onclick="voltarPerfilDoEditor('${id}')">← Voltar ao perfil</button>
     <div class="panel" style="margin-bottom:10px;">
       <div class="field"><label>Instituição destinatária (opcional)</label><input id="editor-relatorio-instituicao" value="${escapeHtml(instituicao)}" placeholder="Ex: Faculdade de Direito de Jequié — deixe em branco para 'A quem possa interessar'"></div>
       <button class="btn btn-ghost btn-sm" onclick="recarregarTextoRelatorio('${id}')">🔄 Recarregar a partir dos dados atuais</button>
-      <div class="hint" style="margin-top:6px;">Isso recalcula o texto do zero (perde edições manuais feitas aqui) — use se você mudou algo no cadastro/tarefas e quer atualizar o texto automático.</div>
+      <div class="hint" style="margin-top:6px;">Isso recalcula o texto do zero (perde edições feitas aqui) — use se você mudou algo no cadastro/tarefas e quer atualizar o texto automático.</div>
     </div>
-    <div style="background:#e8e6e0; border-radius:8px 8px 0 0; padding:4px 12px; font-size:10px; color:var(--ink-soft); border:1px solid var(--line); border-bottom:none;">📏 0 ── 5 ── 10 ── 15 ── 20 ── 25 cm</div>
-    <textarea id="editor-relatorio-texto" style="width:100%; min-height:500px; padding:40px 50px; border:1px solid var(--line); border-radius:0 0 8px 8px; font-size:13px; font-family:'Times New Roman',serif; line-height:1.5; box-sizing:border-box; background:#fff; box-shadow:0 2px 10px rgba(0,0,0,.08);">${escapeHtml(texto)}</textarea>
+    <div class="rte-barra">
+      ${btn('undo','↶','Desfazer (Ctrl+Z)')}${btn('redo','↷','Refazer (Ctrl+Y)')}
+      <span class="rte-sep"></span>
+      <select id="rte-tamanho" title="Tamanho da letra" onchange="rteTamanho(this.value)" onmousedown="rteSalvarSelecao()" style="height:30px; border:1px solid var(--line); border-radius:5px; background:#fff; font-size:12px;">
+        <option value="">Tamanho</option><option value="2">10</option><option value="3">12 (padrão)</option><option value="4">14</option><option value="5">18</option><option value="6">24</option><option value="7">36</option>
+      </select>
+      <span class="rte-sep"></span>
+      ${btn('bold','<b>N</b>','Negrito (Ctrl+B)')}${btn('italic','<i>I</i>','Itálico (Ctrl+I)')}${btn('underline','<u>S</u>','Sublinhado (Ctrl+U)')}
+      <span class="rte-sep"></span>
+      ${btn('justifyLeft','⯇','Alinhar à esquerda')}${btn('justifyCenter','≡','Centralizar')}${btn('justifyRight','⯈','Alinhar à direita')}${btn('justifyFull','☰','Justificar')}
+      <span class="rte-sep"></span>
+      ${btn('insertUnorderedList','• Lista','Lista com marcadores')}${btn('insertOrderedList','1. Lista','Lista numerada')}
+      <span class="rte-sep"></span>
+      ${btn('removeFormat','⌫ Limpar','Remover formatação do trecho selecionado')}
+    </div>
+    <div class="rte-mesa"><div id="editor-relatorio-folha" class="rte-folha" contenteditable="true" spellcheck="true"></div></div>
     <div style="display:flex; gap:8px; margin-top:14px;">
       <button class="btn btn-gold" onclick="salvarTextoRelatorio('${id}')">💾 Salvar</button>
-      <button class="btn btn-ghost" onclick="baixarRelatorioEstagioComoTutor('${id}')">📥 Baixar esta versão</button>
+      <button class="btn btn-ghost" onclick="baixarRelatorioEditado('${id}')">📥 Salvar e baixar (Word)</button>
     </div>
   `;
+  const folha = document.getElementById('editor-relatorio-folha');
+  folha.innerHTML = html;
+  try{ document.execCommand('styleWithCSS', false, false); }catch(e){}
+  /* Colar entra como texto puro: evita trazer formatação estranha do Word/site e qualquer HTML indevido. */
+  folha.addEventListener('paste', ev=>{
+    ev.preventDefault();
+    const texto = (ev.clipboardData || window.clipboardData).getData('text/plain');
+    document.execCommand('insertText', false, texto);
+  });
+}
+let RTE_SELECAO = null;
+function rteSalvarSelecao(){
+  const sel = window.getSelection();
+  RTE_SELECAO = (sel && sel.rangeCount) ? sel.getRangeAt(0).cloneRange() : null;
+}
+function rteComando(cmd){
+  const folha = document.getElementById('editor-relatorio-folha'); if(!folha) return;
+  folha.focus();
+  document.execCommand(cmd, false, null);
+}
+function rteTamanho(valor){
+  const folha = document.getElementById('editor-relatorio-folha'); if(!folha || !valor) return;
+  folha.focus();
+  if(RTE_SELECAO){ const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(RTE_SELECAO); }
+  document.execCommand('fontSize', false, valor);
+  const seletor = document.getElementById('rte-tamanho'); if(seletor) seletor.value = '';
 }
 function voltarPerfilDoEditor(id){
   document.getElementById('estagio-view-editor').style.display = 'none';
   abrirPerfilEstagiario(id);
 }
 async function recarregarTextoRelatorio(id){
+  if(!confirm('Recarregar vai descartar as edições feitas neste relatório e voltar ao texto automático. Continuar?')) return;
   try{
-    await apiFetch('/api/documentos/estagio/relatorio-texto', { method:'PUT', body: JSON.stringify({estagiarioId:id, texto:''}) }).catch(()=>{});
-    // Salva vazio pra forçar o backend a recalcular do zero na próxima leitura, já que uma versão editada vazia é tratada como "sem versão salva".
-  }catch(e){}
+    /* HTML vazio = o servidor apaga a versão editada e volta a gerar o texto a partir dos dados atuais. */
+    await apiFetch('/api/documentos/estagio/relatorio-html', { method:'PUT', body: JSON.stringify({estagiarioId:id, html:''}) });
+  }catch(e){ showToast(e.message||'Não foi possível recarregar.'); return; }
   abrirEditorRelatorioEstagio(id);
 }
 async function salvarTextoRelatorio(id){
+  const folha = document.getElementById('editor-relatorio-folha');
   try{
-    await apiFetch('/api/documentos/estagio/relatorio-texto', { method:'PUT', body: JSON.stringify({estagiarioId:id, texto: document.getElementById('editor-relatorio-texto').value}) });
+    await apiFetch('/api/documentos/estagio/relatorio-html', { method:'PUT', body: JSON.stringify({estagiarioId:id, html: folha.innerHTML}) });
     showToast('Relatório salvo. Já pode ser liberado no perfil do estagiário.');
-  }catch(e){ showToast(e.message||'Não foi possível salvar.'); }
+    return true;
+  }catch(e){ showToast(e.message||'Não foi possível salvar.'); return false; }
+}
+async function baixarRelatorioEditado(id){
+  const ok = await salvarTextoRelatorio(id);
+  if(ok) baixarArquivoPost('/api/documentos/estagio/relatorio', { estagiarioId: id, instituicao: document.getElementById('editor-relatorio-instituicao')?.value || '' }, 'Relatorio Final de Estagio.docx');
 }
 function baixarMeuRelatorioEstagio(){
   baixarArquivoPost('/api/documentos/estagio/relatorio', { estagiarioId: CURRENT_USER.id }, 'Relatorio Final de Estagio.docx');
 }
 function baixarMeuCertificadoEstagio(){
-  const tutores = (DB.usuarios?.find(u=>u.id===CURRENT_USER.id)?.tutoresIds)||[];
-  const advogadoResponsavelId = tutores[0];
-  if(!advogadoResponsavelId){ showToast('Nenhum tutor/responsável definido para assinar o certificado.'); return; }
-  baixarArquivoPost('/api/documentos/estagio/certificado', { estagiarioId: CURRENT_USER.id, advogadoResponsavelId }, 'Certificado de Estagio.docx');
+  baixarArquivoPost('/api/documentos/estagio/certificado', { estagiarioId: CURRENT_USER.id }, 'Certificado de Estagio.pdf');
+}
+function baixarCertificadoComoTutor(id){
+  baixarArquivoPost('/api/documentos/estagio/certificado', { estagiarioId: id }, 'Certificado de Estagio.pdf');
+}
+let CERT_AUTO = null;
+let CERT_DISCIPLINAS = [];
+function certSomaCargas(){
+  let soma = 0, algum = false;
+  CERT_DISCIPLINAS.forEach(d=>{
+    const n = parseFloat(String(document.getElementById('cert-carga-'+d.id)?.value||'').replace(',','.'));
+    if(isFinite(n)){ soma += n; algum = true; }
+  });
+  return algum? String(Math.round(soma*100)/100).replace('.',',') : '';
+}
+function certAtualizarTotal(){
+  const t = document.getElementById('cert-total');
+  if(t && t.dataset.manual!=='1') t.value = certSomaCargas();
+}
+function certColetar(){
+  const g = k => (document.getElementById(k)?.value || '').trim();
+  const cargas = {};
+  CERT_DISCIPLINAS.forEach(d=>{ cargas[d.id] = g('cert-carga-'+d.id); });
+  /* Só o que foi alterado em relação ao automático fica guardado; o resto continua acompanhando o cadastro. */
+  const igual = (v, auto) => (v===(auto||'')) ? '' : v;
+  const total = g('cert-total');
+  return {
+    nome: igual(g('cert-nome'), CERT_AUTO.nome), cpf: igual(g('cert-cpf'), CERT_AUTO.cpf),
+    inicio: igual(g('cert-inicio'), CERT_AUTO.inicio), fim: igual(g('cert-fim'), CERT_AUTO.fim), emissao: igual(g('cert-emissao'), CERT_AUTO.emissao),
+    advogadoId: igual(g('cert-adv'), CERT_AUTO.advogadoId),
+    cargaTotal: total===certSomaCargas() ? '' : total,
+    cargas
+  };
+}
+async function abrirEditarCertificado(id){
+  let r;
+  try{ r = await apiFetch('/api/documentos/estagio/certificado-dados?estagiarioId='+id); }
+  catch(e){ showToast(e.message||'Não foi possível abrir o certificado.'); return; }
+  CERT_AUTO = r.auto; CERT_DISCIPLINAS = r.disciplinas;
+  const sv = r.salvo, a = r.auto;
+  const val = k => escapeHtml(sv[k] || a[k] || '');
+  const advs = DB.usuarios.filter(u=>(u.tipo==='socio'||u.tipo==='associado') && u.ativo!==false);
+  const advSel = sv.advogadoId || a.advogadoId || '';
+  const somaInicial = (()=>{ let s2=0, alg=false; r.disciplinas.forEach(d=>{ const n=parseFloat(String(sv.cargas[d.id]||'').replace(',','.')); if(isFinite(n)){ s2+=n; alg=true; } }); return alg? String(Math.round(s2*100)/100).replace('.',',') : ''; })();
+  const totalInicial = sv.cargaTotal || somaInicial;
+  const body = `
+    <div class="hint" style="margin-bottom:10px;">Os campos já vêm preenchidos automaticamente (cadastro do estagiário até a data de hoje). Edite o que precisar antes de liberar — só o que você alterar fica guardado.</div>
+    <fieldset><legend>Identificação (página 1 e 2)</legend>
+      <div class="field-row">
+        <div class="field"><label>Estagiário(a)</label><input id="cert-nome" value="${val('nome')}"></div>
+        <div class="field"><label>CPF</label><input id="cert-cpf" value="${val('cpf')}"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Período — início</label><input type="date" id="cert-inicio" value="${val('inicio')}"></div>
+        <div class="field"><label>Período — fim</label><input type="date" id="cert-fim" value="${val('fim')}"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Data de emissão</label><input type="date" id="cert-emissao" value="${val('emissao')}"></div>
+        <div class="field"><label>Advogado(a) responsável (OAB no certificado)</label><select id="cert-adv"><option value="">— selecione —</option>${advs.map(u=>`<option value="${u.id}" ${u.id===advSel?'selected':''}>${escapeHtml(u.nome)}${u.oab?' — '+escapeHtml(u.oab):''}</option>`).join('')}</select></div>
+      </div>
+    </fieldset>
+    <fieldset><legend>Carga horária por atividade (página 1)</legend>
+      ${r.disciplinas.map(d=>`<div style="display:grid; grid-template-columns:1fr 90px; gap:10px; align-items:center; margin-bottom:6px;"><label style="font-size:12px;">${escapeHtml(d.nome)}</label><input id="cert-carga-${d.id}" value="${escapeHtml(sv.cargas[d.id]||'')}" placeholder="horas" inputmode="decimal" oninput="certAtualizarTotal()"></div>`).join('')}
+      <div style="display:grid; grid-template-columns:1fr 90px; gap:10px; align-items:center; margin-top:10px; padding-top:8px; border-top:1px solid var(--line);"><label style="font-size:12px;"><strong>Carga horária total</strong>${ajuda('Soma das atividades acima. Se você digitar outro valor aqui, ele passa a valer no lugar da soma.')}</label><input id="cert-total" value="${escapeHtml(totalInicial)}" inputmode="decimal" data-manual="${(sv.cargaTotal && sv.cargaTotal!==somaInicial)?'1':''}" oninput="this.dataset.manual='1'"></div>
+    </fieldset>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+      <button type="button" class="btn btn-ghost btn-sm" onclick="certPreVisualizar('${id}')">👁 Visualizar PDF</button>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="certRestaurar('${id}')">↺ Restaurar automático</button>
+    </div>`;
+  openModal('Editar certificado', body, async ()=>{
+    try{
+      await apiFetch('/api/documentos/estagio/certificado-dados', { method:'PUT', body: JSON.stringify({ estagiarioId:id, dados: certColetar() }) });
+      closeModal(); showToast('Certificado salvo. Já pode ser liberado para o estagiário.');
+    }catch(e){ showToast(e.message||'Não foi possível salvar.'); }
+  });
+}
+function certPreVisualizar(id){
+  baixarArquivoPost('/api/documentos/estagio/certificado', { estagiarioId:id, dados: certColetar() }, 'Certificado de Estagio.pdf');
+}
+async function certRestaurar(id){
+  if(!confirm('Descartar as edições e voltar aos valores automáticos?')) return;
+  try{
+    await apiFetch('/api/documentos/estagio/certificado-dados', { method:'PUT', body: JSON.stringify({ estagiarioId:id, dados:{} }) });
+    abrirEditarCertificado(id);
+  }catch(e){ showToast(e.message||'Não foi possível restaurar.'); }
 }
 function renderDjenPage(){
   if(!DJEN_INICIALIZADO){

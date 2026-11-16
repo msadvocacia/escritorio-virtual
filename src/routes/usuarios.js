@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const { getCollection, setCollection } = require('../utils/store');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { usuariosVisiveis, isMaster, isSocio } = require('../utils/visibility');
+const TE = require('../utils/termoEstagio');
 
 const router = express.Router();
 
@@ -70,7 +71,7 @@ router.get('/basico', requireAuth, async (req, res) => {
 router.post('/', requireAuth, requireRole('master', 'socio'), async (req, res) => {
   const {
     nome, tipo, login, senha, oab, nacionalidade, estadoCivil, rg, cpf, telefone, endereco, ativo, agendaPessoalLiberada,
-    visualizarEstagio, remunerado, formacaoEstagiario, estagiarioVisivelPara, tutoresIds,
+    visualizarEstagio, remunerado, formacaoEstagiario, estagiarioVisivelPara, tutoresIds, termoEstagio,
   } = req.body || {};
   if (!nome || !login || !tipo) return res.status(400).json({ erro: 'Preencha nome, login e perfil.' });
   if (tipo === 'socio' && !isMaster(req.user)) {
@@ -94,9 +95,10 @@ router.post('/', requireAuth, requireRole('master', 'socio'), async (req, res) =
   if (tipo === 'estagiario') {
     novo.remunerado = !!remunerado;
     novo.formacaoEstagiario = ['estudante', 'bacharel'].includes(formacaoEstagiario) ? formacaoEstagiario : 'estudante';
-    novo.estagiarioVisivelPara = ['socio', 'associado', 'todos'].includes(estagiarioVisivelPara) ? estagiarioVisivelPara : 'todos';
+    novo.estagiarioVisivelPara = ['socio', 'associado', 'todos', 'especificos'].includes(estagiarioVisivelPara) ? estagiarioVisivelPara : 'todos';
     novo.tutoresIds = Array.isArray(tutoresIds) ? tutoresIds.filter((id) => usuarios.some((u) => u.id === id && (u.tipo === 'socio' || u.tipo === 'associado'))) : [];
-    novo.dataInicioEstagio = todayISOBackend();
+    novo.termoEstagio = TE.sanitizar(termoEstagio);
+    novo.dataInicioEstagio = novo.termoEstagio.inicio || todayISOBackend();
     novo.dataFimEstagio = null;
   }
   usuarios.push(novo);
@@ -130,6 +132,10 @@ router.patch('/:id', requireAuth, requireRole('master', 'socio'), async (req, re
   if (usuario.tipo === 'master') return res.status(403).json({ erro: 'O administrador master não pode ser editado por aqui.' });
   const campos = ['nome', 'oab', 'ativo', 'nacionalidade', 'estadoCivil', 'rg', 'cpf', 'telefone', 'endereco', 'agendaPessoalLiberada', 'visualizarEstagio', 'remunerado', 'formacaoEstagiario', 'estagiarioVisivelPara', 'tutoresIds', 'dataFimEstagio', 'relatorioLiberado', 'certificadoLiberado'];
   campos.forEach((c) => { if (req.body[c] !== undefined) usuario[c] = req.body[c]; });
+  if (usuario.tipo === 'estagiario' && req.body.termoEstagio !== undefined) {
+    usuario.termoEstagio = TE.sanitizar(req.body.termoEstagio);
+    if (usuario.termoEstagio.inicio) usuario.dataInicioEstagio = usuario.termoEstagio.inicio;
+  }
   await setCollection('usuarios', usuarios);
   const { senhaHash, ...semSenha } = usuario;
   res.json(semSenha);

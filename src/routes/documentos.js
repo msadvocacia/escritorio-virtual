@@ -10,6 +10,9 @@ const { isAssociado, isMaster, isSocio, isCliente } = require('../utils/visibili
 const F = require('../utils/financeiro');
 const T = require('../utils/textoJuridico');
 const D = require('../utils/docxBuilder');
+const TE = require('../utils/termoEstagio');
+const HD = require('../utils/htmlParaDocx');
+const CERT = require('../utils/certificadoPdf');
 const { calcularRetroativoPccr } = require('../utils/calculoRetroativoPccr');
 const { calcularAposentadoria } = require('../utils/calculoAposentadoria');
 
@@ -1058,6 +1061,47 @@ function podeAcessarRelatorioEstagio(reqUser, estagiarioId, estagiarioRegistro) 
   return false;
 }
 
+// Termo de compromisso de estágio — o modelo (1 a 4) sai das marcações
+// "estudante/bacharel" e "remunerado": é automático. Pode ser gerado direto
+// do formulário (dados ainda não salvos) ou do cadastro já existente.
+router.post('/estagio/termo', requireAuth, requireRole('master', 'socio'), async (req, res) => {
+  try {
+    const { estagiarioId, dados: dadosForm } = req.body || {};
+    const usuarios = await getCollection('usuarios', []);
+    const salvo = estagiarioId ? usuarios.find((u) => u.id === estagiarioId && u.tipo === 'estagiario') : null;
+    if (estagiarioId && !salvo) return res.status(404).json({ erro: 'Estagiário não encontrado.' });
+    const f = dadosForm && typeof dadosForm === 'object' ? dadosForm : {};
+    const dados = {
+      nome: f.nome ?? salvo?.nome ?? '', nacionalidade: f.nacionalidade ?? salvo?.nacionalidade ?? '',
+      estadoCivil: f.estadoCivil ?? salvo?.estadoCivil ?? '', rg: f.rg ?? salvo?.rg ?? '', cpf: f.cpf ?? salvo?.cpf ?? '',
+      endereco: f.endereco ?? salvo?.endereco ?? '',
+      formacaoEstagiario: f.formacaoEstagiario ?? salvo?.formacaoEstagiario ?? 'estudante',
+      remunerado: f.remunerado ?? salvo?.remunerado ?? false,
+      termoEstagio: f.termoEstagio ?? salvo?.termoEstagio ?? {},
+    };
+    const t = TE.sanitizar(dados.termoEstagio);
+    const advogado = t.advogadoId ? usuarios.find((u) => u.id === t.advogadoId && (u.tipo === 'socio' || u.tipo === 'associado')) : null;
+    const config = await getCollection('config', {});
+    const r = TE.gerarCorpoTermo({ dados, advogado, config });
+    const buffer = gerarDocxComCorpo(r.corpoXml, { margemInferiorTwips: 1843 });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="${r.nomeArquivo}.docx"`);
+    res.send(buffer);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ erro: 'Não foi possível gerar o termo de estágio.' });
+  }
+});
+
+// Texto-padrão do parágrafo de temporalidade (prazo determinado/indeterminado
+// com aviso prévio), para o escritório partir dele e editar.
+router.get('/estagio/termo-temporalidade', requireAuth, requireRole('master', 'socio'), (req, res) => {
+  const formacao = req.query.formacao === 'bacharel' ? 'bacharel' : 'estudante';
+  const tipo = req.query.tipoPrazo === 'indeterminado' ? 'indeterminado' : 'determinado';
+  const aviso = String(req.query.aviso || '10').slice(0, 10);
+  res.json({ texto: TE.textoTemporalidadePadrao(formacao, tipo, aviso) });
+});
+
 // Devolve o relatório como TEXTO simples — usado pela tela de "visualizar e
 // editar antes de liberar" (funciona como um editor de texto: sócio/master
 // podem alterar o conteúdo livremente antes de salvar a versão final).
@@ -1074,6 +1118,39 @@ router.get('/estagio/relatorio-texto', requireAuth, async (req, res) => {
   res.json({ texto });
 });
 
+// Versão com formatação do relatório (editor estilo Word). Se ainda não
+// existe uma versão formatada salva, parte do texto (editado ou automático).
+router.get('/estagio/relatorio-html', requireAuth, async (req, res) => {
+  const { estagiarioId, instituicao } = req.query;
+  if (!estagiarioId) return res.status(400).json({ erro: 'Informe o estagiário.' });
+  const usuarios = await getCollection('usuarios', []);
+  const estagiario = usuarios.find((u) => u.id === estagiarioId && u.tipo === 'estagiario');
+  if (!podeAcessarRelatorioEstagio(req.user, estagiarioId, estagiario)) return res.status(403).json({ erro: 'Sem acesso a este relatório.' });
+  if (req.user.tipo === 'estagiario') return res.status(403).json({ erro: 'Sem acesso a este relatório.' });
+  if (estagiario.relatorioHtmlFinal) return res.json({ html: estagiario.relatorioHtmlFinal });
+  const resultado = await montarTextoRelatorioEstagio(estagiarioId, instituicao || '');
+  if (!resultado) return res.status(404).json({ erro: 'Estagiário não encontrado.' });
+  res.json({ html: HD.textoParaHtml(estagiario.relatorioTextoFinal || resultado.texto) });
+});
+
+// Salva a versão formatada. HTML vazio = descartar edições e voltar ao texto automático.
+router.put('/estagio/relatorio-html', requireAuth, requireRole('master', 'socio', 'associado'), async (req, res) => {
+  const { estagiarioId, html } = req.body || {};
+  if (!estagiarioId || typeof html !== 'string') return res.status(400).json({ erro: 'Dados inválidos.' });
+  if (html.length > 2000000) return res.status(413).json({ erro: 'Relatório grande demais.' });
+  const usuarios = await getCollection('usuarios', []);
+  const estagiario = usuarios.find((u) => u.id === estagiarioId && u.tipo === 'estagiario');
+  if (!estagiario) return res.status(404).json({ erro: 'Estagiário não encontrado.' });
+  if (!html.trim()) {
+    estagiario.relatorioHtmlFinal = '';
+    estagiario.relatorioTextoFinal = '';
+  } else {
+    estagiario.relatorioHtmlFinal = HD.sanitizarHtml(html);
+  }
+  await setCollection('usuarios', usuarios);
+  res.json({ ok: true });
+});
+
 // Salva a versão editada do relatório (sócio/master), pronta para ser
 // liberada depois pelo botão já existente.
 router.put('/estagio/relatorio-texto', requireAuth, requireRole('master', 'socio', 'associado'), async (req, res) => {
@@ -1083,6 +1160,7 @@ router.put('/estagio/relatorio-texto', requireAuth, requireRole('master', 'socio
   const estagiario = usuarios.find((u) => u.id === estagiarioId && u.tipo === 'estagiario');
   if (!estagiario) return res.status(404).json({ erro: 'Estagiário não encontrado.' });
   estagiario.relatorioTextoFinal = texto;
+  estagiario.relatorioHtmlFinal = '';
   await setCollection('usuarios', usuarios);
   res.json({ ok: true });
 });
@@ -1099,13 +1177,16 @@ router.post('/estagio/relatorio', requireAuth, requireRole('master', 'socio', 'a
   try {
     const resultado = await montarTextoRelatorioEstagio(estagiarioId, instituicao || '');
     const textoFinal = estagiario.relatorioTextoFinal || resultado.texto;
-    // Cada linha vira um parágrafo — linhas em CAIXA ALTA (os títulos das
-    // seções) saem em negrito, o resto em texto normal.
-    const corpo = textoFinal.split('\n').map((linha) => {
-      if (!linha.trim()) return D.blank();
-      const ehTitulo = linha === linha.toUpperCase() && /[A-ZÀ-Ú]/.test(linha);
-      return D.paragraph(D.run(linha, ehTitulo ? { bold: true, sizeHalfPt: 24 } : {}), { center: ehTitulo, justify: !ehTitulo });
-    }).join('');
+    // Versão formatada (editor estilo Word) tem prioridade. Sem ela, cada
+    // linha vira um parágrafo — linhas em CAIXA ALTA (os títulos das seções)
+    // saem em negrito, o resto em texto normal.
+    const corpo = estagiario.relatorioHtmlFinal
+      ? HD.htmlParaCorpo(estagiario.relatorioHtmlFinal)
+      : textoFinal.split('\n').map((linha) => {
+        if (!linha.trim()) return D.blank();
+        const ehTitulo = linha === linha.toUpperCase() && /[A-ZÀ-Ú]/.test(linha);
+        return D.paragraph(D.run(linha, ehTitulo ? { bold: true, sizeHalfPt: 24 } : {}), { center: ehTitulo, justify: !ehTitulo });
+      }).join('');
     const buffer = gerarDocxComCorpo(corpo, { margemInferiorTwips: 1843 });
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     res.setHeader('Content-Disposition', `attachment; filename="${resultado.nomeArquivo}.docx"`);
@@ -1119,67 +1200,110 @@ router.post('/estagio/relatorio', requireAuth, requireRole('master', 'socio', 'a
 // Certificado de estágio — frente com marca d'água e assinatura do
 // responsável; verso com data de início/fim, carga horária e pontuação
 // final. Só é gerado quando o tutor/responsável decide liberar.
-router.post('/estagio/certificado', requireAuth, requireRole('master', 'socio', 'associado', 'estagiario'), async (req, res) => {
-  const { estagiarioId, advogadoResponsavelId } = req.body || {};
-  if (!estagiarioId || !advogadoResponsavelId) return res.status(400).json({ erro: 'Informe o estagiário e o advogado responsável.' });
-  if (req.user.tipo === 'estagiario') {
-    if (req.user.id !== estagiarioId) return res.status(403).json({ erro: 'Você só pode gerar o próprio certificado.' });
-    const usuariosCheck = await getCollection('usuarios', []);
-    const euCheck = usuariosCheck.find((u) => u.id === req.user.id);
-    if (!euCheck || !euCheck.certificadoLiberado) return res.status(403).json({ erro: 'Seu certificado ainda não foi liberado pelo seu tutor/responsável.' });
-  }
+// Certificado de estágio (PDF, 2 páginas: grade curricular + certificado).
+// Os campos vêm automáticos do cadastro, mas o escritório pode editar tudo
+// antes de liberar: só o que foi editado fica guardado (campo vazio = automático).
+const CAMPOS_CERT_TEXTO = ['nome', 'cpf', 'inicio', 'fim', 'emissao', 'cargaTotal', 'advogadoId'];
+function limparEdicaoCertificado(bruto) {
+  const o = bruto && typeof bruto === 'object' ? bruto : {};
+  const saida = { cargas: {} };
+  CAMPOS_CERT_TEXTO.forEach((c) => {
+    let v = o[c] == null ? '' : String(o[c]).trim().slice(0, 200);
+    if (['inicio', 'fim', 'emissao'].includes(c) && v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) v = '';
+    saida[c] = v;
+  });
+  CERT.DISCIPLINAS.forEach((d) => {
+    saida.cargas[d.id] = String((o.cargas && o.cargas[d.id]) == null ? '' : o.cargas[d.id]).trim().slice(0, 10);
+  });
+  return saida;
+}
+function valoresAutomaticosCertificado(estagiario, usuarios) {
+  const tutores = (estagiario.tutoresIds || []).map((id) => usuarios.find((u) => u.id === id)).filter(Boolean);
+  const advId = (estagiario.termoEstagio && estagiario.termoEstagio.advogadoId) || (tutores[0] && tutores[0].id) || '';
+  return {
+    nome: estagiario.nome || '',
+    cpf: estagiario.cpf ? T.formatCPF(estagiario.cpf) : '',
+    inicio: estagiario.dataInicioEstagio || todayISO(),
+    fim: todayISO(),
+    emissao: todayISO(),
+    advogadoId: advId,
+  };
+}
+function somaCargas(cargas) {
+  let soma = 0; let algum = false;
+  CERT.DISCIPLINAS.forEach((d) => {
+    const n = parseFloat(String((cargas && cargas[d.id]) || '').replace(',', '.'));
+    if (Number.isFinite(n)) { soma += n; algum = true; }
+  });
+  return algum ? String(Math.round(soma * 100) / 100).replace('.', ',') : '';
+}
+function montarDadosCertificado(estagiario, usuarios, edicao) {
+  const auto = valoresAutomaticosCertificado(estagiario, usuarios);
+  const e = limparEdicaoCertificado(edicao);
+  const cargas = e.cargas;
+  const advogado = usuarios.find((u) => u.id === (e.advogadoId || auto.advogadoId) && (u.tipo === 'socio' || u.tipo === 'associado'));
+  const oab = advogado && advogado.oab ? (/oab/i.test(advogado.oab) ? advogado.oab : `OAB/BA ${advogado.oab}`) : '';
+  return {
+    nome: e.nome || auto.nome, cpf: e.cpf || auto.cpf,
+    inicio: e.inicio || auto.inicio, fim: e.fim || auto.fim, emissao: e.emissao || auto.emissao,
+    cargaTotal: e.cargaTotal || somaCargas(cargas), cargas, advOab: oab,
+  };
+}
+
+router.get('/estagio/certificado-dados', requireAuth, requireRole('master', 'socio', 'associado'), async (req, res) => {
+  const usuarios = await getCollection('usuarios', []);
+  const estagiario = usuarios.find((u) => u.id === req.query.estagiarioId && u.tipo === 'estagiario');
+  if (!estagiario) return res.status(404).json({ erro: 'Estagiário não encontrado.' });
+  res.json({
+    auto: valoresAutomaticosCertificado(estagiario, usuarios),
+    salvo: limparEdicaoCertificado(estagiario.certificadoEdicao),
+    disciplinas: CERT.DISCIPLINAS,
+  });
+});
+
+router.put('/estagio/certificado-dados', requireAuth, requireRole('master', 'socio', 'associado'), async (req, res) => {
+  const { estagiarioId, dados } = req.body || {};
   const usuarios = await getCollection('usuarios', []);
   const estagiario = usuarios.find((u) => u.id === estagiarioId && u.tipo === 'estagiario');
-  const responsavel = usuarios.find((u) => u.id === advogadoResponsavelId && (u.tipo === 'socio' || u.tipo === 'associado'));
   if (!estagiario) return res.status(404).json({ erro: 'Estagiário não encontrado.' });
-  if (!responsavel) return res.status(404).json({ erro: 'Advogado responsável não encontrado.' });
-  const config = await getCollection('config', {});
-  const todasDelegacoes = await getCollection('delegacoes', []);
-  const minhas = todasDelegacoes.filter((d) => d.estagiarioIds.includes(estagiarioId));
-  const concluidas = minhas.filter((d) => d.status === 'concluida');
-  const naoCumpridas = minhas.filter((d) => d.status === 'nao_cumprida');
-  const notas = concluidas.map((d) => d.avaliacao?.notaFinal).filter((n) => n != null);
-  const notaMedia = notas.length ? Math.round((notas.reduce((s, n) => s + n, 0) / notas.length) * 10) / 10 : null;
-  const cargaHoraria = (concluidas.length + naoCumpridas.length) * 4;
-  const dataInicio = estagiario.dataInicioEstagio || todayISO();
-  const dataFim = estagiario.dataFimEstagio || todayISO();
+  estagiario.certificadoEdicao = limparEdicaoCertificado(dados);
+  await setCollection('usuarios', usuarios);
+  res.json({ ok: true });
+});
 
+router.post('/estagio/certificado', requireAuth, requireRole('master', 'socio', 'associado', 'estagiario'), async (req, res) => {
+  const { estagiarioId, dados } = req.body || {};
+  if (!estagiarioId) return res.status(400).json({ erro: 'Informe o estagiário.' });
+  const usuarios = await getCollection('usuarios', []);
+  const estagiario = usuarios.find((u) => u.id === estagiarioId && u.tipo === 'estagiario');
+  if (!estagiario) return res.status(404).json({ erro: 'Estagiário não encontrado.' });
+  if (req.user.tipo === 'estagiario') {
+    if (req.user.id !== estagiarioId) return res.status(403).json({ erro: 'Você só pode gerar o próprio certificado.' });
+    if (!estagiario.certificadoLiberado) return res.status(403).json({ erro: 'Seu certificado ainda não foi liberado pelo seu tutor/responsável.' });
+  }
   try {
-    const corpo = [
-      marcaDagua((config.nomeEscritorio || 'MS ADVOCACIA').toUpperCase()),
-      D.blank(), D.blank(), D.blank(),
-      D.paragraph(D.run('CERTIFICADO DE ESTÁGIO', { bold: true, sizeHalfPt: 34 }), { center: true, justify: false }),
-      D.blank(), D.blank(),
-      D.paragraph(D.run(`${config.nomeEscritorio || 'MS ADVOCACIA'} certifica que`, { sizeHalfPt: 24 }), { center: true, justify: false }),
-      D.blank(),
-      D.paragraph(D.run(estagiario.nome.toUpperCase(), { bold: true, sizeHalfPt: 32 }), { center: true, justify: false }),
-      D.blank(),
-      D.paragraph(D.run(`concluiu, sob supervisão direta, o estágio de ${estagiario.formacaoEstagiario === 'bacharel' ? 'Bacharel em Direito' : 'estudante de Direito'} nesta atividade advocatícia, no período de ${T.fmtDateExtenso(dataInicio)} a ${T.fmtDateExtenso(dataFim)}, com carga horária estimada de ${cargaHoraria} horas.`, { sizeHalfPt: 24 }), { center: true, justify: true }),
-      D.blank(), D.blank(), D.blank(), D.blank(),
-      D.paragraph(D.run(`Jequié/BA, ${T.fmtDateExtenso(todayISO())}.`, { sizeHalfPt: 22 }), { center: true, justify: false }),
-      D.blank(), D.blank(), D.blank(),
-      D.paragraph(D.run('_____________________________________________________________'), { center: true, justify: false }),
-      D.paragraph(D.run(responsavel.nome.toUpperCase(), { bold: true }), { center: true, justify: false }),
-      D.paragraph(D.run(`OAB/BA nº ${responsavel.oab || '—'}`), { center: true, justify: false }),
-      D.paragraph(D.run('Advogado(a) Responsável', { italic: true }), { center: true, justify: false }),
-      // Quebra de página — o verso do certificado
-      '<w:p><w:r><w:br w:type="page"/></w:r></w:p>',
-      D.paragraph(D.run('INFORMAÇÕES COMPLEMENTARES', { bold: true, sizeHalfPt: 26 }), { center: true, justify: false }),
-      D.blank(), D.blank(),
-      D.paragraph([D.run('Data de início: ', { bold: true }), D.run(T.fmtDateExtenso(dataInicio))]),
-      D.paragraph([D.run('Data de encerramento: ', { bold: true }), D.run(T.fmtDateExtenso(dataFim))]),
-      D.paragraph([D.run('Carga horária total: ', { bold: true }), D.run(`${cargaHoraria} horas (${concluidas.length + naoCumpridas.length} tarefas avaliadas × 4h/tarefa em média)`)]),
-      D.paragraph([D.run('Tarefas cumpridas: ', { bold: true }), D.run(String(concluidas.length))]),
-      D.paragraph([D.run('Tarefas não cumpridas: ', { bold: true }), D.run(String(naoCumpridas.length))]),
-      D.paragraph([D.run('Pontuação final média: ', { bold: true, sizeHalfPt: 26 }), D.run(notaMedia != null ? `${notaMedia} / 10` : 'não avaliado', { bold: true, sizeHalfPt: 26 })]),
-    ].join('');
-    const buffer = gerarDocxComCorpo(corpo, { margemInferiorTwips: 1843, paisagem: true });
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-    res.setHeader('Content-Disposition', `attachment; filename="Certificado de Estagio - ${estagiario.nome.replace(/[^\w\- ]/g, '')}.docx"`);
-    res.send(buffer);
+    // Quem edita pode pré-visualizar com valores ainda não salvos; o estagiário só recebe a versão salva.
+    const edicao = (req.user.tipo !== 'estagiario' && dados) ? dados : estagiario.certificadoEdicao;
+    const pdf = await CERT.gerarCertificadoPdf(montarDadosCertificado(estagiario, usuarios, edicao));
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="Certificado de Estagio - ${estagiario.nome.replace(/[^\w\- ]/g, '')}.pdf"`);
+    res.send(pdf);
   } catch (e) {
     console.error(e);
     res.status(500).json({ erro: 'Não foi possível gerar o certificado.' });
+  }
+});
+
+// Simulação com tudo preenchido em "X": serve para conferir posições e fontes do modelo.
+router.get('/estagio/certificado-simulacao', requireAuth, requireRole('master', 'socio'), async (req, res) => {
+  try {
+    const pdf = await CERT.gerarCertificadoPdf(CERT.dadosSimulacao());
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'inline; filename="Certificado - simulacao.pdf"');
+    res.send(pdf);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ erro: 'Não foi possível gerar a simulação.' });
   }
 });
 
